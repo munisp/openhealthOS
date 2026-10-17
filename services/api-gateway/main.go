@@ -56,6 +56,7 @@ func DefaultRoutes(env func(string) string) []Route {
 		{"/api/equipment", "equipment-service", up("EQUIPMENT_URL", "http://equipment-service:8086"), true},
 		{"/api/telehealth", "telehealth-service", up("TELEHEALTH_URL", "http://telehealth-service:8087"), true},
 		{"/api/pharmacy", "pharmacy-service", up("PHARMACY_URL", "http://pharmacy-service:8088"), true},
+		{"/api/notify", "notification-service", up("NOTIFY_URL", "http://notification-service:8089"), true},
 		{"/api/sync", "sync-ingest", up("SYNC_URL", "http://sync-ingest:8443"), true},
 	}
 }
@@ -71,15 +72,16 @@ func metricsProbes(env func(string) string) map[string]string {
 		return def
 	}
 	return map[string]string{
-		"claims-orchestrator": up("CLAIMS_URL", "http://claims-orchestrator:8080"),
-		"registry-service":    up("REGISTRY_URL", "http://registry-service:8081"),
-		"consent-service":     up("CONSENT_URL", "http://consent-service:8082"),
-		"wallet-service":      up("WALLET_URL", "http://wallet-service:8084"),
-		"shr-service":         up("SHR_URL", "http://shr-service:8085"),
-		"equipment-service":   up("EQUIPMENT_URL", "http://equipment-service:8086"),
-		"telehealth-service":  up("TELEHEALTH_URL", "http://telehealth-service:8087"),
-		"pharmacy-service":    up("PHARMACY_URL", "http://pharmacy-service:8088"),
-		"sync-ingest":         up("SYNC_URL", "http://sync-ingest:8443"),
+		"claims-orchestrator":  up("CLAIMS_URL", "http://claims-orchestrator:8080"),
+		"registry-service":     up("REGISTRY_URL", "http://registry-service:8081"),
+		"consent-service":      up("CONSENT_URL", "http://consent-service:8082"),
+		"wallet-service":       up("WALLET_URL", "http://wallet-service:8084"),
+		"shr-service":          up("SHR_URL", "http://shr-service:8085"),
+		"equipment-service":    up("EQUIPMENT_URL", "http://equipment-service:8086"),
+		"telehealth-service":   up("TELEHEALTH_URL", "http://telehealth-service:8087"),
+		"pharmacy-service":     up("PHARMACY_URL", "http://pharmacy-service:8088"),
+		"notification-service": up("NOTIFY_URL", "http://notification-service:8089"),
+		"sync-ingest":          up("SYNC_URL", "http://sync-ingest:8443"),
 	}
 }
 
@@ -203,17 +205,19 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 	// Client apps: /app/ is the offline-first nurse/CHW PWA, /dash/ the
-	// facility & state operations dashboards. Same origin as the API, so
-	// the apps inherit OIDC and never fight CORS.
+	// facility & state operations dashboards, /patient/ the patient
+	// portal PWA. Same origin as the API, so the apps inherit OIDC and
+	// never fight CORS.
 	if g.appsRoot != "" && (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/app") ||
-		strings.HasPrefix(r.URL.Path, "/dash")) {
+		strings.HasPrefix(r.URL.Path, "/dash") || strings.HasPrefix(r.URL.Path, "/patient")) {
 		g.serveApp(w, r)
 		return
 	}
 	http.Error(w, `{"error":"no route"}`, http.StatusNotFound)
 }
 
-// serveApp maps / and /app/* to apps/pwa, /dash/* to apps/dashboards.
+// serveApp maps / and /app/* to apps/pwa, /dash/* to apps/dashboards,
+// /patient/* to apps/patient.
 func (g *gateway) serveApp(w http.ResponseWriter, r *http.Request) {
 	path := r.URL.Path
 	sub := "pwa"
@@ -222,6 +226,10 @@ func (g *gateway) serveApp(w http.ResponseWriter, r *http.Request) {
 		path = "/index.html"
 	case strings.HasPrefix(path, "/app/"):
 		path = strings.TrimPrefix(path, "/app")
+	case path == "/patient" || path == "/patient/":
+		sub, path = "patient", "/index.html"
+	case strings.HasPrefix(path, "/patient/"):
+		sub, path = "patient", strings.TrimPrefix(path, "/patient")
 	case path == "/dash" || path == "/dash/":
 		sub, path = "dashboards", "/index.html"
 	default:

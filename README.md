@@ -23,11 +23,14 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 | 8 | Telehealth + AI triage | [`services/telehealth-service`](services/telehealth-service) (nurse-first consults, referral loop; every consult closes as a FHIR Encounter, every prescription as a FHIR MedicationRequest in the SHR **and** a routed pharmacy dispense-request) + [`packages/triage`](packages/triage) — approval-gated writes only |
 | 8a | Pharmacy & dispensing | [`services/pharmacy-service`](services/pharmacy-service) — tracer-drug formulary with allergy classes, per-facility stock, atomic dispense = status flip + stock decrement + NHIA claim draft; the allergy gate is structural (blocked prescriptions are recorded, never dropped) |
 | 9 | **Infrastructure layer (the differentiator)** — power, water, cold chain, equipment | [`services/telemetry-collector`](services/telemetry-collector) + [`services/equipment-service`](services/equipment-service) (BMET ticket routing, donation screening) |
+| 11 | Patient engagement & notification rails | [`services/notification-service`](services/notification-service) — subscriptions, SMS provider seam (webhook, never a proprietary SDK), persisted-attempt delivery states, five-language rendering, no clinical detail over SMS |
 | 10 | Analytics & developer platform | [`packages/analytics`](packages/analytics) (pilot-gate metrics) + [`packages/dhis2-bridge`](packages/dhis2-bridge) + public FHIR APIs |
 
-Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) ↔ [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent).
+Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) → [`services/lga-hub`](services/lga-hub) (LGA store-and-forward: priority queues — critical referrals overtake bulk telemetry — JSONL spill fsynced before ack, power-cut-proof, idempotent) → [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent). See [ADR-0011](docs/architecture/adr-0011-national-scale.md).
 
 FHIR foundation: **Medplum** (Apache-2.0) is the designated production FHIR server — profile-gated in [`infra/compose/platform.yaml`](infra/compose/platform.yaml) (`--profile medplum`) with its own Postgres + Redis; [`tools/medplum-validate`](tools/medplum-validate) proves the four OpenHealth profiles and examples against a live server. shr-service stays the stdlib edge/dev seam behind the same envelope contract. Hospitals running OpenMRS/Bahmni interoperate via [`packages/adapters/openmrs.py`](packages/adapters/openmrs.py) (FHIR2 bridge) — peers, never rewrites. See [ADR-0010](docs/architecture/adr-0010-clinical-loop-emr.md).
+
+National-scale proof: `bash demo/national-sync.sh` — facility → LGA hub → state plane: priority forwarding order, duplicate retry dedupe, hub killed mid-flight and restarted from the spill with queues intact.
 
 Clinical loop proof: `bash demo/clinical-loop.sh` — consult → assess → prescribe → SHR (MedicationRequest + Encounter) → pharmacy dispense → stock decrement + claim draft → allergy-gate rejection, end to end in-memory.
 
@@ -39,7 +42,7 @@ Scale proof: [`benchmark/`](benchmark) — the Nigerian Million-Claim Challenge 
 L5  Applications        EMR · CHW app · claims console · analytics · 3rd-party apps
 L4  Interop & exchange  FHIR R4 gateway · consent manager · terminology · DHIS2/NHIA/NIMC bridges
 L3  Cloud core (K8s)    Postgres HA · FHIR server · Kafka events · MinIO · Keycloak OIDC · GitOps
-L2  Connectivity        2G/3G/4G · store-and-forward sync · USSD/SMS fallback
+L2  Connectivity        2G/3G/4G · LGA hub store-and-forward (priority queues) · USSD/SMS fallback
 L1  Facility edge       $1,200 edge node · solar + LFP battery (15W avg) · IoT telemetry · PWA clients
 ```
 
@@ -67,7 +70,7 @@ Or run the pieces individually (Go 1.22+, Rust stable, Python 3.11+; stdlib-only
 # unit tests, per language (Go modules are independent — run per module)
 for m in claims-orchestrator payment-switch-mock registry-service sync-agent \
          sync-ingest consent-service ussd-gateway wallet-service equipment-service \
-         telehealth-service shr-service; do
+         telehealth-service shr-service pharmacy-service notification-service lga-hub; do
   (cd "services/$m" && go test ./...)
 done
 cargo test --manifest-path services/ledger/Cargo.toml
@@ -92,8 +95,8 @@ docker compose -f infra/compose/platform.yaml up --build
 ## Repository layout
 
 ```
-apps/        Client apps — offline-first PWA (nurse/CHW), operations dashboards
-             (facility + state), Android shell (WebView/TWA) [ADR-0009]
+apps/        Client apps — offline-first PWA (nurse/CHW EMR), patient app,
+             operations dashboards (facility + state), Android shell (WebView/TWA) [ADR-0009]
 services/    Go + Rust deployable services (the runtime plane)
 packages/    Python domain packages (rules, analytics, ML seams)
 db/          State-plane Postgres migrations (idempotent, applied at boot)
@@ -166,16 +169,23 @@ One PWA core, three vessels ([ADR-0009](docs/architecture/adr-0009-client-apps-o
   cold chain, power, water, tickets, activity) and state situation room
   (dark ops theme: live facility map, pilot gates, alerts, platform health).
   Both render last-known data offline and never fake liveness.
+- **`apps/patient`** — the patient's own app: sign-in with patient code + phone
+  (mismatches are 404 — no enumeration), offline feed with action-needed
+  grouping (referrals, pickups, lab-ready within 14 days surface first),
+  relative timestamps, five languages, calm daylight theme. SMS notifications
+  (notification-service) reach feature phones too; USSD stays a peer channel.
 - **`apps/android-shell`** — thin native WebView wrapper (minSdk 24) with a
   bundled PWA snapshot for zero-connectivity first launch; TWA for Play
   distribution.
 
-The api-gateway serves the apps at `/app` and `/dash` on the same origin as
-`/api/*` — one port, one trust boundary, no CORS.
+The api-gateway serves the apps at `/app`, `/dash` and `/patient` on the same
+origin as `/api/*` (including `/api/notify` for the patient feed) — one port,
+one trust boundary, no CORS.
 
 Runbooks: [deploy](docs/runbooks/deploy.md) ·
 [backup & restore](docs/runbooks/backup-restore.md) ·
 [edge node](docs/runbooks/edge.md) ·
+[LGA hub](docs/runbooks/lga-hub.md) ·
 [90-day pilot go-live](docs/runbooks/pilot-90-day-go-live.md).
 
 ## Contributing

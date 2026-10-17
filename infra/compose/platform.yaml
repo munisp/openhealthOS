@@ -40,7 +40,9 @@ services:
              && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
              -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql
              && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql"
+             -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql
+             && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
+             -v ON_ERROR_STOP=1 -f /migrations/0004_notifications.sql"
 
   # OIDC issuer for the gateways (ADR-0006): create the 'openhealth' realm,
   # then uncomment OIDC_ISSUER on shr-service / claims-orchestrator below.
@@ -187,6 +189,7 @@ services:
       EQUIPMENT_URL: http://equipment-service:8086
       TELEHEALTH_URL: http://telehealth-service:8087
       PHARMACY_URL: http://pharmacy-service:8088
+      NOTIFY_URL: http://notification-service:8089
       SYNC_URL: http://sync-ingest:8443
       APPS_ROOT: /srv/openhealth/apps   # serves /app (PWA) and /dash (boards)
       # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment to enforce
@@ -194,6 +197,21 @@ services:
       - ../../apps:/srv/openhealth/apps:ro
     ports: ["8000:8000"]
     depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest]
+
+  # Outbound patient-contact rail (ADR-0011): appointment/result/pickup/
+  # referral/immunisation SMS driven by domain events. Log provider by
+  # default; set SMS_WEBHOOK_URL to a real aggregator in deployment.
+  notification-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: notification-service }
+    environment:
+      LISTEN: ":8089"
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      # SMS_WEBHOOK_URL: https://aggregator.example/send
+    ports: ["18089:8089"]
+    depends_on: [migrate]
 
   # ── Medplum FHIR foundation (profile-gated) ─────────────────────────
   # The designated production FHIR core (ADR-0002/ADR-0010): full R4

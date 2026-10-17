@@ -90,11 +90,30 @@ spec:
     - to:
         - podSelector: {}
 ---
+# SMS rail: notification-service may reach HTTPS endpoints only (the SMS
+# aggregator webhook, ADR-0011). Everything else stays default-denied.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-notification-sms-egress
+  namespace: oh-state-example
+spec:
+  podSelector:
+    matchLabels: { app: notification-service }
+  policyTypes: [Egress]
+  egress:
+    - ports:
+        - { port: 443, protocol: TCP }
+---
 # Schema migrations as a Job — runs before deployments roll, fails loudly.
+# The openhealth-migrations ConfigMap is GitOps-managed:
+#   kubectl create configmap openhealth-migrations -n oh-state-example \
+#     --from-file=db/migrations/ --dry-run=client -o yaml | kubectl apply -f -
+# Jobs are immutable — bump the job name whenever the migration set changes.
 apiVersion: batch/v1
 kind: Job
 metadata:
-  name: openhealth-migrate-0002
+  name: openhealth-migrate-0004
   namespace: oh-state-example
 spec:
   backoffLimit: 3
@@ -115,7 +134,8 @@ spec:
           args:
             - psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql &&
               psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql &&
-              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql &&
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0004_notifications.sql
           env:
             - name: DATABASE_URL
               valueFrom:
