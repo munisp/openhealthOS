@@ -242,3 +242,34 @@ func (p *PostgresService) ListTickets(status string) []Ticket {
 }
 
 var _ EquipmentService = (*PostgresService)(nil)
+
+// AutoResolve closes an open AUTO: ticket on telemetry recovery — guarded
+// transition mirrors the memory store exactly.
+func (p *PostgresService) AutoResolve(ticketID string) error {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback(ctx)
+	var equipmentID string
+	err = tx.QueryRow(ctx,
+		`UPDATE tickets SET status='resolved', technician='auto:telemetry', resolved_at=now()
+		 WHERE id=$1 AND status='open' AND issue LIKE 'AUTO:%' RETURNING equipment_id`,
+		ticketID).Scan(&equipmentID)
+	if err == pgx.ErrNoRows {
+		var st string
+		if qerr := tx.QueryRow(ctx, "SELECT status FROM tickets WHERE id=$1", ticketID).Scan(&st); qerr == pgx.ErrNoRows {
+			return ErrNotFound
+		}
+		return ErrBadTransition
+	}
+	if err != nil {
+		return err
+	}
+	if _, err := tx.Exec(ctx, "UPDATE equipment SET status='working' WHERE id=$1", equipmentID); err != nil {
+		return err
+	}
+	return tx.Commit(ctx)
+}

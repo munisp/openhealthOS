@@ -179,6 +179,28 @@ func (s *Service) Resolve(ticketID string) error {
 	return nil
 }
 
+// AutoResolve closes an open telemetry-raised (AUTO:) ticket on sensor
+// recovery — the recovery reading IS the closure evidence. Human tickets
+// still require assignment first (marketplace accountability).
+func (s *Service) AutoResolve(ticketID string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	t, ok := s.tickets[ticketID]
+	if !ok {
+		return ErrNotFound
+	}
+	if t.Status != "open" || !strings.HasPrefix(t.Issue, "AUTO:") {
+		return ErrBadTransition
+	}
+	t.Status = "resolved"
+	t.Technician = "auto:telemetry"
+	t.ResolvedAt = s.now().UTC().Format(time.RFC3339)
+	if e, ok := s.equip[t.EquipmentID]; ok {
+		e.Status = "working"
+	}
+	return nil
+}
+
 func (s *Service) GetEquipment(id string) (Equipment, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -209,6 +231,7 @@ type EquipmentService interface {
 	OpenTicket(equipmentID, issue, priority string) (Ticket, error)
 	Assign(ticketID, techID string) error
 	Resolve(ticketID string) error
+	AutoResolve(ticketID string) error
 	GetEquipment(id string) (Equipment, error)
 	ListTickets(status string) []Ticket
 }
@@ -313,6 +336,7 @@ func (s server) routes() *http.ServeMux {
 			writeJSON(w, 200, map[string]string{"status": "ok"})
 		}
 	})
+	readingRoute(mux, s.svc)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }

@@ -153,6 +153,27 @@ services:
     ports: ["18443:8443"]
     depends_on: [migrate]
 
+  # Single public entry: all external traffic enters through the gateway;
+  # per-service ports above are for development convenience only.
+  api-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: api-gateway }
+    environment:
+      LISTEN: ":8000"
+      CLAIMS_URL: http://claims-orchestrator:8080
+      REGISTRY_URL: http://registry-service:8081
+      CONSENT_URL: http://consent-service:8082
+      USSD_URL: http://ussd-gateway:8083
+      WALLET_URL: http://wallet-service:8084
+      SHR_URL: http://shr-service:8085
+      EQUIPMENT_URL: http://equipment-service:8086
+      TELEHEALTH_URL: http://telehealth-service:8087
+      # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment to enforce
+    ports: ["8000:8000"]
+    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service]
+
 volumes:
   platform-pgdata:
   ledger-claims:

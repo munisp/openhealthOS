@@ -34,15 +34,17 @@ metadata:
   name: allow-gateway-ingress
   namespace: oh-state-example
 spec:
+  # The api-gateway is the ONLY pod reachable from outside the namespace;
+  # every other service is east-west traffic behind it.
   podSelector:
-    matchLabels: { app: claims-orchestrator }
+    matchLabels: { app: api-gateway }
   policyTypes: [Ingress]
   ingress:
     - from:
         - namespaceSelector:
             matchLabels: { kubernetes.io/metadata.name: ingress }
       ports:
-        - { port: 8080, protocol: TCP }
+        - { port: 8000, protocol: TCP }
 ---
 # Prometheus scraping: /metrics and /healthz only, from the monitoring
 # namespace.
