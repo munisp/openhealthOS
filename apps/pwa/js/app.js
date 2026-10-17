@@ -7,6 +7,8 @@ import { SyncClient, materialize } from "./sync.js";
 import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
 import { el, TasksView, PatientsView, RegisterForm, EncounterView,
          SyncView, DashboardView, SettingsView, generateTasksFor } from "./views.js";
+import { ChartView, QueueView } from "./emr.js";
+import { FORMULARY, buildTimeline, appointmentsForDay } from "./clinical.js";
 
 const state = {
   db: null,
@@ -88,12 +90,22 @@ const ctx = {
     $("#sheet-root").innerHTML = "";
     $("#sheet-root").append(RegisterForm(ctx));
   },
+  openSheet(node) {
+    $("#sheet-root").innerHTML = "";
+    $("#sheet-root").append(node);
+  },
   closeSheet() { $("#sheet-root").innerHTML = ""; },
-  openEncounter(pid) {
+  openChart(pid) {
+    state.activePatient = this._patients.find((p) => p.id === pid);
+    location.hash = "#/chart";
+  },
+  startVisit(pid) {
     state.activePatient = this._patients.find((p) => p.id === pid);
     location.hash = "#/encounter";
   },
   get activePatient() { return state.activePatient; },
+  get timeline() { return state._timeline || []; },
+  get queue() { return state._queue || []; },
   async registerPatient(f) {
     const r = await state.db.replica();
     const id = "pt-" + crypto.randomUUID().slice(0, 8);
@@ -134,6 +146,89 @@ const ctx = {
     await state.db.saveReplica(r);
     await state.db.queueEvent("encounter", { encounter_id: id, patient_id: patientId, signs, disposition: emergency ? "REFER-EMERGENCY" : "ROUTINE" });
   },
+  async recordVitals(patientId, v, flags) {
+    const r = await state.db.replica();
+    const id = "vit-" + crypto.randomUUID().slice(0, 8);
+    r.set(id, "Vitals", "patient_id", patientId);
+    r.set(id, "Vitals", "ts", Date.now());
+    for (const [k, val] of Object.entries(v)) {
+      if (val != null && val !== "") r.set(id, "Vitals", k, Number(val));
+    }
+    r.set(id, "Vitals", "flags", flags);
+    await state.db.saveReplica(r);
+    await state.db.queueEvent("vitals", { vitals_id: id, patient_id: patientId, ...v, danger: flags.some((f) => f.level === "danger") });
+  },
+  async orderLabs(patientId, codes) {
+    const r = await state.db.replica();
+    for (const code of codes) {
+      const id = "lab-" + crypto.randomUUID().slice(0, 8);
+      r.set(id, "LabOrder", "patient_id", patientId);
+      r.set(id, "LabOrder", "ts", Date.now());
+      r.set(id, "LabOrder", "test_code", code);
+      await state.db.queueEvent("lab_order", { lab_order_id: id, patient_id: patientId, test_code: code });
+    }
+    await state.db.saveReplica(r);
+  },
+  async prescribe(patientId, drugCode, dose, quantity) {
+    const p = state.activePatient;
+    const drug = FORMULARY.find((d) => d.code === drugCode);
+    const r = await state.db.replica();
+    const id = "rx-" + crypto.randomUUID().slice(0, 8);
+    r.set(id, "Prescription", "patient_id", patientId);
+    r.set(id, "Prescription", "ts", Date.now());
+    r.set(id, "Prescription", "drug_code", drugCode);
+    r.set(id, "Prescription", "drug_name", drug?.name || drugCode);
+    r.set(id, "Prescription", "dose", dose);
+    r.set(id, "Prescription", "quantity", quantity);
+    r.set(id, "Prescription", "status", "queued");
+    await state.db.saveReplica(r);
+    await state.db.queueEvent("prescription", {
+      prescription_id: id, patient_id: patientId, drug_code: drugCode,
+      dose, quantity, allergies: p?.allergies || [],
+    });
+    // Opportunistic push to the pharmacy counter when the gateway is
+    // reachable; the queued event remains the durable record offline.
+    if (navigator.onLine) {
+      try {
+        const base = location.pathname.startsWith("/app") ? location.origin : "";
+        if (base) {
+          const resp = await fetch(`${base}/api/pharmacy/dispense-requests`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              id, prescription_id: id, patient_id: patientId,
+              facility_id: "edge", drug_code: drugCode, dose, quantity,
+              prescriber: "pwa", allergies: p?.allergies || [],
+            }),
+          });
+          if (resp.ok) {
+            const r2 = await state.db.replica();
+            r2.set(id, "Prescription", "status", "sent");
+            await state.db.saveReplica(r2);
+          }
+        }
+      } catch { /* stays queued — pharmacy pull/eventbus reconciles */ }
+    }
+  },
+  async scheduleAppointment(patientId, when, reason) {
+    const p = state.activePatient;
+    const r = await state.db.replica();
+    const id = "apt-" + crypto.randomUUID().slice(0, 8);
+    r.set(id, "Appointment", "patient_id", patientId);
+    r.set(id, "Appointment", "patient_name", p?.name || "");
+    r.set(id, "Appointment", "when", when);
+    r.set(id, "Appointment", "reason", reason);
+    r.set(id, "Appointment", "status", "scheduled");
+    r.set(id, "Appointment", "ts", Date.now());
+    await state.db.saveReplica(r);
+    await state.db.queueEvent("appointment", { appointment_id: id, patient_id: patientId, when, reason });
+  },
+  async setCohorts(patientId, cohorts, allergies) {
+    const r = await state.db.replica();
+    r.set(patientId, "Patient", "cohorts", cohorts);
+    r.set(patientId, "Patient", "allergies", allergies);
+    await state.db.saveReplica(r);
+    await state.db.queueEvent("patient_updated", { patient_id: patientId, cohorts, allergies });
+  },
   async syncNow() { return state.sync.syncNow(); },
   get syncStatus() { return state._syncStatus || { pendingEvents: 0, totalDocs: 0, online: navigator.onLine }; },
   async setLanguage(code) {
@@ -151,6 +246,12 @@ async function refreshData() {
   ctx._tasks = docs.filter((d) => d.type === "Task" && d.status === "open")
     .sort((a, b) => a.due - b.due);
   state._syncStatus = await state.sync.status();
+  if (state.activePatient) {
+    state._timeline = buildTimeline(state.activePatient.id, docs);
+  }
+  const now = new Date();
+  const dayStart = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
+  state._queue = appointmentsForDay(docs, dayStart, dayStart + 86400000);
   const today = new Date().toDateString();
   state._dash = {
     patients: ctx._patients.length,
@@ -169,7 +270,9 @@ async function render() {
   const routes = {
     "#/tasks": () => TasksView(ctx),
     "#/patients": () => PatientsView(ctx),
+    "#/chart": () => (state.activePatient ? ChartView(ctx) : PatientsView(ctx)),
     "#/encounter": () => (state.activePatient ? EncounterView(ctx) : TasksView(ctx)),
+    "#/queue": () => QueueView(ctx),
     "#/sync": () => SyncView(ctx),
     "#/dashboard": () => DashboardView(ctx),
     "#/more": () => SettingsView(ctx),
@@ -182,7 +285,7 @@ async function render() {
 function renderNav() {
   const tabs = [
     ["#/tasks", "tasks", "☑"], ["#/patients", "patients", "◉"],
-    ["#/sync", "sync", "↻"], ["#/dashboard", "dashboard", "▦"], ["#/more", "more", "⋯"],
+    ["#/queue", "queue", "☷"], ["#/sync", "sync", "↻"], ["#/more", "more", "⋯"],
   ];
   const nav = $("#tabbar");
   nav.innerHTML = "";

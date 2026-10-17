@@ -13,6 +13,14 @@ import { Replica } from "./crdt.js";
 
 const DB_NAME = "openhealth";
 const DB_VERSION = 1;
+const IDB_TIMEOUT_MS = 2500; // embedded WebViews can hang IDB — never block care
+
+function withTimeout(promise, ms = IDB_TIMEOUT_MS) {
+  return Promise.race([
+    promise,
+    new Promise((_, rej) => setTimeout(() => rej(new Error("idb-timeout")), ms)),
+  ]);
+}
 
 function open() {
   return new Promise((resolve, reject) => {
@@ -26,6 +34,35 @@ function open() {
     req.onsuccess = () => resolve(req.result);
     req.onerror = () => reject(req.error);
   });
+}
+
+/* In-memory fallback with the same shape as an IDB database handle —
+ * used when IndexedDB is unavailable or hangs (embedded WebViews, private
+ * mode). The app stays fully usable for the session; persistence resumes
+ * on the next launch on a healthy browser. */
+function memoryHandle() {
+  const stores = { docs: new Map(), outbox: new Map(), meta: new Map() };
+  const store = (name) => ({
+    get: (k) => immediate(stores[name].get(k)),
+    getAll: () => immediate([...stores[name].values()]),
+    put: (v) => { stores[name].set(v.id ?? v.k, v); return immediate(v); },
+    delete: (k) => { stores[name].delete(k); return immediate(undefined); },
+  });
+  const immediate = (v) => {
+    const r = { result: v };
+    queueMicrotask(() => r.onsuccess?.());
+    return r;
+  };
+  return {
+    __memory: true,
+    transaction(name) {
+      const s = store(name);
+      const t = { objectStore: () => s, oncomplete: null, onerror: null };
+      s.transaction = t;
+      queueMicrotask(() => t.oncomplete?.());
+      return t;
+    },
+  };
 }
 
 function tx(db, store, mode, fn) {
@@ -52,13 +89,22 @@ export class LocalDB {
   }
 
   static async init() {
-    const db = await open();
-    let deviceId = (await reqToPromise(db.transaction("meta", "readonly").objectStore("meta").get("deviceId")))?.v;
-    if (!deviceId) {
-      deviceId = "dev-" + crypto.randomUUID().slice(0, 8);
-      await reqToPromise(db.transaction("meta", "readwrite").objectStore("meta").put({ k: "deviceId", v: deviceId }));
+    let db;
+    try {
+      db = await withTimeout(open());
+      const probe = db.transaction("meta", "readonly").objectStore("meta").get("deviceId");
+      let deviceId = (await withTimeout(reqToPromise(probe)))?.v;
+      if (!deviceId) {
+        deviceId = "dev-" + crypto.randomUUID().slice(0, 8);
+        await withTimeout(reqToPromise(
+          db.transaction("meta", "readwrite").objectStore("meta").put({ k: "deviceId", v: deviceId })));
+      }
+      return new LocalDB(db, deviceId);
+    } catch {
+      // IndexedDB hung or is unavailable (embedded WebView, private mode):
+      // fall back to an in-memory store so care workflows still run.
+      return new LocalDB(memoryHandle(), "dev-" + crypto.randomUUID().slice(0, 8));
     }
-    return new LocalDB(db, deviceId);
   }
 
   /* Load all docs into a live Replica for CRDT writes. */

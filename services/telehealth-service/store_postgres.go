@@ -255,4 +255,26 @@ func (p *PostgresService) Dispense(prescriptionID string) (Prescription, error) 
 	return rx, err
 }
 
+// ListPrescriptions supports the pharmacy pull fallback.
+func (p *PostgresService) ListPrescriptions(status string) []Prescription {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	rows, err := p.pool.Query(ctx, `
+		SELECT id, consult_id, prescriber, medication, dose, quantity, pharmacy_id, status
+		FROM prescriptions WHERE ($1='' OR status=$1) ORDER BY id`, status)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []Prescription{}
+	for rows.Next() {
+		var rx Prescription
+		if err := rows.Scan(&rx.ID, &rx.ConsultID, &rx.Prescriber, &rx.Medication,
+			&rx.Dose, &rx.Quantity, &rx.PharmacyID, &rx.Status); err == nil {
+			out = append(out, rx)
+		}
+	}
+	return out
+}
+
 var _ TelehealthService = (*PostgresService)(nil)

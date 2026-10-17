@@ -47,7 +47,7 @@ jobs:
       - name: vet and test all Go modules
         run: |
           set -e
-          for m in api-gateway claims-orchestrator payment-switch-mock registry-service sync-agent sync-ingest consent-service ussd-gateway wallet-service equipment-service telehealth-service shr-service; do
+          for m in api-gateway claims-orchestrator payment-switch-mock registry-service sync-agent sync-ingest consent-service ussd-gateway wallet-service equipment-service telehealth-service shr-service pharmacy-service; do
             echo "== $m =="
             (cd "services/$m" && go vet ./... && go test ./...)
           done
@@ -134,6 +134,17 @@ jobs:
           grep -q '"decision": "PEND"' /tmp/demo.out
           grep -q '"preauth_id": "PA-' /tmp/demo.out
           echo "e2e demo: approve / pend / preauth all observed"
+      - name: clinical loop smoke (telehealth → SHR → pharmacy → claim draft)
+        run: |
+          bash demo/clinical-loop.sh | tee /tmp/loop.out
+          grep -q "pharmacy_routed: True" /tmp/loop.out
+          grep -q "intent: order" /tmp/loop.out
+          grep -q "encounter status: finished" /tmp/loop.out
+          grep -q "claim draft ₦ 2880" /tmp/loop.out
+          grep -q "AL8020: 76" /tmp/loop.out
+          grep -q "allergy:penicillin blocks AMOX500" /tmp/loop.out
+          grep -q "CLINICAL LOOP OK" /tmp/loop.out
+          echo "clinical loop: prescribe / SHR / dispense / allergy-gate all observed"
 
   clients:
     runs-on: ubuntu-latest

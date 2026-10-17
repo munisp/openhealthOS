@@ -109,11 +109,12 @@ export function PatientsView(ctx) {
     !ctx.query || (p.name || "").toLowerCase().includes(ctx.query) ||
     (p.village || "").toLowerCase().includes(ctx.query));
   for (const p of list) {
-    wrap.append(el("div", { class: "card patient-card", onclick: () => ctx.openEncounter(p.id) },
+    wrap.append(el("div", { class: "card patient-card", onclick: () => ctx.openChart(p.id) },
       el("div", { class: "patient-main" },
         el("div", { class: "patient-name" }, p.name),
         el("div", { class: "task-sub" },
           `${p.village ?? ""} · ${t("age")} ${p.age_years ?? "—"}${p.pregnant ? " · " + t("pregnant") : ""}`)),
+      ...(p.allergies || []).map((a) => badge("⚠", "danger")),
       p.pregnant ? badge(t("pregnant"), "warn") : null,
       (p.immunizations || []).length ? badge(`${(p.immunizations || []).length} 💉`, "ok") : null));
   }
@@ -177,7 +178,7 @@ export function EncounterView(ctx) {
         setTimeout(() => ctx.navigate("#/tasks"), 1400);
       },
     }, t("submit")),
-    el("button", { class: "btn btn-outline btn-block", onclick: () => ctx.navigate("#/patients") }, t("cancel")));
+    el("button", { class: "btn btn-outline btn-block", onclick: () => ctx.navigate("#/chart") }, t("cancel")));
   return wrap;
 }
 
@@ -233,6 +234,7 @@ export function SettingsView(ctx) {
     el("div", { class: "card" },
       el("div", { class: "field-label" }, t("facility")),
       el("div", {}, ctx.facility)),
+    el("button", { class: "btn btn-outline btn-block", onclick: () => ctx.navigate("#/dashboard") }, t("dashboard")),
     el("div", { class: "card about" },
       el("div", { class: "field-label" }, t("about")),
       el("div", {}, `OpenHealth OS · AGPL-3.0 · ${t("version")} 1.0.0`),

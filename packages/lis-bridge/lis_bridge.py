@@ -185,11 +185,28 @@ class LabQueue:
         self.orders[order.order_id] = order
         return order
 
-    def result(self, order_id: str, value: float, at: datetime) -> dict:
-        """Record a result and return the FHIR Observation."""
+    def result(self, order_id: str, value: float, at: datetime,
+               shr_url: str | None = None, facility_id: str | None = None) -> dict:
+        """Record a result and return the FHIR Observation.
+
+        When shr_url is given, the observation is pushed into the shared
+        health record immediately. Push failures never fail the result:
+        the envelope reports shr_pushed=False and the observation stays
+        available for the next sync pass.
+        """
         order = self.orders[order_id]
         order.record_result(value, at)
-        return to_fhir_observation(order)
+        obs = to_fhir_observation(order)
+        if shr_url:
+            from shr import push_observation  # local module, stdlib-only
+            try:
+                push_observation(shr_url, obs, patient_id=order.patient_id,
+                                 facility_id=facility_id or order.spoke_facility_id)
+                obs["shr_pushed"] = True
+            except (ConnectionError, ValueError, OSError) as e:
+                obs["shr_pushed"] = False
+                obs["shr_error"] = str(e)
+        return obs
 
     def critical_results(self) -> list[LabOrder]:
         """Resulted-but-undelivered orders with critical values.

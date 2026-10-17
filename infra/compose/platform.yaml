@@ -36,7 +36,11 @@ services:
     volumes: ["../../db/migrations:/migrations:ro"]
     command: >
       sh -c "psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -f /migrations/0001_init.sql"
+             -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql
+             && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
+             -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql
+             && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
+             -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql"
 
   # OIDC issuer for the gateways (ADR-0006): create the 'openhealth' realm,
   # then uncomment OIDC_ISSUER on shr-service / claims-orchestrator below.
@@ -113,8 +117,20 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile.go-service
       args: { MODULE: telehealth-service }
-    environment: { LISTEN: ":8087" }
+    environment:
+      LISTEN: ":8087"
+      SHR_URL: http://shr-service:8085        # FHIR Encounter/MedicationRequest writes
+      PHARMACY_URL: http://pharmacy-service:8088  # prescription routing
     ports: ["18087:8087"]
+    depends_on: [shr-service, pharmacy-service]
+
+  pharmacy-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: pharmacy-service }
+    environment: { LISTEN: ":8088" }
+    ports: ["18088:8088"]
 
   wallet-service:
     build:
@@ -170,6 +186,7 @@ services:
       SHR_URL: http://shr-service:8085
       EQUIPMENT_URL: http://equipment-service:8086
       TELEHEALTH_URL: http://telehealth-service:8087
+      PHARMACY_URL: http://pharmacy-service:8088
       SYNC_URL: http://sync-ingest:8443
       APPS_ROOT: /srv/openhealth/apps   # serves /app (PWA) and /dash (boards)
       # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment to enforce
@@ -178,7 +195,58 @@ services:
     ports: ["8000:8000"]
     depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest]
 
+  # ── Medplum FHIR foundation (profile-gated) ─────────────────────────
+  # The designated production FHIR core (ADR-0002/ADR-0010): full R4
+  # search, subscriptions, bots, compartments. shr-service remains the
+  # lightweight contract-compatible seam for edge/dev; Medplum is the
+  # deployment target behind the same envelope contract. Profile-gated
+  # so the default plane stays lean:
+  #
+  #   docker compose -f infra/compose/platform.yaml --profile medplum up --build
+  #
+  # First boot takes a few minutes (DB migrations + seed). Health:
+  #   curl localhost:18103/healthcheck
+  # Then validate the OpenHealth profiles against it:
+  #   python3 tools/medplum-validate/main.py
+  medplum-db:
+    image: postgres:16-alpine
+    profiles: ["medplum"]
+    environment:
+      POSTGRES_USER: medplum
+      POSTGRES_PASSWORD: medplum-dev
+      POSTGRES_DB: medplum
+    volumes: ["medplum-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U medplum"]
+      interval: 5s
+
+  medplum-redis:
+    image: redis:7-alpine
+    profiles: ["medplum"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+
+  medplum:
+    image: medplum/medplum-server:latest
+    profiles: ["medplum"]
+    environment:
+      MEDPLUM_BASE_URL: http://localhost:18103/
+      MEDPLUM_PORT: 8103
+      MEDPLUM_DATABASE_HOST: medplum-db
+      MEDPLUM_DATABASE_PORT: 5432
+      MEDPLUM_DATABASE_DBNAME: medplum
+      MEDPLUM_DATABASE_USERNAME: medplum
+      MEDPLUM_DATABASE_PASSWORD: medplum-dev
+      MEDPLUM_REDIS_HOST: medplum-redis
+      MEDPLUM_REDIS_PORT: 6379
+    ports: ["18103:8103"]
+    depends_on:
+      medplum-db: { condition: service_healthy }
+      medplum-redis: { condition: service_healthy }
+
 volumes:
   platform-pgdata:
   ledger-claims:
   ledger-wallet:
+  medplum-pgdata:

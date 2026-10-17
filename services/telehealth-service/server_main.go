@@ -30,7 +30,14 @@ func main() {
 	} else {
 		log.Print("telehealth storage: in-memory (set DATABASE_URL for postgres)")
 	}
-	s := server{svc: svc}
+	ix := IntegrationsFromEnv(os.Getenv)
+	if ix.shr != nil {
+		log.Print("integrations: SHR writes enabled (FHIR Encounter/MedicationRequest)")
+	}
+	if ix.pharmacy != nil {
+		log.Print("integrations: pharmacy routing enabled")
+	}
+	s := server{svc: svc, ix: ix}
 	log.Printf("OpenHealth OS telehealth-service on %s (nurse-first consults + referrals)", addr)
 	handler := http.Handler(s.routes())
 	if v := authz.FromEnv(os.Getenv); v != nil {

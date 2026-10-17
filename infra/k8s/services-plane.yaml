@@ -277,6 +277,49 @@ spec:
 apiVersion: apps/v1
 kind: Deployment
 metadata:
+  name: pharmacy-service
+  namespace: oh-state-example
+  labels: { app: pharmacy-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: pharmacy-service }
+  template:
+    metadata:
+      labels: { app: pharmacy-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: pharmacy-service
+          image: ghcr.io/munisp/openhealthos/pharmacy-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8088 }]
+          env:
+            - { name: LISTEN, value: ":8088" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8088 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
   name: ussd-gateway
   namespace: oh-state-example
   labels: { app: ussd-gateway }

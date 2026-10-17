@@ -114,7 +114,8 @@ spec:
           command: ["sh", "-c"]
           args:
             - psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql &&
-              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql &&
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql
           env:
             - name: DATABASE_URL
               valueFrom:

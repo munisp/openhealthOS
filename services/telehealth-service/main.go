@@ -242,6 +242,19 @@ func (s *Service) Prescribe(consultID, prescriber, medication, dose string, quan
 }
 
 // Dispense marks a routed prescription filled at the pharmacy.
+// ListPrescriptions supports the pharmacy pull fallback.
+func (s *Service) ListPrescriptions(status string) []Prescription {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Prescription{}
+	for _, p := range s.prescriptions {
+		if status == "" || p.Status == status {
+			out = append(out, *p)
+		}
+	}
+	return out
+}
+
 func (s *Service) Dispense(prescriptionID string) (Prescription, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -274,7 +287,10 @@ var _ TelehealthService = (*Service)(nil)
 
 // ---------------------------------------------------------------- HTTP
 
-type server struct{ svc TelehealthService }
+type server struct {
+	svc TelehealthService
+	ix  Integrations
+}
 
 func (s server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
@@ -287,6 +303,9 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /referrals/{id}/complete", s.completeReferral)
 	mux.HandleFunc("POST /prescriptions", s.prescribe)
 	mux.HandleFunc("POST /prescriptions/{id}/dispense", s.dispense)
+	// Pull fallback: a pharmacy that was down when the prescription was
+	// routed catches up by polling this.
+	mux.HandleFunc("GET /prescriptions", s.listPrescriptions)
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))
 	})
@@ -346,11 +365,17 @@ func (s server) assess(w http.ResponseWriter, r *http.Request) {
 
 func (s server) closeRoutine(w http.ResponseWriter, r *http.Request) {
 	v, err := s.svc.CloseRoutine(r.PathValue("id"))
+	if err == nil {
+		s.ix.onConsultFinished(v)
+	}
 	reply(w, v, err)
 }
 
 func (s server) escalate(w http.ResponseWriter, r *http.Request) {
 	v, err := s.svc.Escalate(r.PathValue("id"))
+	if err == nil {
+		s.ix.onConsultFinished(v)
+	}
 	reply(w, v, err)
 }
 
@@ -379,12 +404,15 @@ func (s server) completeReferral(w http.ResponseWriter, r *http.Request) {
 
 func (s server) prescribe(w http.ResponseWriter, r *http.Request) {
 	var req struct {
-		ConsultID  string `json:"consult_id"`
-		Prescriber string `json:"prescriber"`
-		Medication string `json:"medication"`
-		Dose       string `json:"dose"`
-		Quantity   int    `json:"quantity"`
-		PharmacyID string `json:"pharmacy_id"`
+		ConsultID  string   `json:"consult_id"`
+		Prescriber string   `json:"prescriber"`
+		Medication string   `json:"medication"` // formulary code (e.g. AMOX500)
+		Dose       string   `json:"dose"`
+		Quantity   int      `json:"quantity"`
+		PharmacyID string   `json:"pharmacy_id"`
+		PatientID  string   `json:"patient_id"`  // for the FHIR + pharmacy provenance write
+		FacilityID string   `json:"facility_id"` // prescriber's facility
+		Allergies  []string `json:"allergies"`   // allergy classes from the chart
 	}
 	if !decode(w, r, &req) {
 		return
@@ -394,7 +422,27 @@ func (s server) prescribe(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	v, err := s.svc.Prescribe(req.ConsultID, req.Prescriber, req.Medication, req.Dose, req.Quantity, req.PharmacyID)
-	reply(w, v, err)
+	if err != nil {
+		reply(w, v, err)
+		return
+	}
+	routed := s.ix.onPrescribed(v, req.PatientID, req.FacilityID, req.Allergies)
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{
+		"prescription":    v,
+		"pharmacy_routed": routed, // false → pharmacy pulls via GET /prescriptions?status=routed
+	})
+}
+
+// listPrescriptions is the pharmacy's pull fallback.
+func (s server) listPrescriptions(w http.ResponseWriter, r *http.Request) {
+	status := r.URL.Query().Get("status")
+	if l, ok := s.svc.(interface{ ListPrescriptions(string) []Prescription }); ok {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(l.ListPrescriptions(status))
+		return
+	}
+	http.Error(w, "listing unsupported by this store", http.StatusNotImplemented)
 }
 
 func (s server) dispense(w http.ResponseWriter, r *http.Request) {

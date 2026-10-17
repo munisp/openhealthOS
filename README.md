@@ -19,12 +19,17 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 | 4 | Claims & insurance rails (eligibility, pre-auth, adjudication) | [`services/claims-orchestrator`](services/claims-orchestrator) + [`packages/adjudicator`](packages/adjudicator) |
 | 5 | Payments (wallets, instant payment, reconciliation) | [`services/wallet-service`](services/wallet-service) (micro-collections, payouts) + [`services/ledger`](services/ledger) + Mojaloop-pattern switch seam |
 | 6 | Procurement marketplace | [`packages/procurement`](packages/procurement) — pooled ordering + supplier scorecards from stock-out telemetry |
-| 7 | Laboratory (hub-and-spoke LIS) | [`packages/lis-bridge`](packages/lis-bridge) — sample chain-of-custody, results as FHIR Observations, critical-value surfacing |
-| 8 | Telehealth + AI triage | [`services/telehealth-service`](services/telehealth-service) (nurse-first consults, referral loop, prescription routing) + [`packages/triage`](packages/triage) — approval-gated writes only |
+| 7 | Laboratory (hub-and-spoke LIS) | [`packages/lis-bridge`](packages/lis-bridge) — sample chain-of-custody, results as FHIR Observations pushed to the SHR, critical-value surfacing |
+| 8 | Telehealth + AI triage | [`services/telehealth-service`](services/telehealth-service) (nurse-first consults, referral loop; every consult closes as a FHIR Encounter, every prescription as a FHIR MedicationRequest in the SHR **and** a routed pharmacy dispense-request) + [`packages/triage`](packages/triage) — approval-gated writes only |
+| 8a | Pharmacy & dispensing | [`services/pharmacy-service`](services/pharmacy-service) — tracer-drug formulary with allergy classes, per-facility stock, atomic dispense = status flip + stock decrement + NHIA claim draft; the allergy gate is structural (blocked prescriptions are recorded, never dropped) |
 | 9 | **Infrastructure layer (the differentiator)** — power, water, cold chain, equipment | [`services/telemetry-collector`](services/telemetry-collector) + [`services/equipment-service`](services/equipment-service) (BMET ticket routing, donation screening) |
 | 10 | Analytics & developer platform | [`packages/analytics`](packages/analytics) (pilot-gate metrics) + [`packages/dhis2-bridge`](packages/dhis2-bridge) + public FHIR APIs |
 
 Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) ↔ [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent).
+
+FHIR foundation: **Medplum** (Apache-2.0) is the designated production FHIR server — profile-gated in [`infra/compose/platform.yaml`](infra/compose/platform.yaml) (`--profile medplum`) with its own Postgres + Redis; [`tools/medplum-validate`](tools/medplum-validate) proves the four OpenHealth profiles and examples against a live server. shr-service stays the stdlib edge/dev seam behind the same envelope contract. Hospitals running OpenMRS/Bahmni interoperate via [`packages/adapters/openmrs.py`](packages/adapters/openmrs.py) (FHIR2 bridge) — peers, never rewrites. See [ADR-0010](docs/architecture/adr-0010-clinical-loop-emr.md).
+
+Clinical loop proof: `bash demo/clinical-loop.sh` — consult → assess → prescribe → SHR (MedicationRequest + Encounter) → pharmacy dispense → stock decrement + claim draft → allergy-gate rejection, end to end in-memory.
 
 Scale proof: [`benchmark/`](benchmark) — the Nigerian Million-Claim Challenge harness runs the real adjudicator over a deterministic 1M-claim stream (~41k claims/s, p99 0.046 ms, zero invariant violations on the reference VM).
 
@@ -148,10 +153,15 @@ needs from day one:
 
 One PWA core, three vessels ([ADR-0009](docs/architecture/adr-0009-client-apps-offline-pwa.md)):
 
-- **`apps/pwa`** — the nurse/CHW app: offline-first (service-worker shell +
-  IndexedDB outbox + CRDT replica), protocol-guided ANC/immunisation/danger-sign
-  workflows, in English · Pidgin · Hausa · Yorùbá · Igbo. ~90 KB, no framework,
-  runs on Android 7 WebViews.
+- **`apps/pwa`** — the nurse/CHW app and the PHC's EMR: offline-first
+  (service-worker shell + IndexedDB outbox + CRDT replica, with an in-memory
+  fallback so embedded WebViews can never hang the app), patient chart with a
+  unified timeline (encounters · vitals · labs · meds · appointments), vitals
+  capture with WHO/IMCI danger bands (age-aware fast-breathing, SpO₂, BP
+  crisis, MUAC SAM/MAM), CPOE-lite lab orders, allergy-gated prescribing,
+  appointments + today's queue, cohort tags (ANC/EPI derived, HIV/TB/NCD
+  clinician-set), in English · Pidgin · Hausa · Yorùbá · Igbo. ~110 KB, no
+  framework, runs on Android 7 WebViews.
 - **`apps/dashboards`** — facility board (sunlight-readable daylight theme:
   cold chain, power, water, tickets, activity) and state situation room
   (dark ops theme: live facility map, pilot gates, alerts, platform health).

@@ -55,6 +55,7 @@ func DefaultRoutes(env func(string) string) []Route {
 		{"/api/fhir", "shr-service", up("SHR_URL", "http://shr-service:8085"), false},
 		{"/api/equipment", "equipment-service", up("EQUIPMENT_URL", "http://equipment-service:8086"), true},
 		{"/api/telehealth", "telehealth-service", up("TELEHEALTH_URL", "http://telehealth-service:8087"), true},
+		{"/api/pharmacy", "pharmacy-service", up("PHARMACY_URL", "http://pharmacy-service:8088"), true},
 		{"/api/sync", "sync-ingest", up("SYNC_URL", "http://sync-ingest:8443"), true},
 	}
 }
@@ -77,6 +78,7 @@ func metricsProbes(env func(string) string) map[string]string {
 		"shr-service":         up("SHR_URL", "http://shr-service:8085"),
 		"equipment-service":   up("EQUIPMENT_URL", "http://equipment-service:8086"),
 		"telehealth-service":  up("TELEHEALTH_URL", "http://telehealth-service:8087"),
+		"pharmacy-service":    up("PHARMACY_URL", "http://pharmacy-service:8088"),
 		"sync-ingest":         up("SYNC_URL", "http://sync-ingest:8443"),
 	}
 }

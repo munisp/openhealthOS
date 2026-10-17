@@ -80,12 +80,30 @@ def validate(resource: dict, profile: dict) -> list[str]:
     return violations
 
 
+def _resolve_profile(resource_type: str) -> dict:
+    """One-arg mode: find the OpenHealth profile constraining this
+    resourceType under fhir/profiles/ (relative to this file)."""
+    import glob
+    import os
+    here = os.path.dirname(os.path.abspath(__file__))
+    for path in sorted(glob.glob(os.path.join(here, "..", "..", "fhir", "profiles", "*.json"))):
+        profile = json.load(open(path))
+        if profile.get("resourceType") == "StructureDefinition":
+            for el in profile.get("snapshot", {}).get("element", []):
+                if el.get("id") == profile.get("type"):
+                    break
+            if profile.get("type") == resource_type:
+                return profile
+    raise SystemExit(f"no profile found for resourceType {resource_type!r}")
+
+
 def main() -> int:
-    if len(sys.argv) != 3:
+    if len(sys.argv) not in (2, 3):
         print(__doc__)
         return 2
     resource = json.load(open(sys.argv[1]))
-    profile = json.load(open(sys.argv[2]))
+    profile = (json.load(open(sys.argv[2])) if len(sys.argv) == 3
+               else _resolve_profile(resource.get("resourceType", "")))
     violations = validate(resource, profile)
     if violations:
         for v in violations:
