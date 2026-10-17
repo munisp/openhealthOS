@@ -1,0 +1,1 @@
+pyarrow>=15; Apache-2.0 — optional, JSONL fallback without it

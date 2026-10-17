@@ -11,12 +11,17 @@
 //
 // /metrics and /healthz bypass the wrapped handler chain's concerns for
 // infrastructure traffic; NetworkPolicy restricts who can reach them.
+//
+// Tracing is opt-in via environment: OTEL_SPANS_FILE=/var/log/spans.jsonl
+// (plus OTEL_SERVICE_NAME) wraps the handler in W3C traceparent
+// propagation with JSON span export — no service code changes.
 package servex
 
 import (
 	"context"
 	"encoding/json"
 	"errors"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -24,6 +29,8 @@ import (
 	"sync/atomic"
 	"syscall"
 	"time"
+
+	"github.com/munisp/openhealthOS/shared/otelx"
 )
 
 // Metrics is the per-service request telemetry.
@@ -117,6 +124,18 @@ func (o Options) withDefaults() Options {
 // shutdown. Returns nil on a clean signal-driven stop.
 func ListenAndServe(addr string, handler http.Handler, opts Options) error {
 	opts = opts.withDefaults()
+	if spansFile := os.Getenv("OTEL_SPANS_FILE"); spansFile != "" {
+		service := os.Getenv("OTEL_SERVICE_NAME")
+		if service == "" {
+			service = addr
+		}
+		exp, err := otelx.NewJSONLExporter(spansFile)
+		if err != nil {
+			return err
+		}
+		handler = otelx.Middleware(service, exp, handler)
+		log.Printf("tracing: W3C traceparent, spans -> %s", spansFile)
+	}
 	m := &Metrics{Started: time.Now()}
 	srv := &http.Server{
 		Addr:              addr,
