@@ -170,9 +170,13 @@ services:
       SHR_URL: http://shr-service:8085
       EQUIPMENT_URL: http://equipment-service:8086
       TELEHEALTH_URL: http://telehealth-service:8087
+      SYNC_URL: http://sync-ingest:8443
+      APPS_ROOT: /srv/openhealth/apps   # serves /app (PWA) and /dash (boards)
       # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment to enforce
+    volumes:
+      - ../../apps:/srv/openhealth/apps:ro
     ports: ["8000:8000"]
-    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service]
+    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest]
 
 volumes:
   platform-pgdata:

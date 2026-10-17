@@ -87,13 +87,17 @@ docker compose -f infra/compose/platform.yaml up --build
 ## Repository layout
 
 ```
+apps/        Client apps — offline-first PWA (nurse/CHW), operations dashboards
+             (facility + state), Android shell (WebView/TWA) [ADR-0009]
 services/    Go + Rust deployable services (the runtime plane)
 packages/    Python domain packages (rules, analytics, ML seams)
 db/          State-plane Postgres migrations (idempotent, applied at boot)
-shared/      Shared Go modules — authz (stdlib-only OIDC/JWKS verification)
+shared/      Shared Go modules — authz (OIDC), servex (timeouts/metrics),
+             crdt (edge replication), eventbus, otelx (tracing)
 fhir/        FHIR R4 implementation guide — Nigerian profiles (Apache-2.0)
 openapi/     Claims-gateway contract (NHCX-analogue): eligibility, pre-auth, claims, status
 infra/       Dockerfiles (shared Go/Rust builds) · compose infra + platform planes · Kubernetes skeletons
+tools/       ota — signed, staged edge/OTA image channel
 benchmark/   Million-Claim Challenge harness (truthful scoring, CI-checked invariants)
 docs/        product / technical / business specs, ADRs, runbooks
 demo/        end-to-end claims demo script
@@ -140,8 +144,28 @@ needs from day one:
   serves with bounded timeouts, and drains connections on SIGTERM
   (`shared/servex`).
 
+## Client apps
+
+One PWA core, three vessels ([ADR-0009](docs/architecture/adr-0009-client-apps-offline-pwa.md)):
+
+- **`apps/pwa`** — the nurse/CHW app: offline-first (service-worker shell +
+  IndexedDB outbox + CRDT replica), protocol-guided ANC/immunisation/danger-sign
+  workflows, in English · Pidgin · Hausa · Yorùbá · Igbo. ~90 KB, no framework,
+  runs on Android 7 WebViews.
+- **`apps/dashboards`** — facility board (sunlight-readable daylight theme:
+  cold chain, power, water, tickets, activity) and state situation room
+  (dark ops theme: live facility map, pilot gates, alerts, platform health).
+  Both render last-known data offline and never fake liveness.
+- **`apps/android-shell`** — thin native WebView wrapper (minSdk 24) with a
+  bundled PWA snapshot for zero-connectivity first launch; TWA for Play
+  distribution.
+
+The api-gateway serves the apps at `/app` and `/dash` on the same origin as
+`/api/*` — one port, one trust boundary, no CORS.
+
 Runbooks: [deploy](docs/runbooks/deploy.md) ·
 [backup & restore](docs/runbooks/backup-restore.md) ·
+[edge node](docs/runbooks/edge.md) ·
 [90-day pilot go-live](docs/runbooks/pilot-90-day-go-live.md).
 
 ## Contributing

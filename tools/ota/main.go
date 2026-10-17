@@ -10,11 +10,12 @@ import (
 )
 
 // CLI:
-//   ota keygen                          → prints base64 pub/priv pair
-//   ota sign    <manifest.json> <priv>  → signs in place
-//   ota verify  <manifest.json> <pub>   → exit 1 unless signature valid
-//   ota check   <manifest.json> <pub> <device-id> <current-version>
-//                                       → exit 0 iff the device should apply
+//
+//	ota keygen                          → prints base64 pub/priv pair
+//	ota sign    <manifest.json> <priv>  → signs in place
+//	ota verify  <manifest.json> <pub>   → exit 1 unless signature valid
+//	ota check   <manifest.json> <pub> <device-id> <current-version>
+//	                                    → exit 0 iff the device should apply
 func main() {
 	if len(os.Args) < 2 {
 		usage()

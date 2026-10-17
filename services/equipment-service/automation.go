@@ -41,13 +41,17 @@ var Thresholds = map[string]ThresholdRule{
 		Breach:   func(v float64) bool { return v > 8.0 },
 		Normal:   func(v float64) bool { return v < 6.0 },
 		Priority: "P1", // safety-critical: vaccine potency
-		Issue:    func(v float64) string { return fmt.Sprintf("AUTO: cold chain %.1f°C above 8°C limit — vaccines at risk", v) },
+		Issue: func(v float64) string {
+			return fmt.Sprintf("AUTO: cold chain %.1f°C above 8°C limit — vaccines at risk", v)
+		},
 	},
 	"power_soc": {
 		Breach:   func(v float64) bool { return v < 20.0 },
 		Normal:   func(v float64) bool { return v > 30.0 },
 		Priority: "P2", // care-blocking
-		Issue:    func(v float64) string { return fmt.Sprintf("AUTO: battery SOC %.0f%% below 20%% — 48h autonomy at risk", v) },
+		Issue: func(v float64) string {
+			return fmt.Sprintf("AUTO: battery SOC %.0f%% below 20%% — 48h autonomy at risk", v)
+		},
 	},
 	"water_level": {
 		Breach:   func(v float64) bool { return v < 10.0 },

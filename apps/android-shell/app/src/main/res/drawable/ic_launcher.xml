@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- OpenHealth mark — the pulse line through the circle. Vector so the
+     APK stays tiny and crisp on every density a PHC phone can have. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="48" android:viewportHeight="48">
+    <path
+        android:fillColor="#0c1220"
+        android:pathData="M0,0h48v48h-48z" />
+    <path
+        android:strokeColor="#22d3ee"
+        android:strokeWidth="3"
+        android:strokeLineCap="round"
+        android:fillColor="#00000000"
+        android:pathData="M6,24 h8 l4,-10 l6,20 l5,-14 l3,4 h10" />
+</vector>

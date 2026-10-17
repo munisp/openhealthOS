@@ -37,12 +37,17 @@ jobs:
           test -z "$out" || { echo "not gofmt-clean:"; echo "$out"; exit 1; }
       - name: vet and test shared modules
         run: |
-          (cd shared/authz && go vet ./... && go test ./...)
-          (cd shared/servex && go vet ./... && go test ./...)
+          for m in authz servex crdt eventbus otelx; do
+            echo "== shared/$m =="
+            (cd "shared/$m" && go vet ./... && go test ./...)
+          done
+      - name: vet and test tools
+        run: |
+          (cd tools/ota && go vet ./... && go test ./...)
       - name: vet and test all Go modules
         run: |
           set -e
-          for m in claims-orchestrator payment-switch-mock registry-service sync-agent sync-ingest consent-service ussd-gateway wallet-service equipment-service telehealth-service shr-service; do
+          for m in api-gateway claims-orchestrator payment-switch-mock registry-service sync-agent sync-ingest consent-service ussd-gateway wallet-service equipment-service telehealth-service shr-service; do
             echo "== $m =="
             (cd "services/$m" && go vet ./... && go test ./...)
           done
@@ -73,6 +78,11 @@ jobs:
           python3 -m unittest discover -s packages/chw-tasks
           python3 -m unittest discover -s packages/lis-bridge
           python3 -m unittest discover -s packages/fhir-validate
+          python3 -m unittest discover -s packages/adapters
+          python3 -m unittest discover -s packages/auditlake
+          python3 -m unittest discover -s packages/lakehouse
+          python3 -m unittest discover -s packages/replay
+          python3 -m unittest discover -s packages/costguard
           python3 -m unittest discover -s benchmark
           python3 benchmark/million_claims.py --claims 50000 > /dev/null  # invariant-checked benchmark run
 
@@ -124,6 +134,25 @@ jobs:
           grep -q '"decision": "PEND"' /tmp/demo.out
           grep -q '"preauth_id": "PA-' /tmp/demo.out
           echo "e2e demo: approve / pend / preauth all observed"
+
+  clients:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: "20" }
+      - name: PWA CRDT tests
+        run: node --test apps/pwa/tests/
+      - name: dashboard data-transform tests (pilot-gate math)
+        run: node --test apps/dashboards/tests/
+      - name: app shells are self-contained (no external runtime deps)
+        run: |
+          # Offline-first means zero CDN/fonts/scripts fetched at runtime.
+          ! grep -rnE "https?://[^\"']*" apps/pwa/index.html apps/dashboards/index.html \
+              apps/pwa/css apps/dashboards/css \
+            | grep -vE "W3.org|webmanifest|schema" \
+            || { echo "external runtime reference found — apps must be self-contained"; exit 1; }
+          echo "app shells: self-contained"
 
   licence-hygiene:
     runs-on: ubuntu-latest

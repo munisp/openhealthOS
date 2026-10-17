@@ -145,8 +145,8 @@ func MergeDocs(local, remote *Doc) *Doc {
 
 // Batch is the wire unit between edge and state plane.
 type Batch struct {
-	From string   `json:"from"`
-	Docs []*Doc   `json:"docs"`
+	From string `json:"from"`
+	Docs []*Doc `json:"docs"`
 }
 
 // Export packages all docs for shipment. (Delta sync can filter by

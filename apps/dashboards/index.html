@@ -1,0 +1,44 @@
+<!doctype html>
+<html lang="en" data-theme="ops">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#050810">
+  <title>OpenHealth OS — Operations Dashboards</title>
+  <meta name="description" content="Facility and state operations dashboards for OpenHealth OS: infrastructure telemetry, pilot gates, platform health — offline-capable.">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="../pwa/icons/icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/dash.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="wordmark">OPENHEALTH<span>·OS</span></div>
+    <span class="live-badge on" id="live"><span class="dot"></span> live</span>
+    <nav class="viewswitch">
+      <a href="#/state" data-view="state">State</a>
+      <a href="#/facility" data-view="facility">Facility</a>
+    </nav>
+    <button class="themebtn" id="theme" title="Toggle ops / daylight theme">◐ daylight</button>
+    <button class="syncbtn" id="syncnow">↻ refresh</button>
+  </header>
+
+  <div class="ticker" aria-label="alerts ticker">
+    <div class="ticker-track" id="ticker-track"></div>
+  </div>
+
+  <main id="board">
+    <div class="page">
+      <div class="skel" style="width:40%"></div>
+      <div class="skel"></div>
+      <div class="skel"></div>
+    </div>
+  </main>
+
+  <footer class="footer" style="max-width:1560px;margin-left:auto;margin-right:auto;padding-left:24px;padding-right:24px">
+    <span>OpenHealth OS · AGPL-3.0</span>
+    <span>offline-capable · FHIR R4 · NDPA 2023</span>
+  </footer>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

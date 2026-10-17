@@ -1,0 +1,236 @@
+/* Views — facility board (daylight default, sunlight-readable) and
+ * state situation room (dark ops default). Both render from the same
+ * DataSource snapshot and degrade to last-known data offline. */
+
+import { el } from "./dom.js";
+import { dial, sparkline, facilityMap, hbar } from "./charts.js";
+import { eventsByType, encountersToday, perFacilityCounts, pilotGates,
+         overviewRows, platformHealth } from "./data.js";
+
+/* ---------- shared bits ---------- */
+
+function kpi(value, label, { kind = "", sub = "" } = {}) {
+  return el("div", { class: "kpi" },
+    el("div", { class: `kpi-value mono ${kind}` }, value),
+    el("div", { class: "kpi-label" }, label),
+    sub ? el("div", { class: "kpi-sub" }, sub) : null);
+}
+
+function fmtUptime(sec) {
+  const d = Math.floor(sec / 86400);
+  return d > 0 ? `${d}d` : `${Math.floor(sec / 3600)}h`;
+}
+
+function facilityStatus(f, counts, tickets) {
+  const open = (tickets || []).filter((t) => t.facility === f.id && t.status !== "resolved");
+  const c = counts[f.id];
+  if (open.some((t) => /cold|fridge|solar|inverter/i.test(t.equipment || ""))) return "crit";
+  if (open.length) return "warn";
+  if (!c || c.total === 0) return "dark";
+  return "ok";
+}
+
+function alertTicker(data) {
+  const items = [];
+  for (const t of data.tickets || []) {
+    if (t.status === "resolved") continue;
+    const sev = /cold|fridge/i.test(t.equipment || "") ? "crit" : "warn";
+    items.push({ sev, text: `${t.facility} · ${t.equipment} — ${t.note || t.status}` });
+  }
+  const counts = perFacilityCounts(data.events);
+  for (const f of data.facilities || []) {
+    if (!counts[f.id]) items.push({ sev: "warn", text: `${f.name} · no events received — check sync` });
+  }
+  if (!items.length) items.push({ sev: "info", text: "All facilities reporting · no open critical tickets" });
+  return items;
+}
+
+export function renderTicker(track, data) {
+  track.innerHTML = "";
+  for (const it of alertTicker(data)) {
+    track.append(el("span", { class: `ticker-item ${it.sev}` },
+      el("b", {}, it.sev.toUpperCase()), it.text));
+  }
+}
+
+/* ---------- facility board ---------- */
+
+export function FacilityView(data, facilityId) {
+  const counts = perFacilityCounts(data.events);
+  const facilities = data.facilities || [];
+  const f = facilities.find((x) => x.id === facilityId) || facilities[0]
+    || { id: "—", name: "No facility", lga: "" };
+  const fc = counts[f.id] || { encounters: 0, claims: 0, dispensing: 0, total: 0 };
+  const byType = eventsByType((data.events || []).filter((e) => e.facility === f.id));
+  const eq = (data.equipment || []).filter((e) => e.facility === f.id);
+  const tickets = (data.tickets || []).filter((t) => t.facility === f.id && t.status !== "resolved");
+
+  const page = el("div", { class: "page" });
+
+  // facility picker
+  const picker = el("select", { class: "themebtn", onchange: (e) => { location.hash = `#/facility/${e.target.value}`; } });
+  for (const x of facilities) {
+    const o = el("option", { value: x.id }, `${x.id} — ${x.name}`);
+    if (x.id === f.id) o.selected = true;
+    picker.append(o);
+  }
+
+  page.append(
+    el("div", { style: "display:flex;align-items:center;gap:12px;flex-wrap:wrap" },
+      el("h1", { style: "font-size:20px;font-weight:700" }, f.name),
+      el("span", { class: "kpi-sub mono" }, `${f.id} · ${f.lga || ""}`),
+      picker),
+  );
+
+  page.append(el("div", { class: "section-label" }, "Today"));
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(String(encountersToday(data.events.filter((e) => e.facility === f.id))), "encounters today"),
+    kpi(String(fc.claims), "claims submitted"),
+    kpi(String(fc.dispensing), "dispensings"),
+    kpi(String(tickets.length), "open tickets", { kind: tickets.length ? "warn" : "ok" })));
+
+  // infrastructure dials
+  const tele = (kind) => eq.find((e) => e.kind === kind)?.telemetry || {};
+  const fridge = tele("cold-chain fridge"), solar = tele("solar array"), tank = tele("water tank");
+  const infra = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Infrastructure — the platform knows before a vaccine dies"),
+    el("div", { class: "dial-grid" },
+      el("div", { class: "dial" },
+        dial({ value: fridge.cold_chain_c ?? 0, max: 15, band: [2, 8], unit: "°C" }),
+        el("div", { class: "dial-label" }, "Cold chain (2–8°C)")),
+      el("div", { class: "dial" },
+        dial({ value: solar.battery_soc_pct ?? 0 }),
+        el("div", { class: "dial-label" }, "Battery SOC")),
+      el("div", { class: "dial" },
+        dial({ value: tank.water_tank_pct ?? 0 }),
+        el("div", { class: "dial-label" }, "Water tank"))));
+
+  // activity sparkline: encounters per day, last 7 days
+  const days = [...Array(7)].map((_, i) => {
+    const d0 = new Date(); d0.setHours(0, 0, 0, 0); d0.setDate(d0.getDate() - (6 - i));
+    const d1 = d0.getTime() + 86400000;
+    return (data.events || []).filter((e) =>
+      e.facility === f.id && e.type === "encounter" &&
+      Date.parse(e.ts) >= d0.getTime() && Date.parse(e.ts) < d1).length;
+  });
+  const activity = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Encounter trend — 7 days"),
+    sparkline(days),
+    el("div", { class: "kpi-sub mono" }, `${days.reduce((a, b) => a + b, 0)} encounters · ${byType.claim_submitted || 0} claims · ${byType.stock_report || 0} stock reports`));
+
+  // open tickets
+  const tk = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, `Equipment tickets (${tickets.length} open)`));
+  if (!tickets.length) tk.append(el("div", { class: "empty" }, "No open tickets — equipment is holding."));
+  for (const t of tickets) {
+    tk.append(el("div", { class: `alert-card ${/cold|fridge/i.test(t.equipment || "") ? "crit" : "warn"}` },
+      el("div", { class: "alert-head" },
+        el("span", { class: `sev-${/cold|fridge/i.test(t.equipment || "") ? "crit" : "warn"}` }, t.status),
+        el("span", { class: "mono" }, t.id)),
+      el("div", { class: "alert-msg" }, `${t.equipment} — ${t.note || ""}`),
+      el("div", { class: "alert-ts" }, `opened ${new Date(t.opened).toLocaleString()}`)));
+  }
+
+  page.append(el("div", { class: "grid-2" }, infra, activity), tk);
+  return page;
+}
+
+/* ---------- state situation room ---------- */
+
+export function StateView(data) {
+  const counts = perFacilityCounts(data.events);
+  const rows = overviewRows(data.overview);
+  const gates = pilotGates(data.events, { trainedStaff: 48, facilities: (data.facilities || []).length || 1 });
+  const facilities = data.facilities || [];
+
+  const page = el("div", { class: "page" });
+
+  const live = facilities.filter((f) => facilityStatus(f, counts, data.tickets) === "ok").length;
+  const claims = (data.events || []).filter((e) => e.type === "claim_submitted");
+  const tatGate = gates.find((g) => g.name.startsWith("Claims"));
+
+  page.append(el("div", { class: "section-label" }, "State overview"));
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(`${live}/${facilities.length}`, "facilities live", { kind: live === facilities.length ? "ok" : "warn" }),
+    kpi(String((data.events || []).filter((e) => e.type === "encounter").length), "encounters (7d)"),
+    kpi(tatGate && tatGate.value != null ? `${tatGate.value}d` : "—", "claims turnaround",
+      { kind: tatGate && tatGate.pass ? "ok" : "warn", sub: "median, target <14d" }),
+    kpi(String((data.tickets || []).filter((t) => t.status !== "resolved").length), "open equipment tickets",
+      { kind: (data.tickets || []).some((t) => t.status !== "resolved") ? "warn" : "ok" }),
+    kpi(platformHealth(rows) === "ok" ? "ALL UP" : platformHealth(rows) === "warn" ? "DEGRADED" : "DOWN",
+      "platform services", { kind: platformHealth(rows) })));
+
+  // watchlist
+  const watch = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Facility watchlist"));
+  for (const f of facilities) {
+    const st = facilityStatus(f, counts, data.tickets);
+    const c = counts[f.id] || { encounters: 0 };
+    watch.append(el("div", { class: "watch-row", onclick: () => { location.hash = `#/facility/${f.id}`; } },
+      el("span", { class: `status-dot ${st}` }),
+      el("div", {},
+        el("div", { class: "watch-name" }, f.name),
+        el("div", { class: "watch-sub" }, `${f.lga || ""} · ${f.kind}`)),
+      el("div", { class: "watch-metric" }, String(c.encounters), el("small", {}, "encounters"))));
+  }
+
+  // map + gates
+  const mapPanel = el("div", { class: "panel mapwrap" },
+    el("div", { class: "panel-title" }, "State plane — live facility status"),
+    facilityMap(facilities, (f) => facilityStatus(f, counts, data.tickets)),
+    el("div", { class: "map-legend" },
+      el("span", {}, el("span", { class: "status-dot ok" }), " reporting"),
+      el("span", {}, el("span", { class: "status-dot warn" }), " ticket open"),
+      el("span", {}, el("span", { class: "status-dot crit" }), " critical"),
+      el("span", {}, el("span", { class: "status-dot dark" }), " silent")));
+
+  const gatePanel = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Pilot gates — measured, not asserted"));
+  for (const g of gates) {
+    const pct = g.value == null ? 0 : Math.min(100, (g.value / g.target) * 100);
+    gatePanel.append(el("div", { class: "gate-row" },
+      el("span", { class: "gate-name" }, g.name),
+      el("span", { class: "gate-bar" },
+        el("span", { class: `gate-fill ${g.pass ? "pass" : "fail"}`, style: `width:${g.pass ? 100 : pct}%` })),
+      el("span", { class: `gate-val mono ${g.pass ? "pass" : "fail"}` },
+        g.value == null ? "no data" : `${g.value}${g.unit} / ${g.target}${g.unit}`)));
+  }
+
+  // alerts column
+  const alerts = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Alerts & actions"));
+  const openTickets = (data.tickets || []).filter((t) => t.status !== "resolved");
+  if (!openTickets.length) alerts.append(el("div", { class: "empty" }, "Nothing needs attention."));
+  for (const t of openTickets) {
+    const sev = /cold|fridge/i.test(t.equipment || "") ? "crit" : "warn";
+    alerts.append(el("div", { class: `alert-card ${sev}` },
+      el("div", { class: "alert-head" },
+        el("span", { class: `sev-${sev}` }, sev === "crit" ? "critical" : "warning"),
+        el("span", { class: "mono" }, t.id)),
+      el("div", { class: "alert-msg" }, `${t.facility} · ${t.equipment} — ${t.note || ""}`),
+      el("div", { class: "alert-ts" }, `${t.status} · opened ${new Date(t.opened).toLocaleString()}`)));
+  }
+
+  // service health matrix
+  const matrix = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Platform services"));
+  const table = el("table", { class: "matrix" },
+    el("tr", {},
+      el("th", {}, "service"), el("th", {}, "state"), el("th", {}, "req"),
+      el("th", {}, "5xx%"), el("th", {}, "ms"), el("th", {}, "uptime")));
+  for (const r of rows) {
+    table.append(el("tr", {},
+      el("td", {}, r.service),
+      el("td", {}, el("span", { class: `status-dot ${r.up ? "ok" : "crit"}`, style: "display:inline-block" })),
+      el("td", { class: "mono" }, String(r.requests)),
+      el("td", { class: "mono" }, r.errRate.toFixed(2)),
+      el("td", { class: "mono" }, r.latency.toFixed(1)),
+      el("td", { class: "mono" }, fmtUptime(r.uptime))));
+  }
+  matrix.append(table);
+
+  page.append(
+    el("div", { class: "grid-3" }, watch, mapPanel, alerts),
+    el("div", { class: "grid-2" }, gatePanel, matrix));
+  return page;
+}

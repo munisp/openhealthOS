@@ -36,7 +36,9 @@ async function boot() {
 }
 
 function defaultSyncBase() {
-  // served by the edge node → sync to it; on the open internet → gateway
+  // Served by the api-gateway at /app/* → sync through its /api/sync route.
+  // Served by the edge node directly → sync-ingest is co-located at origin.
+  if (location.pathname.startsWith("/app")) return `${location.origin}/api/sync`;
   return location.origin.startsWith("http") ? location.origin : "http://127.0.0.1:8443";
 }
 

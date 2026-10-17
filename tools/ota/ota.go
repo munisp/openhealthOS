@@ -21,13 +21,13 @@ import (
 
 // Manifest describes one releasable image set.
 type Manifest struct {
-	Version    string   `json:"version"`     // semver-ish, e.g. "1.4.2"
-	Images     []Image  `json:"images"`      // every image in the release
-	Stage      string   `json:"stage"`       // pilot | lga | state
-	CohortPct  int      `json:"cohort_pct"`  // 1..100 — deterministic rollout slice
-	MinVersion string   `json:"min_version"` // refuse to apply below this
-	IssuedAt   string   `json:"issued_at"`
-	Signature  string   `json:"signature"` // base64 ed25519 over canonical(manifest sans signature)
+	Version    string  `json:"version"`     // semver-ish, e.g. "1.4.2"
+	Images     []Image `json:"images"`      // every image in the release
+	Stage      string  `json:"stage"`       // pilot | lga | state
+	CohortPct  int     `json:"cohort_pct"`  // 1..100 — deterministic rollout slice
+	MinVersion string  `json:"min_version"` // refuse to apply below this
+	IssuedAt   string  `json:"issued_at"`
+	Signature  string  `json:"signature"` // base64 ed25519 over canonical(manifest sans signature)
 }
 
 // Image pins one container image by digest.

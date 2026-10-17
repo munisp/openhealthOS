@@ -17,6 +17,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -28,10 +29,10 @@ import (
 
 // Route maps one public prefix to one upstream service.
 type Route struct {
-	Prefix  string // public path prefix, e.g. "/api/claims"
-	Service string // logical name (health matrix, spans)
+	Prefix   string // public path prefix, e.g. "/api/claims"
+	Service  string // logical name (health matrix, spans)
 	Upstream string // base URL, e.g. http://claims-orchestrator:8080
-	Strip   bool   // strip the public prefix before forwarding
+	Strip    bool   // strip the public prefix before forwarding
 }
 
 // DefaultRoutes is the platform's public surface. Order matters: first
@@ -54,6 +55,29 @@ func DefaultRoutes(env func(string) string) []Route {
 		{"/api/fhir", "shr-service", up("SHR_URL", "http://shr-service:8085"), false},
 		{"/api/equipment", "equipment-service", up("EQUIPMENT_URL", "http://equipment-service:8086"), true},
 		{"/api/telehealth", "telehealth-service", up("TELEHEALTH_URL", "http://telehealth-service:8087"), true},
+		{"/api/sync", "sync-ingest", up("SYNC_URL", "http://sync-ingest:8443"), true},
+	}
+}
+
+// metricsProbes lists the upstreams whose /metrics the platform overview
+// aggregates. Kept separate from routes: fixtures (payment-switch-mock)
+// and webhooks (ussd-gateway) carry no operational metrics.
+func metricsProbes(env func(string) string) map[string]string {
+	up := func(key, def string) string {
+		if v := env(key); v != "" {
+			return v
+		}
+		return def
+	}
+	return map[string]string{
+		"claims-orchestrator": up("CLAIMS_URL", "http://claims-orchestrator:8080"),
+		"registry-service":    up("REGISTRY_URL", "http://registry-service:8081"),
+		"consent-service":     up("CONSENT_URL", "http://consent-service:8082"),
+		"wallet-service":      up("WALLET_URL", "http://wallet-service:8084"),
+		"shr-service":         up("SHR_URL", "http://shr-service:8085"),
+		"equipment-service":   up("EQUIPMENT_URL", "http://equipment-service:8086"),
+		"telehealth-service":  up("TELEHEALTH_URL", "http://telehealth-service:8087"),
+		"sync-ingest":         up("SYNC_URL", "http://sync-ingest:8443"),
 	}
 }
 
@@ -102,13 +126,15 @@ func (rl *rateLimiter) allow(key string) bool {
 // ---------- gateway ----------
 
 type gateway struct {
-	routes  []Route
-	limiter *rateLimiter
-	probes  map[string]string // service -> health URL
+	routes   []Route
+	limiter  *rateLimiter
+	probes   map[string]string // service -> health URL
+	metrics  map[string]string // service -> metrics URL
+	appsRoot string            // static app shell root ("" disables serving)
 }
 
 func newGateway(routes []Route, rl *rateLimiter) *gateway {
-	g := &gateway{routes: routes, limiter: rl, probes: map[string]string{}}
+	g := &gateway{routes: routes, limiter: rl, probes: map[string]string{}, metrics: map[string]string{}}
 	for _, r := range routes {
 		g.probes[r.Service] = strings.TrimSuffix(r.Upstream, "/") + "/healthz"
 	}
@@ -155,8 +181,12 @@ func (g *gateway) clientKey(r *http.Request) string {
 }
 
 func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if r.URL.Path == "/healthz" || r.URL.Path == "/api/health" {
+	switch r.URL.Path {
+	case "/healthz", "/api/health":
 		g.serveHealth(w)
+		return
+	case "/api/platform/overview":
+		g.serveOverview(w)
 		return
 	}
 	for _, route := range g.routes {
@@ -170,7 +200,97 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	}
+	// Client apps: /app/ is the offline-first nurse/CHW PWA, /dash/ the
+	// facility & state operations dashboards. Same origin as the API, so
+	// the apps inherit OIDC and never fight CORS.
+	if g.appsRoot != "" && (r.URL.Path == "/" || strings.HasPrefix(r.URL.Path, "/app") ||
+		strings.HasPrefix(r.URL.Path, "/dash")) {
+		g.serveApp(w, r)
+		return
+	}
 	http.Error(w, `{"error":"no route"}`, http.StatusNotFound)
+}
+
+// serveApp maps / and /app/* to apps/pwa, /dash/* to apps/dashboards.
+func (g *gateway) serveApp(w http.ResponseWriter, r *http.Request) {
+	path := r.URL.Path
+	sub := "pwa"
+	switch {
+	case path == "/" || path == "/app" || path == "/app/":
+		path = "/index.html"
+	case strings.HasPrefix(path, "/app/"):
+		path = strings.TrimPrefix(path, "/app")
+	case path == "/dash" || path == "/dash/":
+		sub, path = "dashboards", "/index.html"
+	default:
+		sub, path = "dashboards", strings.TrimPrefix(path, "/dash")
+	}
+	// no traversal: the path is joined under a fixed root
+	clean := filepath.Clean("/" + path)
+	http.ServeFile(w, r, filepath.Join(g.appsRoot, sub, clean))
+}
+
+// serveOverview fans out to every service /metrics and returns one
+// aggregate document — the state dashboard's single pane of glass.
+// A down service is reported, never fatal: the platform degrades, the
+// overview still renders.
+func (g *gateway) serveOverview(w http.ResponseWriter) {
+	type svcMetrics struct {
+		Up            bool    `json:"up"`
+		RequestsTotal int64   `json:"requests_total"`
+		Errors4xx     int64   `json:"errors_4xx"`
+		Errors5xx     int64   `json:"errors_5xx"`
+		LatencyMeanMs float64 `json:"latency_ms_mean"`
+		UptimeSec     int64   `json:"uptime_seconds"`
+	}
+	out := map[string]svcMetrics{}
+	var mu sync.Mutex
+	var wg sync.WaitGroup
+	client := &http.Client{Timeout: 2 * time.Second}
+	for svc, base := range g.metrics {
+		wg.Add(1)
+		go func(svc, base string) {
+			defer wg.Done()
+			var m svcMetrics
+			resp, err := client.Get(strings.TrimSuffix(base, "/") + "/metrics")
+			if err == nil && resp.StatusCode == 200 {
+				var raw struct {
+					RequestsTotal *int64   `json:"requests_total"`
+					Errors4xx     *int64   `json:"errors_4xx"`
+					Errors5xx     *int64   `json:"errors_5xx"`
+					LatencyMeanMs *float64 `json:"latency_ms_mean"`
+					UptimeSec     *int64   `json:"uptime_seconds"`
+				}
+				if json.NewDecoder(resp.Body).Decode(&raw) == nil {
+					m.Up = true
+					if raw.RequestsTotal != nil {
+						m.RequestsTotal = *raw.RequestsTotal
+					}
+					if raw.Errors4xx != nil {
+						m.Errors4xx = *raw.Errors4xx
+					}
+					if raw.Errors5xx != nil {
+						m.Errors5xx = *raw.Errors5xx
+					}
+					if raw.LatencyMeanMs != nil {
+						m.LatencyMeanMs = *raw.LatencyMeanMs
+					}
+					if raw.UptimeSec != nil {
+						m.UptimeSec = *raw.UptimeSec
+					}
+				}
+			}
+			if resp != nil {
+				resp.Body.Close()
+			}
+			mu.Lock()
+			out[svc] = m
+			mu.Unlock()
+		}(svc, base)
+	}
+	wg.Wait()
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(out)
 }
 
 // serveHealth probes every upstream /healthz — one pane of glass.
@@ -204,6 +324,11 @@ func main() {
 		addr = v
 	}
 	g := newGateway(DefaultRoutes(os.Getenv), newRateLimiter(10, 20))
+	g.metrics = metricsProbes(os.Getenv)
+	g.appsRoot = os.Getenv("APPS_ROOT") // e.g. /srv/openhealth/apps
+	if g.appsRoot != "" {
+		log.Printf("serving client apps from %s (/app, /dash)", g.appsRoot)
+	}
 	var handler http.Handler = g
 	if v := authz.FromEnv(os.Getenv); v != nil {
 		handler = v.Middleware(handler)
