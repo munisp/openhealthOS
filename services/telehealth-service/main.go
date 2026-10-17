@@ -256,9 +256,25 @@ func (s *Service) Dispense(prescriptionID string) (Prescription, error) {
 	return *p, nil
 }
 
+// TelehealthService is the consult lifecycle seam: the in-memory Service
+// (edge, tests) and PostgresService (state plane) both satisfy it.
+type TelehealthService interface {
+	Open(patientID, facilityID, nurseID, complaint string) Consult
+	Assess(consultID, protocol, assessment string) (Consult, error)
+	CloseRoutine(consultID string) (Consult, error)
+	Escalate(consultID string) (Consult, error)
+	Refer(consultID, toFacility, urgency, reason string) (Referral, error)
+	AcceptReferral(referralID string) (Referral, error)
+	CompleteReferral(referralID string) (Referral, error)
+	Prescribe(consultID, prescriber, medication, dose string, quantity int, pharmacyID string) (Prescription, error)
+	Dispense(prescriptionID string) (Prescription, error)
+}
+
+var _ TelehealthService = (*Service)(nil)
+
 // ---------------------------------------------------------------- HTTP
 
-type server struct{ svc *Service }
+type server struct{ svc TelehealthService }
 
 func (s server) routes() *http.ServeMux {
 	mux := http.NewServeMux()

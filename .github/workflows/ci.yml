@@ -28,9 +28,17 @@ jobs:
       - uses: actions/setup-go@v5
         with: { go-version: "1.22" }
       - name: apply state-plane migrations
-        run: psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
-      - name: vet and test the shared authz module (stdlib-only OIDC)
-        run: cd shared/authz && go vet ./... && go test ./...
+        run: |
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
+          psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0002_telehealth_equipment.sql
+      - name: gofmt gate
+        run: |
+          out=$(gofmt -l services shared)
+          test -z "$out" || { echo "not gofmt-clean:"; echo "$out"; exit 1; }
+      - name: vet and test shared modules
+        run: |
+          (cd shared/authz && go vet ./... && go test ./...)
+          (cd shared/servex && go vet ./... && go test ./...)
       - name: vet and test all Go modules
         run: |
           set -e
@@ -64,6 +72,7 @@ jobs:
           python3 -m unittest discover -s packages/analytics
           python3 -m unittest discover -s packages/chw-tasks
           python3 -m unittest discover -s packages/lis-bridge
+          python3 -m unittest discover -s packages/fhir-validate
           python3 -m unittest discover -s benchmark
           python3 benchmark/million_claims.py --claims 50000 > /dev/null  # invariant-checked benchmark run
 
@@ -90,6 +99,31 @@ jobs:
               sys.exit(f"non-conformant profiles: {bad}")
           print(f"validated {len(glob.glob('fhir/profiles/*.json'))} profiles")
           EOF
+      - name: validate example resources against profiles (positive + negative)
+        run: |
+          set -e
+          for f in fhir/examples/patient-valid.json fhir/examples/claim-valid.json fhir/examples/encounter-valid.json fhir/examples/consent-valid.json; do
+            python3 packages/fhir-validate/validate.py "$f"
+          done
+          for f in fhir/examples/patient-invalid.json fhir/examples/claim-invalid.json; do
+            ! python3 packages/fhir-validate/validate.py "$f" || { echo "$f should have failed validation"; exit 1; }
+          done
+          echo "example validation: positives pass, negatives rejected" 
+
+  e2e:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - uses: dtolnay/rust-toolchain@stable
+      - name: run the end-to-end demo and assert verdicts
+        run: |
+          DEMO_PORT=18280 demo/demo.sh | tee /tmp/demo.out
+          grep -q '"decision": "APPROVE"' /tmp/demo.out
+          grep -q '"decision": "PEND"' /tmp/demo.out
+          grep -q '"preauth_id": "PA-' /tmp/demo.out
+          echo "e2e demo: approve / pend / preauth all observed"
 
   licence-hygiene:
     runs-on: ubuntu-latest

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
 	"net/http"
 	"os"
@@ -37,5 +38,5 @@ func main() {
 		handler = v.Middleware(handler)
 		log.Print("oidc: enforcing bearer auth")
 	}
-	log.Fatal(http.ListenAndServe(addr, handler))
+	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
 }

@@ -1,0 +1,7 @@
+{
+  "resourceType": "Claim",
+  "id": "C-1002",
+  "status": "active",
+  "patient": {"reference": "Patient/OH-NG-KD-0014-000123"},
+  "provider": {"reference": "Organization/NG-KD-0014"}
+}

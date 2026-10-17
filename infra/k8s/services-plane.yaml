@@ -17,12 +17,29 @@ spec:
     metadata:
       labels: { app: consent-service }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: consent-service
           image: ghcr.io/munisp/openhealthos/consent-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8082 }]
           env:
             - { name: LISTEN, value: ":8082" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
             - name: CONSENT_HMAC_KEY
               valueFrom:
                 secretKeyRef: { name: consent-keys, key: hmac-key }
@@ -46,12 +63,29 @@ spec:
     metadata:
       labels: { app: shr-service }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: shr-service
           image: ghcr.io/munisp/openhealthos/shr-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8085 }]
           env:
             - { name: LISTEN, value: ":8085" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
             - { name: CONSENT_URL, value: "http://consent-service:8082" }
           readinessProbe:
             httpGet: { path: /healthz, port: 8085 }
@@ -73,12 +107,29 @@ spec:
     metadata:
       labels: { app: telehealth-service }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: telehealth-service
           image: ghcr.io/munisp/openhealthos/telehealth-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8087 }]
           env:
             - { name: LISTEN, value: ":8087" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
           readinessProbe:
             httpGet: { path: /healthz, port: 8087 }
           resources:
@@ -99,13 +150,31 @@ spec:
     metadata:
       labels: { app: wallet-service }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        # Money at rest: use a PVC in production; emptyDir is demo-grade only.
+        - { name: ledger-data, emptyDir: {} }
       containers:
         - name: wallet-service
           image: ghcr.io/munisp/openhealthos/wallet-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: ledger-data, mountPath: /var/lib/openhealth/ledger }
           ports: [{ containerPort: 8084 }]
           env:
             - { name: LISTEN, value: ":8084" }
             - { name: LEDGER, value: "/usr/local/bin/oh_ledger" }
+            - { name: LEDGER_DATA_DIR, value: /var/lib/openhealth/ledger }
           readinessProbe:
             httpGet: { path: /healthz, port: 8084 }
           resources:
@@ -126,12 +195,29 @@ spec:
     metadata:
       labels: { app: equipment-service }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: equipment-service
           image: ghcr.io/munisp/openhealthos/equipment-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8086 }]
           env:
             - { name: LISTEN, value: ":8086" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
           readinessProbe:
             httpGet: { path: /healthz, port: 8086 }
           resources:
@@ -152,9 +238,23 @@ spec:
     metadata:
       labels: { app: ussd-gateway }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: ussd-gateway
           image: ghcr.io/munisp/openhealthos/ussd-gateway:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8083 }]
           env:
             - { name: LISTEN, value: ":8083" }

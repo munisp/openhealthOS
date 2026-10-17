@@ -1,0 +1,11 @@
+{
+  "resourceType": "Consent",
+  "id": "CNS-000001",
+  "status": "active",
+  "patient": {"reference": "Patient/OH-NG-KD-0014-000123"},
+  "policyRule": {"coding": [{"system": "https://openhealth.ng/fhir/policy", "code": "NDPA-treatment"}]},
+  "provision": {
+    "actor": [{"reference": {"reference": "Organization/NG-KD-0099"}}]
+  },
+  "sourceAttachment": {"title": "Signed consent artefact", "contentType": "application/pdf"}
+}

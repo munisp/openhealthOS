@@ -1,0 +1,61 @@
+{
+  "realm": "openhealth",
+  "enabled": true,
+  "displayName": "OpenHealth OS",
+  "accessTokenLifespan": 900,
+  "ssoSessionMaxLifespan": 28800,
+  "bruteForceProtected": true,
+  "failureFactor": 5,
+  "roles": {
+    "realm": [
+      { "name": "nurse", "description": "Facility nurse — consults, CHW supervision" },
+      { "name": "doctor", "description": "Remote doctor — escalated telehealth queue" },
+      { "name": "chw", "description": "Community health worker — household tasks" },
+      { "name": "facility-admin", "description": "Facility administrator — registry writes" },
+      { "name": "scheme-operator", "description": "Scheme/HMO operator — claims console" },
+      { "name": "auditor", "description": "Read-only audit access (SHR + consent logs)" }
+    ]
+  },
+  "clientScopes": [
+    {
+      "name": "facility",
+      "description": "Facility attribution claim — every API write is attributed to a facility",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" },
+      "protocolMappers": [
+        {
+          "name": "facility_id",
+          "protocol": "openid-connect",
+          "protocolMapper": "oidc-usermodel-attribute-mapper",
+          "config": {
+            "user.attribute": "facility_id",
+            "claim.name": "facility_id",
+            "jsonType.label": "String",
+            "id.token.claim": "false",
+            "access.token.claim": "true"
+          }
+        }
+      ]
+    }
+  ],
+  "defaultDefaultClientScopes": ["openid", "profile", "email", "facility"],
+  "clients": [
+    {
+      "clientId": "openhealth-app",
+      "name": "OpenHealth offline-first app (edge)",
+      "publicClient": true,
+      "directAccessGrantsEnabled": true,
+      "standardFlowEnabled": true,
+      "redirectUris": ["http://localhost/*", "openhealth://callback"],
+      "attributes": { "pkce.code.challenge.method": "S256" }
+    },
+    {
+      "clientId": "openhealth-gateway",
+      "name": "Service-to-service gateway client",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "secret": "change-me-in-production"
+    }
+  ]
+}

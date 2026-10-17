@@ -19,10 +19,10 @@ type PreauthAuthorizer interface {
 // PreauthRequest mirrors the gateway contract: member, provider, tariff
 // lines, and an optional clinical note for high-cost review.
 type PreauthRequest struct {
-	MemberID     string      `json:"member_id"`
-	ProviderID   string      `json:"provider_id"`
-	Items        []Item      `json:"items"`
-	ClinicalNote string      `json:"clinical_note,omitempty"`
+	MemberID     string `json:"member_id"`
+	ProviderID   string `json:"provider_id"`
+	Items        []Item `json:"items"`
+	ClinicalNote string `json:"clinical_note,omitempty"`
 }
 
 // Preauth runs the adjudicator in preauth mode (--preauth).

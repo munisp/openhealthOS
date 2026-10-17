@@ -119,6 +119,31 @@ examples/    sample claim payloads
 | Core uptime | 99.5% (claims & eligibility degrade gracefully to offline queue) |
 | Edge cost | ≤$1,200 capex per PHC; ≤$2.5/facility/month connectivity+cloud |
 
+## Production readiness
+
+The reference implementation ships with the controls a state deployment
+needs from day one:
+
+- **Durable money** — the ledger journals every accepted op with fsync and
+  recovers exactly across restarts, including in-flight two-phase
+  transfers ([ADR-0007](docs/architecture/adr-0007-ledger-durability.md)).
+- **Durable state** — every service has a Postgres store behind the same
+  interface as its in-memory store; migrations are idempotent and run as
+  a Kubernetes job ([ADR-0006](docs/architecture/adr-0006-state-plane-persistence.md)).
+- **Identity** — stdlib-only OIDC (RS256/JWKS) on all state-plane
+  services, with the Keycloak realm checked in as code; edge facilities
+  keep running with the identity provider down ([ADR-0008](docs/architecture/adr-0008-production-security-baseline.md)).
+- **Hardened runtime** — restricted Pod Security, seccomp, read-only
+  root filesystems, dropped capabilities, and default-deny
+  NetworkPolicies in `infra/k8s/`.
+- **Operability** — every service exposes `/healthz` and `/metrics`,
+  serves with bounded timeouts, and drains connections on SIGTERM
+  (`shared/servex`).
+
+Runbooks: [deploy](docs/runbooks/deploy.md) ·
+[backup & restore](docs/runbooks/backup-restore.md) ·
+[90-day pilot go-live](docs/runbooks/pilot-90-day-go-live.md).
+
 ## Contributing
 
 OpenHealth OS is built in the open and upstreams improvements to the commons it composes (OpenMRS, OpenELIS, DHIS2, Medplum, OpenHIE). See [CONTRIBUTING.md](CONTRIBUTING.md) and [SECURITY.md](SECURITY.md).

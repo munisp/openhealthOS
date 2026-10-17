@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/servex"
 )
 
 func main() {
@@ -47,7 +48,7 @@ func main() {
 		log.Print("oidc: enforcing bearer auth (claims carry facility attribution)")
 	}
 	log.Printf("OpenHealth OS shr-service on %s (FHIR store + consent enforcement)", addr)
-	log.Fatal(http.ListenAndServe(addr, handler))
+	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
 }
 
 // denyAll fails closed when no consent service is configured: a missing

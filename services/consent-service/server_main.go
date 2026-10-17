@@ -2,6 +2,8 @@ package main
 
 import (
 	"context"
+	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
 	"net/http"
 	"os"
@@ -35,5 +37,10 @@ func main() {
 	}
 	s := server{m: svc}
 	log.Printf("OpenHealth OS consent-service on %s (HIE-CM pattern)", addr)
-	log.Fatal(http.ListenAndServe(addr, s.routes()))
+	handler := http.Handler(s.routes())
+	if v := authz.FromEnv(os.Getenv); v != nil {
+		handler = v.Middleware(handler)
+		log.Print("oidc: enforcing bearer auth")
+	}
+	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
 }

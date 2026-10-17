@@ -220,11 +220,12 @@ func FromContext(ctx context.Context) (Claims, bool) {
 	return c, ok
 }
 
-// Middleware enforces bearer auth on every request except /healthz —
-// liveness probes are infrastructure, not data access.
+// Middleware enforces bearer auth on every request except /healthz and
+// /metrics — probes and scrapes are infrastructure, not data access.
+// NetworkPolicy (infra/k8s) restricts who can reach them.
 func (v *Verifier) Middleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/healthz" {
+		if r.URL.Path == "/healthz" || r.URL.Path == "/metrics" {
 			next.ServeHTTP(w, r)
 			return
 		}

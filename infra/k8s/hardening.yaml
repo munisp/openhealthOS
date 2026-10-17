@@ -1,0 +1,125 @@
+# Production hardening for the state plane (ADR-0008).
+# Apply after namespace.yaml and before the plane manifests:
+#   kubectl apply -f infra/k8s/hardening.yaml
+---
+# Default-deny: nothing talks unless a policy says so.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: default-deny-all
+  namespace: oh-state-example
+spec:
+  podSelector: {}
+  policyTypes: [Ingress, Egress]
+---
+# Intra-namespace east-west: services reach each other (orchestrator →
+# switch, shr → consent, everything → postgres via the postgres policy).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-namespace-internal
+  namespace: oh-state-example
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - podSelector: {}
+---
+# Ingress to the claims gateway from outside the namespace (APISIX /
+# ingress controller pods carry the gateway: ingress label).
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-gateway-ingress
+  namespace: oh-state-example
+spec:
+  podSelector:
+    matchLabels: { app: claims-orchestrator }
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: ingress }
+      ports:
+        - { port: 8080, protocol: TCP }
+---
+# Prometheus scraping: /metrics and /healthz only, from the monitoring
+# namespace.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-prometheus-scrape
+  namespace: oh-state-example
+spec:
+  podSelector: {}
+  policyTypes: [Ingress]
+  ingress:
+    - from:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: monitoring }
+      ports:
+        - { port: 8080, protocol: TCP }
+        - { port: 8081, protocol: TCP }
+        - { port: 8082, protocol: TCP }
+        - { port: 8083, protocol: TCP }
+        - { port: 8084, protocol: TCP }
+        - { port: 8085, protocol: TCP }
+        - { port: 8086, protocol: TCP }
+        - { port: 8087, protocol: TCP }
+        - { port: 8443, protocol: TCP }
+---
+# Egress: DNS + namespace-internal + OIDC issuer (Keycloak). Nothing else —
+# a compromised pod cannot exfiltrate patient data to the internet.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: allow-minimal-egress
+  namespace: oh-state-example
+spec:
+  podSelector: {}
+  policyTypes: [Egress]
+  egress:
+    - to:
+        - namespaceSelector:
+            matchLabels: { kubernetes.io/metadata.name: kube-system }
+      ports:
+        - { port: 53, protocol: UDP }
+    - to:
+        - podSelector: {}
+---
+# Schema migrations as a Job — runs before deployments roll, fails loudly.
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: openhealth-migrate-0002
+  namespace: oh-state-example
+spec:
+  backoffLimit: 3
+  template:
+    spec:
+      restartPolicy: Never
+      securityContext:
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: migrate
+          image: postgres:16-alpine
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 70
+            allowPrivilegeEscalation: false
+            capabilities: { drop: [ALL] }
+          command: ["sh", "-c"]
+          args:
+            - psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql &&
+              psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql
+          env:
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
+          volumeMounts:
+            - { name: migrations, mountPath: /migrations, readOnly: true }
+      volumes:
+        - name: migrations
+          configMap:
+            name: openhealth-migrations

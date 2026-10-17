@@ -1,6 +1,8 @@
 package main
 
 import (
+	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
 	"net/http"
 	"os"
@@ -17,5 +19,10 @@ func main() {
 	}
 	s := server{w: &WalletService{Ledger: SubprocessLedger{Binary: bin}}}
 	log.Printf("OpenHealth OS wallet-service on %s (ledger=%s)", addr, bin)
-	log.Fatal(http.ListenAndServe(addr, s.routes()))
+	handler := http.Handler(s.routes())
+	if v := authz.FromEnv(os.Getenv); v != nil {
+		handler = v.Middleware(handler)
+		log.Print("oidc: enforcing bearer auth")
+	}
+	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
 }

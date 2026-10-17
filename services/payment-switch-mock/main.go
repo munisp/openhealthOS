@@ -12,6 +12,7 @@ package main
 import (
 	"encoding/json"
 	"fmt"
+	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
 	"net/http"
 	"sync/atomic"
@@ -54,5 +55,5 @@ func main() {
 	mux.HandleFunc("/transfers", transfers)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	log.Println("mock Mojaloop-pattern switch on :9090 (TEST FIXTURE — not a settlement endpoint)")
-	log.Fatal(http.ListenAndServe(":9090", mux))
+	log.Fatal(servex.ListenAndServe(":9090", mux, servex.Options{}))
 }

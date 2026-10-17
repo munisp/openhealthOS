@@ -201,9 +201,23 @@ func (s *Service) ListTickets(status string) []Ticket {
 	return out
 }
 
+// EquipmentService is the asset/ticket lifecycle seam: the in-memory
+// Service (edge, tests) and PostgresService (state plane) both satisfy it.
+type EquipmentService interface {
+	Register(e Equipment) (Equipment, error)
+	AddTechnician(t Technician) (Technician, error)
+	OpenTicket(equipmentID, issue, priority string) (Ticket, error)
+	Assign(ticketID, techID string) error
+	Resolve(ticketID string) error
+	GetEquipment(id string) (Equipment, error)
+	ListTickets(status string) []Ticket
+}
+
+var _ EquipmentService = (*Service)(nil)
+
 // ---- HTTP surface ----
 
-type server struct{ svc *Service }
+type server struct{ svc EquipmentService }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

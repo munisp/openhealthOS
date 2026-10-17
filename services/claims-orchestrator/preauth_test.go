@@ -40,7 +40,7 @@ func TestPreauthValidation(t *testing.T) {
 	h := preauthHandler{Authorizer: &fakeAuthorizer{}}
 	for _, body := range []string{
 		`{"items":[{"code":"ANC-001","qty":1}]}`, // no member
-		`{"member_id":"NG-0001"}`,                 // no items
+		`{"member_id":"NG-0001"}`,                // no items
 	} {
 		req := httptest.NewRequest(http.MethodPost, "/preauth", strings.NewReader(body))
 		rec := httptest.NewRecorder()

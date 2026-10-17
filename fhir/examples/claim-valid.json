@@ -1,0 +1,13 @@
+{
+  "resourceType": "Claim",
+  "id": "C-1001",
+  "status": "active",
+  "patient": {"reference": "Patient/OH-NG-KD-0014-000123"},
+  "provider": {"reference": "Organization/NG-KD-0014"},
+  "insurance": [{"sequence": 1, "focal": true, "coverage": {"reference": "Coverage/BHCPF-VUL"}}],
+  "extension": [
+    {"url": "https://openhealth.ng/fhir/StructureDefinition/adjudicationStatus",
+     "valueCode": "APPROVE"}
+  ],
+  "item": [{"sequence": 1, "productOrService": {"coding": [{"code": "MAL-RDT"}]}, "quantity": {"value": 1}}]
+}

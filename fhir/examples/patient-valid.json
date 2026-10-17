@@ -1,0 +1,12 @@
+{
+  "resourceType": "Patient",
+  "id": "OH-NG-KD-0014-000123",
+  "identifier": [
+    {"system": "https://openhealth.ng/fhir/identifier/offline-id", "value": "OH-NG-KD-0014-000123"},
+    {"system": "https://nimc.gov.ng/nin", "value": "12345678901"}
+  ],
+  "name": [{"family": "Yusuf", "given": ["Amina"]}],
+  "birthDate": "1994-03-12",
+  "gender": "female",
+  "telecom": [{"system": "phone", "value": "+2348000000000"}]
+}

@@ -1,8 +1,8 @@
 package main
 
 import (
+	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
-	"net/http"
 	"os"
 )
 
@@ -28,5 +28,5 @@ func main() {
 	}
 	s := server{g: NewGateway(staticChecker{})}
 	log.Printf("OpenHealth OS ussd-gateway on %s (fixture checker — bind the eligibility seam in production)", addr)
-	log.Fatal(http.ListenAndServe(addr, s.routes()))
+	log.Fatal(servex.ListenAndServe(addr, s.routes(), servex.Options{}))
 }

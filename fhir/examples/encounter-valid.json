@@ -1,0 +1,8 @@
+{
+  "resourceType": "Encounter",
+  "id": "ENC-0001",
+  "status": "finished",
+  "subject": {"reference": "Patient/OH-NG-KD-0014-000123"},
+  "serviceProvider": {"reference": "Organization/NG-KD-0014"},
+  "period": {"start": "2026-10-18T08:30:00Z", "end": "2026-10-18T08:55:00Z"}
+}

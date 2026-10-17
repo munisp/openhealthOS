@@ -7,6 +7,8 @@
 
 use std::collections::HashMap;
 
+pub mod store;
+
 pub type Amount = i128;
 
 #[derive(Default)]
@@ -89,6 +91,37 @@ impl Ledger {
             .get(id)
             .map(|b| format!("OK: {id} = {b}"))
             .unwrap_or_else(|| format!("ERR: account {id} not found"))
+    }
+
+    // ---- durability seam (ADR-0007): snapshots and journal replay ----
+
+    pub fn accounts(&self) -> &HashMap<String, Amount> {
+        &self.accounts
+    }
+
+    pub fn prepared(&self) -> &HashMap<String, (String, String, Amount)> {
+        &self.prepared
+    }
+
+    pub fn seq(&self) -> u64 {
+        self.seq
+    }
+
+    pub fn set_seq(&mut self, seq: u64) {
+        self.seq = seq;
+    }
+
+    /// Restore an account from a snapshot — bypasses the double-open
+    /// guard on purpose (recovery replays history, it doesn't take new
+    /// business actions).
+    pub fn restore_account(&mut self, id: &str, balance: Amount) {
+        self.accounts.insert(id.into(), balance);
+    }
+
+    /// Restore a prepared-but-unresolved transfer from a snapshot.
+    pub fn restore_prepared(&mut self, txid: &str, debit: &str, credit: &str, amount: Amount) {
+        self.prepared
+            .insert(txid.into(), (debit.into(), credit.into(), amount));
     }
 }
 

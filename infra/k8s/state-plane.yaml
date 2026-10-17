@@ -1,6 +1,8 @@
-# State data plane skeleton — one state, one namespace.
-# Production adds: HA Postgres operator, Medplum FHIR server, Kafka, Temporal,
-# Keycloak realm per state, APISIX ingress, NetworkPolicies, PodSecurity.
+# State data plane — one state, one namespace.
+# Pod security (restricted PSA), seccomp, read-only roots, and NetworkPolicies
+# (hardening.yaml) are applied. Production adds: HA Postgres operator, Medplum
+# FHIR server, Kafka, Temporal, Keycloak realm per state, APISIX ingress, and
+# durable PVCs in place of the emptyDir ledger volumes below.
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,13 +17,31 @@ spec:
     metadata:
       labels: { app: claims-orchestrator }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        # Money at rest: use a PVC in production; emptyDir is demo-grade only.
+        - { name: ledger-data, emptyDir: {} }
       containers:
         - name: claims-orchestrator
           image: ghcr.io/munisp/openhealthos/claims-orchestrator:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: ledger-data, mountPath: /var/lib/openhealth/ledger }
           ports: [{ containerPort: 8080 }]
           env:
             - { name: LISTEN, value: ":8080" }
             - { name: SWITCH, value: "http://payment-switch:9090" }
+            - { name: LEDGER_DATA_DIR, value: /var/lib/openhealth/ledger }
           readinessProbe:
             httpGet: { path: /healthz, port: 8080 }
           resources:
@@ -42,10 +62,29 @@ spec:
     metadata:
       labels: { app: registry-service }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: registry-service
           image: ghcr.io/munisp/openhealthos/registry-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8081 }]
+          env:
+            - { name: LISTEN, value: ":8081" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
           readinessProbe:
             httpGet: { path: /healthz, port: 8081 }
           resources:
@@ -66,10 +105,29 @@ spec:
     metadata:
       labels: { app: sync-ingest }
     spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
       containers:
         - name: sync-ingest
           image: ghcr.io/munisp/openhealthos/sync-ingest:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
           ports: [{ containerPort: 8443 }]
+          env:
+            - { name: LISTEN, value: ":8443" }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
 ---
 apiVersion: v1
 kind: Service

@@ -28,7 +28,7 @@ import (
 type Resource struct {
 	ResourceType   string          `json:"resourceType"`
 	ID             string          `json:"id"`
-	PatientID      string          `json:"patient_id"`     // subject of the record
+	PatientID      string          `json:"patient_id"`      // subject of the record
 	SourceFacility string          `json:"source_facility"` // where it was created
 	Body           json.RawMessage `json:"body"`
 	UpdatedAt      string          `json:"updated_at"`
@@ -36,12 +36,12 @@ type Resource struct {
 
 // AuditEntry records one access decision with its basis.
 type AuditEntry struct {
-	At         string `json:"at"`
-	Actor      string `json:"actor"`       // requesting facility / user
-	PatientID  string `json:"patient_id"`
-	Resource   string `json:"resource"`    // e.g. Observation/obs-1
-	Decision   string `json:"decision"`    // allowed | denied | break-glass
-	Basis      string `json:"basis"`       // same-facility | consent | emergency | no-consent
+	At        string `json:"at"`
+	Actor     string `json:"actor"` // requesting facility / user
+	PatientID string `json:"patient_id"`
+	Resource  string `json:"resource"` // e.g. Observation/obs-1
+	Decision  string `json:"decision"` // allowed | denied | break-glass
+	Basis     string `json:"basis"`    // same-facility | consent | emergency | no-consent
 }
 
 var (

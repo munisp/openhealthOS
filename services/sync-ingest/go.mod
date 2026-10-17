@@ -12,3 +12,11 @@ require (
 	golang.org/x/sync v0.8.0 // indirect
 	golang.org/x/text v0.18.0 // indirect
 )
+
+require github.com/munisp/openhealthOS/shared/servex v0.0.0
+
+replace github.com/munisp/openhealthOS/shared/servex => ../../shared/servex
+
+require github.com/munisp/openhealthOS/shared/authz v0.0.0
+
+replace github.com/munisp/openhealthOS/shared/authz => ../../shared/authz
