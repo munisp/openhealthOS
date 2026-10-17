@@ -1,23 +1,28 @@
 #!/usr/bin/env bash
 # End-to-end claims demo: adjudication → ledger → mock settlement switch.
+#
+# Binaries build into a scratch dir ($TMPDIR or /tmp) — development checkouts
+# on mounts without exec permission still run the demo.
 set -euo pipefail
 cd "$(dirname "$0")/.."
 
-echo "== building =="
-cargo build --release --quiet --manifest-path services/ledger/Cargo.toml
-(cd services/payment-switch-mock && go build -o payment-switch-mock .)
-(cd services/claims-orchestrator && go build -o claims-orchestrator .)
+BUILD_DIR="$(mktemp -d "${TMPDIR:-/tmp}/openhealth-demo.XXXXXX")"
+trap 'rm -rf "$BUILD_DIR"' EXIT
 
-pkill -f payment-switch-mock 2>/dev/null || true
-pkill -f claims-orchestrator 2>/dev/null || true
+echo "== building =="
+CARGO_TARGET_DIR="$BUILD_DIR/cargo" cargo build --release --quiet --manifest-path services/ledger/Cargo.toml
+(cd services/payment-switch-mock && go build -o "$BUILD_DIR/payment-switch-mock" .)
+(cd services/claims-orchestrator && go build -o "$BUILD_DIR/claims-orchestrator" .)
+
+pkill -f openhealth-demo 2>/dev/null || true
 sleep 0.3
 
-./services/payment-switch-mock/payment-switch-mock & MS=$!
+"$BUILD_DIR/payment-switch-mock" & MS=$!
 sleep 0.4
 SWITCH=http://127.0.0.1:9090 \
 ADJUDICATOR=packages/adjudicator/adjudicate.py \
-LEDGER=services/ledger/target/release/oh_ledger \
-  ./services/claims-orchestrator/claims-orchestrator & OR=$!
+LEDGER="$BUILD_DIR/cargo/release/oh_ledger" \
+  "$BUILD_DIR/claims-orchestrator" & OR=$!
 sleep 0.4
 
 echo "== APPROVED CLAIM (C-1001) =="
