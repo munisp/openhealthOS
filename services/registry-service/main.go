@@ -12,6 +12,8 @@ func main() {
 		addr = v
 	}
 	s := server{store: NewMemoryStore()}
-	log.Printf("OpenHealth OS registry service on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, s.routes()))
+	mux := s.routes()
+	registerPatientRoutes(mux, NewMemoryPatientStore())
+	log.Printf("OpenHealth OS registry service on %s (facilities, providers, patients)", addr)
+	log.Fatal(http.ListenAndServe(addr, mux))
 }

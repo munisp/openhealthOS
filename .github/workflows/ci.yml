@@ -14,7 +14,7 @@ jobs:
       - name: vet and test all Go modules
         run: |
           set -e
-          for m in claims-orchestrator payment-switch-mock registry-service sync-agent; do
+          for m in claims-orchestrator payment-switch-mock registry-service sync-agent sync-ingest consent-service ussd-gateway wallet-service equipment-service; do
             echo "== $m =="
             (cd "services/$m" && go vet ./... && go test ./...)
           done
@@ -40,6 +40,8 @@ jobs:
           python3 -m unittest discover -s packages/adjudicator
           python3 -m unittest discover -s packages/triage
           python3 -m unittest discover -s packages/dhis2-bridge
+          python3 -m unittest discover -s packages/procurement
+          python3 -m unittest discover -s packages/analytics
 
   fhir-conformance:
     runs-on: ubuntu-latest

@@ -87,5 +87,22 @@ def adjudicate(claim: dict) -> dict:
             "currency": "NGN", "adjudicated_by": "openhealth-adjudicator@0.2.0"}
 
 
+def check_eligibility(member_id: str, service_date: str) -> dict:
+    """Real-time eligibility verification (claims-gateway /eligibility/check).
+    The same verdict the USSD fallback channel returns — one seam, one answer."""
+    member = MEMBERS.get(member_id)
+    if not member:
+        return {"member_id": member_id, "eligible": False,
+                "reason": "unknown member — visit your PHC to enrol", "source": "live"}
+    eligible = member["active"] and _d(service_date) <= _d(member["valid_until"])
+    return {"member_id": member_id, "eligible": eligible, "scheme": member["scheme"],
+            "valid_until": member["valid_until"], "copay_waiver": member["copay_waiver"],
+            "source": "live"}
+
+
 if __name__ == "__main__":
-    print(json.dumps(adjudicate(json.load(sys.stdin)), indent=2))
+    if "--check" in sys.argv:  # eligibility mode: stdin {"member_id","service_date"}
+        req = json.load(sys.stdin)
+        print(json.dumps(check_eligibility(req["member_id"], req.get("service_date", "2026-10-17"))))
+    else:
+        print(json.dumps(adjudicate(json.load(sys.stdin)), indent=2))
