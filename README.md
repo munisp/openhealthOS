@@ -13,14 +13,14 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 
 | # | Module | Where it lives |
 |---|--------|----------------|
-| 1 | Identity & registries (patient / provider / facility / terminology) | [`services/registry-service`](services/registry-service) — NIN binding + offline-resolvable patient IDs |
+| 1 | Identity & registries (patient / provider / facility / terminology) | [`services/registry-service`](services/registry-service) — KYC ladder (self → phone-OTP → NIN-format → NIMC-verified) that never blocks care, deterministic dedupe gates (NIN / phone+DOB / name+DOB), offline-resolvable patient IDs, `/kyc/signals` fraud view |
 | 2 | Core health record (FHIR R4 SHR, consent artefacts) | [`fhir/`](fhir) profiles + [`services/shr-service`](services/shr-service) (FHIR store, consent-enforced cross-facility reads) + [`services/consent-service`](services/consent-service) (HIE-CM pattern) |
 | 3 | Community health (CHW tasks, USSD fallback) | [`packages/chw-tasks`](packages/chw-tasks) (ANC/NPI schedules, danger-sign referrals) + [`services/ussd-gateway`](services/ussd-gateway) — feature-phone eligibility & enrolment |
-| 4 | Claims & insurance rails (eligibility, pre-auth, adjudication) | [`services/claims-orchestrator`](services/claims-orchestrator) + [`packages/adjudicator`](packages/adjudicator) |
+| 4 | Claims & insurance rails (eligibility, pre-auth, adjudication) | [`services/claims-orchestrator`](services/claims-orchestrator) + [`packages/adjudicator`](packages/adjudicator) — scheme-driven payer network (`payers.py`): NHIA schemes and commercial HMOs route by config, unknown schemes refused, cross-payer double-dipping structurally impossible |
 | 5 | Payments (wallets, instant payment, reconciliation) | [`services/wallet-service`](services/wallet-service) (micro-collections, payouts) + [`services/ledger`](services/ledger) + Mojaloop-pattern switch seam |
 | 6 | Procurement marketplace | [`packages/procurement`](packages/procurement) — pooled ordering + supplier scorecards from stock-out telemetry |
 | 7 | Laboratory (hub-and-spoke LIS) | [`packages/lis-bridge`](packages/lis-bridge) — sample chain-of-custody, results as FHIR Observations pushed to the SHR, critical-value surfacing |
-| 8 | Telehealth + AI triage | [`services/telehealth-service`](services/telehealth-service) (nurse-first consults, referral loop; every consult closes as a FHIR Encounter, every prescription as a FHIR MedicationRequest in the SHR **and** a routed pharmacy dispense-request) + [`packages/triage`](packages/triage) — approval-gated writes only |
+| 8 | Telehealth + AI triage | [`services/telehealth-service`](services/telehealth-service) (nurse-first **asynchronous store-and-forward** consults — no workflow requires a live session, so no bandwidth floor below which care stops; referral loop; every consult closes as a FHIR Encounter, every prescription as a FHIR MedicationRequest in the SHR **and** a routed pharmacy dispense-request) + [`packages/triage`](packages/triage) — approval-gated writes only |
 | 8a | Pharmacy & dispensing | [`services/pharmacy-service`](services/pharmacy-service) — tracer-drug formulary with allergy classes, per-facility stock, atomic dispense = status flip + stock decrement + NHIA claim draft; the allergy gate is structural (blocked prescriptions are recorded, never dropped) |
 | 9 | **Infrastructure layer (the differentiator)** — power, water, cold chain, equipment | [`services/telemetry-collector`](services/telemetry-collector) + [`services/equipment-service`](services/equipment-service) (BMET ticket routing, donation screening) |
 | 11 | Patient engagement & notification rails | [`services/notification-service`](services/notification-service) — subscriptions, SMS provider seam (webhook, never a proprietary SDK), persisted-attempt delivery states, five-language rendering, no clinical detail over SMS |
@@ -31,6 +31,8 @@ Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) → [`ser
 FHIR foundation: **Medplum** (Apache-2.0) is the designated production FHIR server — profile-gated in [`infra/compose/platform.yaml`](infra/compose/platform.yaml) (`--profile medplum`) with its own Postgres + Redis; [`tools/medplum-validate`](tools/medplum-validate) proves the four OpenHealth profiles and examples against a live server. shr-service stays the stdlib edge/dev seam behind the same envelope contract. Hospitals running OpenMRS/Bahmni interoperate via [`packages/adapters/openmrs.py`](packages/adapters/openmrs.py) (FHIR2 bridge) — peers, never rewrites. See [ADR-0010](docs/architecture/adr-0010-clinical-loop-emr.md).
 
 National-scale proof: `bash demo/national-sync.sh` — facility → LGA hub → state plane: priority forwarding order, duplicate retry dedupe, hub killed mid-flight and restarted from the spill with queues intact.
+
+ERP composition: **ERPNext** (GPL-3.0) is the finance office's book — GL, warehouse stock, supplier orders — composed over its REST API, never embedded. [`packages/erpnext-bridge`](packages/erpnext-bridge) projects platform events (stock movements → Stock Entries, approved claims → Sales Invoices with the payer as customer, pooled orders → Purchase Orders, double-entry batches → Journal Entries with balance re-asserted) through an offline JSONL spool with `openhealth_id` idempotency — ERPNext can be down for a week; the books catch up in order, once. See [ADR-0012](docs/architecture/adr-0012-identity-payers-erp-connectivity.md).
 
 Clinical loop proof: `bash demo/clinical-loop.sh` — consult → assess → prescribe → SHR (MedicationRequest + Encounter) → pharmacy dispense → stock decrement + claim draft → allergy-gate rejection, end to end in-memory.
 
@@ -75,7 +77,7 @@ for m in claims-orchestrator payment-switch-mock registry-service sync-agent \
 done
 cargo test --manifest-path services/ledger/Cargo.toml
 cargo test --manifest-path services/telemetry-collector/Cargo.toml
-for p in adjudicator triage dhis2-bridge procurement analytics chw-tasks lis-bridge; do
+for p in adjudicator triage dhis2-bridge procurement analytics chw-tasks lis-bridge erpnext-bridge; do
   python3 -m unittest discover -s "packages/$p"
 done
 python3 -m unittest discover -s benchmark          # harness self-tests

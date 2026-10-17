@@ -21,6 +21,12 @@ func registerPatientRoutes(mux *http.ServeMux, ps PatientStore) {
 			}
 			p, err := ps.Register(p)
 			if err != nil {
+				if errors.Is(err, ErrDuplicate) {
+					// Deterministic dedupe (ADR-0012): tell the registrar
+					// which existing record this attempt duplicates.
+					http.Error(w, err.Error(), http.StatusConflict)
+					return
+				}
 				http.Error(w, err.Error(), http.StatusBadRequest)
 				return
 			}

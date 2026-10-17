@@ -83,6 +83,7 @@ jobs:
           python3 -m unittest discover -s packages/lakehouse
           python3 -m unittest discover -s packages/replay
           python3 -m unittest discover -s packages/costguard
+          python3 -m unittest discover -s packages/erpnext-bridge
           python3 -m unittest discover -s benchmark
           python3 benchmark/million_claims.py --claims 50000 > /dev/null  # invariant-checked benchmark run
 

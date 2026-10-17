@@ -42,7 +42,9 @@ services:
              && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
              -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql
              && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -v ON_ERROR_STOP=1 -f /migrations/0004_notifications.sql"
+             -v ON_ERROR_STOP=1 -f /migrations/0004_notifications.sql
+      && psql "$DATABASE_URL"
+             -v ON_ERROR_STOP=1 -f /migrations/0005_registry_kyc.sql"
 
   # OIDC issuer for the gateways (ADR-0006): create the 'openhealth' realm,
   # then uncomment OIDC_ISSUER on shr-service / claims-orchestrator below.

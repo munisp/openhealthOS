@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"sort"
 	"sync"
+	"time"
 )
 
 // Patient is the registry record for one enrolled person.
@@ -21,30 +22,55 @@ type Patient struct {
 	DOB        string `json:"dob"`         // YYYY-MM-DD
 	Phone      string `json:"phone"`       // USSD/SMS channel for eligibility + reminders
 	FacilityID string `json:"facility_id"` // registering facility
+	// KYC (ADR-0012): assurance ladder, never blocks care.
+	KYCLevel     string `json:"kyc_level"`            // self | phone | nin-format | nin-verified
+	KYCDetail    string `json:"kyc_detail,omitempty"` // last verification outcome, human-readable
+	RegisteredAt string `json:"registered_at,omitempty"`
 }
 
 // PatientStore is the patient persistence seam.
 type PatientStore interface {
 	// Register issues an offline-resolvable id and stores the record.
+	// Registration refuses deterministic duplicates (same NIN, same
+	// phone+DOB, same normalised name+DOB) — ErrDuplicate.
 	Register(p Patient) (Patient, error)
 	// LinkNIN binds an existing offline record to a NIN (progressive enrolment).
 	LinkNIN(id, nin string) (Patient, error)
 	GetPatient(id string) (Patient, error)
 	FindByNIN(nin string) (Patient, error)
 	ListPatients() []Patient
+	// FindDuplicate returns the existing record p would duplicate,
+	// or ErrNotFound when p is unique on every deterministic rule.
+	FindDuplicate(p Patient) (Patient, error)
+	// SetKYC raises the assurance level (never silently downgrades).
+	SetKYC(id, level, detail string) (Patient, error)
+	// SaveOTP stores a fresh phone-binding challenge (hash + expiry,
+	// resets attempt counter). CheckOTP validates a presented code.
+	SaveOTP(id, codeHash string, expires time.Time) error
+	CheckOTP(id, codeHash string, now time.Time) error
 }
 
 var ErrNINBound = errors.New("record already bound to a NIN")
+
+// otpRecord is one outstanding phone-binding challenge.
+type otpRecord struct {
+	hash     string
+	expires  time.Time
+	attempts int
+}
+
+const otpMaxAttempts = 5
 
 // MemoryPatientStore is the default patient store (edge nodes, tests).
 type MemoryPatientStore struct {
 	mu   sync.Mutex
 	byID map[string]Patient
 	seq  map[string]int // per-facility sequence for offline ids
+	otp  map[string]otpRecord
 }
 
 func NewMemoryPatientStore() *MemoryPatientStore {
-	return &MemoryPatientStore{byID: map[string]Patient{}, seq: map[string]int{}}
+	return &MemoryPatientStore{byID: map[string]Patient{}, seq: map[string]int{}, otp: map[string]otpRecord{}}
 }
 
 // OfflineID issues a locally-resolvable id: OH-<facility>-<zero-padded seq>.
@@ -60,12 +86,8 @@ func (m *MemoryPatientStore) Register(p Patient) (Patient, error) {
 	}
 	m.mu.Lock()
 	defer m.mu.Unlock()
-	if p.NIN != "" {
-		for _, existing := range m.byID {
-			if existing.NIN == p.NIN {
-				return Patient{}, errors.New("NIN already registered: " + existing.ID)
-			}
-		}
+	if existing, err := m.findDuplicateLocked(p); err == nil {
+		return Patient{}, fmt.Errorf("%w: %s", ErrDuplicate, DuplicateReason(existing))
 	}
 	if p.ID == "" {
 		m.seq[p.FacilityID]++
@@ -73,8 +95,88 @@ func (m *MemoryPatientStore) Register(p Patient) (Patient, error) {
 	} else if _, taken := m.byID[p.ID]; taken {
 		return Patient{}, errors.New("patient id exists: " + p.ID)
 	}
+	// KYC defaults: a fresh record is self-asserted; a syntactically valid
+	// NIN at registration lifts it to nin-format (offline check only).
+	p.KYCLevel = KYCSelf
+	if p.NIN != "" && ValidNINFormat(p.NIN) {
+		p.KYCLevel = KYCNINFormat
+	}
+	if p.RegisteredAt == "" {
+		p.RegisteredAt = time.Now().UTC().Format(time.RFC3339)
+	}
 	m.byID[p.ID] = p
 	return p, nil
+}
+
+// findDuplicateLocked applies the deterministic dedupe rules (kyc.go):
+// same NIN, same phone+DOB, or same normalised name+DOB.
+func (m *MemoryPatientStore) findDuplicateLocked(p Patient) (Patient, error) {
+	norm := NormalizeName(p.Name)
+	for _, e := range m.byID {
+		if p.NIN != "" && e.NIN == p.NIN {
+			return e, nil
+		}
+		if p.Phone != "" && p.DOB != "" && e.Phone == p.Phone && e.DOB == p.DOB {
+			return e, nil
+		}
+		if p.DOB != "" && norm != "" && NormalizeName(e.Name) == norm && e.DOB == p.DOB {
+			return e, nil
+		}
+	}
+	return Patient{}, ErrNotFound
+}
+
+func (m *MemoryPatientStore) FindDuplicate(p Patient) (Patient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.findDuplicateLocked(p)
+}
+
+func (m *MemoryPatientStore) SetKYC(id, level, detail string) (Patient, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	p, ok := m.byID[id]
+	if !ok {
+		return Patient{}, ErrNotFound
+	}
+	if kycRank(level) < kycRank(p.KYCLevel) {
+		return p, nil // never downgrade
+	}
+	p.KYCLevel, p.KYCDetail = level, detail
+	m.byID[id] = p
+	return p, nil
+}
+
+func (m *MemoryPatientStore) SaveOTP(id, codeHash string, expires time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if _, ok := m.byID[id]; !ok {
+		return ErrNotFound
+	}
+	m.otp[id] = otpRecord{hash: codeHash, expires: expires}
+	return nil
+}
+
+func (m *MemoryPatientStore) CheckOTP(id, codeHash string, now time.Time) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	rec, ok := m.otp[id]
+	if !ok {
+		return ErrNotFound
+	}
+	if rec.attempts >= otpMaxAttempts {
+		return ErrOTPLocked
+	}
+	if now.After(rec.expires) {
+		return ErrOTPExpired
+	}
+	rec.attempts++
+	m.otp[id] = rec
+	if rec.hash != codeHash {
+		return ErrOTPMismatch
+	}
+	delete(m.otp, id) // one-time use
+	return nil
 }
 
 func (m *MemoryPatientStore) LinkNIN(id, nin string) (Patient, error) {
@@ -96,6 +198,11 @@ func (m *MemoryPatientStore) LinkNIN(id, nin string) (Patient, error) {
 		}
 	}
 	p.NIN = nin
+	// A bound NIN is at least format-checked; authority verification is a
+	// separate step (POST /patients/{id}/verify).
+	if ValidNINFormat(nin) && kycRank(p.KYCLevel) < kycRank(KYCNINFormat) {
+		p.KYCLevel = KYCNINFormat
+	}
 	m.byID[id] = p
 	return p, nil
 }

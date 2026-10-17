@@ -34,6 +34,22 @@ func main() {
 	s := server{store: store}
 	mux := s.routes()
 	registerPatientRoutes(mux, patients)
+	// KYC seams (ADR-0012): NIN_VERIFY_URL binds a NIMC-compatible
+	// verification endpoint, otherwise verification defers offline;
+	// SMS_WEBHOOK_URL binds the OTP channel, otherwise codes are logged.
+	var verifier Verifier = OfflineVerifier{}
+	if u := os.Getenv("NIN_VERIFY_URL"); u != "" {
+		verifier = HTTPVerifier{URL: u, Token: os.Getenv("NIN_VERIFY_TOKEN")}
+		log.Print("kyc: NIN verification via NIN_VERIFY_URL")
+	} else {
+		log.Print("kyc: offline verifier — NIN checks defer until configured")
+	}
+	var sender OTPSender = LogSender{Logf: log.Printf}
+	if u := os.Getenv("SMS_WEBHOOK_URL"); u != "" {
+		sender = WebhookSender{URL: u, Token: os.Getenv("SMS_WEBHOOK_TOKEN")}
+		log.Print("kyc: OTP via SMS webhook")
+	}
+	registerKYCRoutes(mux, patients, verifier, sender)
 	log.Printf("OpenHealth OS registry service on %s (facilities, providers, patients)", addr)
 	handler := http.Handler(mux)
 	if v := authz.FromEnv(os.Getenv); v != nil {
