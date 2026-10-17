@@ -31,5 +31,8 @@ curl -s "localhost:${DEMO_PORT:-18080}/claims" -d @examples/claims/approve.json 
 echo "== PENDED CLAIM (C-1002, price drift) =="
 curl -s "localhost:${DEMO_PORT:-18080}/claims" -d @examples/claims/pend.json | python3 -m json.tool
 
+echo "== PRE-AUTH (ANC-001) =="
+curl -s "localhost:${DEMO_PORT:-18080}/preauth" -d @examples/preauth/request.json | python3 -m json.tool
+
 kill $MS $OR 2>/dev/null || true
 echo "== demo complete =="

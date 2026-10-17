@@ -1,0 +1,13 @@
+# syntax=docker/dockerfile:1
+# Standalone Rust ledger image (double-entry, 2PC, no negative balances).
+# Std-only crate — musl static build, minimal runtime surface.
+FROM rust:1.82-alpine AS build
+WORKDIR /src
+COPY services/ledger/ ./
+RUN cargo build --release
+
+FROM alpine:3.20
+RUN adduser -D -u 10001 openhealth
+USER openhealth
+COPY --from=build --chown=openhealth /src/target/release/oh_ledger /usr/local/bin/oh_ledger
+ENTRYPOINT ["/usr/local/bin/oh_ledger"]

@@ -26,6 +26,7 @@ func main() {
 	mux := http.NewServeMux()
 	mux.Handle("/claims", h)
 	mux.Handle("/eligibility", eligibilityHandler{Checker: adj})
+	mux.Handle("/preauth", preauthHandler{Authorizer: adj})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	addr := env("LISTEN", ":8080")
 	log.Printf("OpenHealth OS claims orchestrator on %s (switch=%s)", addr, env("SWITCH", "http://127.0.0.1:9090"))

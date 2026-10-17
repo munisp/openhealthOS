@@ -1,0 +1,102 @@
+# Platform plane — the OpenHealth OS application services, containerised.
+#
+# Complements docker-compose.yaml (infrastructure plane: Postgres, MinIO,
+# Keycloak, observability). All application services are stdlib-only Go
+# built from the shared Dockerfile.go-service; the money-path services
+# (claims-orchestrator, wallet-service) carry the Rust ledger and Python
+# adjudicator in-image via their dedicated Dockerfiles.
+#
+#   docker compose -f infra/compose/platform.yaml up --build
+#
+# Ports are host-mapped to the 180xx range to avoid clashing with anything
+# already on 8080. payment-switch is the FSPIOP-shaped mock — a test
+# fixture, never a production settlement rail (swap for the real switch).
+#
+# Edge components (sync-agent) run on facility devices, not in this plane.
+
+services:
+  payment-switch:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: payment-switch-mock }
+    environment: { LISTEN: ":9090" }
+    ports: ["19090:9090"]
+
+  claims-orchestrator:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.claims-orchestrator
+    environment:
+      LISTEN: ":8080"
+      SWITCH: http://payment-switch:9090
+    ports: ["18080:8080"]
+    depends_on: [payment-switch]
+
+  registry-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: registry-service }
+    environment: { LISTEN: ":8081" }
+    ports: ["18081:8081"]
+
+  consent-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: consent-service }
+    environment:
+      LISTEN: ":8082"
+      CONSENT_HMAC_KEY: dev-only-not-secret
+    ports: ["18082:8082"]
+
+  shr-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: shr-service }
+    environment:
+      LISTEN: ":8085"
+      CONSENT_URL: http://consent-service:8082
+    ports: ["18085:8085"]
+    depends_on: [consent-service]
+
+  telehealth-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: telehealth-service }
+    environment: { LISTEN: ":8087" }
+    ports: ["18087:8087"]
+
+  wallet-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.wallet-service
+    environment: { LISTEN: ":8084" }
+    ports: ["18084:8084"]
+
+  equipment-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: equipment-service }
+    environment: { LISTEN: ":8086" }
+    ports: ["18086:8086"]
+
+  ussd-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: ussd-gateway }
+    environment: { LISTEN: ":8083" }
+    ports: ["18083:8083"]
+
+  sync-ingest:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: sync-ingest }
+    environment: { LISTEN: ":8443" }
+    ports: ["18443:8443"]

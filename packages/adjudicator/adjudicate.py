@@ -11,6 +11,7 @@ APPROVE / PEND / DENY. Registries (members, benefits, tariffs) are in-file
 fixtures here; production reads them from the FHIR/claims services over
 Dapr/Kafka.
 """
+import hashlib
 import json
 import sys
 from datetime import datetime
@@ -31,6 +32,11 @@ TARIFF = {  # NGN per unit
 FREQ_CAP = {"MAL-RDT": 2, "PARA-TAB": 2}  # max units per member per 14 days
 DUP_WINDOW_DAYS = 14
 PRICE_DRIFT_TOLERANCE = 0.10
+
+# Pre-authorisation (claims-gateway /preauth/request). Lines at or above
+# this estimated cost always require a clinical note; without one the
+# request pends for medical review instead of failing open.
+PREAUTH_NOTE_THRESHOLD_NGN = 10000
 
 
 def _d(s):
@@ -80,6 +86,10 @@ def adjudicate(claim: dict) -> dict:
         decision = "APPROVE"
     if decision == "APPROVE" and not reasons:
         reasons = ["OK: eligible, in benefit, priced on tariff"]
+    if decision == "PEND" and not reasons:
+        # A pended verdict must state why in reasons, not only in flags —
+        # silent verdicts are the failure mode this engine exists to kill.
+        reasons = [f"REVIEW: {f}" for f in flags]
     copay = 0 if member["copay_waiver"] else round(total * 0.10)
     return {"claim_id": claim.get("claim_id"), "member": member["name"], "scheme": scheme,
             "decision": decision, "reasons": reasons, "flags": flags,
@@ -100,9 +110,61 @@ def check_eligibility(member_id: str, service_date: str) -> dict:
             "source": "live"}
 
 
+def preauth(request: dict) -> dict:
+    """Pre-authorisation decision for tariff lines (claims-gateway
+    /preauth/request). Same eligibility and benefit rules as adjudication
+    — a preauth that approves what adjudication would deny is a promise
+    the scheme cannot keep. The preauth id is deterministic: the same
+    request always yields the same id, so offline replays dedupe."""
+    reasons = []
+    member = MEMBERS.get(request.get("member_id", ""))
+    if not member:
+        return {"preauth_id": None, "status": "DENIED",
+                "reasons": ["ELIGIBILITY: unknown member"], "estimated_ngn": 0}
+    if not member["active"]:
+        return {"preauth_id": None, "status": "DENIED",
+                "reasons": ["ELIGIBILITY: coverage inactive"], "estimated_ngn": 0}
+    scheme = member["scheme"]
+    allowed_codes = BENEFIT.get(scheme, [])
+    total, denied_lines = 0, []
+    for item in request.get("items", []):
+        code, qty = item["code"], int(item.get("qty", 1))
+        if code not in allowed_codes:
+            denied_lines.append(code)
+            reasons.append(f"BENEFIT: {code} not covered under {scheme}")
+        elif code not in TARIFF:
+            denied_lines.append(code)
+            reasons.append(f"TARIFF: {code} missing from schedule")
+        else:
+            total += TARIFF[code] * qty
+    if denied_lines and total == 0:
+        return {"preauth_id": None, "status": "DENIED", "reasons": reasons,
+                "estimated_ngn": 0}
+    canonical = "|".join([
+        request.get("member_id", ""), request.get("provider_id", ""),
+        ",".join(f"{i['code']}x{int(i.get('qty', 1))}"
+                 for i in sorted(request.get("items", []), key=lambda i: i["code"])),
+    ])
+    preauth_id = "PA-" + hashlib.sha256(canonical.encode()).hexdigest()[:12].upper()
+    if total >= PREAUTH_NOTE_THRESHOLD_NGN and not request.get("clinical_note"):
+        reasons.append(f"REVIEW: estimated NGN {total} ≥ {PREAUTH_NOTE_THRESHOLD_NGN} "
+                       "requires a clinical note — pended for medical review")
+        return {"preauth_id": preauth_id, "status": "PENDED", "reasons": reasons,
+                "estimated_ngn": total}
+    if denied_lines:
+        reasons.append("PARTIAL: uncovered lines excluded from authorisation")
+    if not reasons:
+        reasons = ["OK: eligible, in benefit, priced on tariff"]
+    return {"preauth_id": preauth_id, "status": "APPROVED", "reasons": reasons,
+            "estimated_ngn": total, "scheme": scheme,
+            "adjudicated_by": "openhealth-adjudicator@0.3.0"}
+
+
 if __name__ == "__main__":
     if "--check" in sys.argv:  # eligibility mode: stdin {"member_id","service_date"}
         req = json.load(sys.stdin)
         print(json.dumps(check_eligibility(req["member_id"], req.get("service_date", "2026-10-17"))))
+    elif "--preauth" in sys.argv:  # preauth mode: stdin {"member_id","provider_id","items":[...]}
+        print(json.dumps(preauth(json.load(sys.stdin)), indent=2))
     else:
         print(json.dumps(adjudicate(json.load(sys.stdin)), indent=2))

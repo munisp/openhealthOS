@@ -1,0 +1,16 @@
+# syntax=docker/dockerfile:1
+# Shared build for every stdlib-only Go service in services/.
+# Build:  docker build -f infra/docker/Dockerfile.go-service \
+#           --build-arg MODULE=registry-service -t openhealth/registry-service .
+FROM golang:1.22-alpine AS build
+ARG MODULE
+WORKDIR /src
+COPY services/${MODULE}/ ./
+RUN CGO_ENABLED=0 go vet . && CGO_ENABLED=0 go build -trimpath -o /out/service .
+
+FROM alpine:3.20
+RUN adduser -D -u 10001 openhealth
+USER openhealth
+COPY --from=build /out/service /usr/local/bin/service
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/service"]

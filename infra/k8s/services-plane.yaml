@@ -1,0 +1,219 @@
+# Application services plane — complements state-plane.yaml (claims,
+# registry, sync-ingest). One state, one namespace. Production hardening
+# (HA Postgres operator, NetworkPolicies, PodSecurity, ingress) is listed
+# in state-plane.yaml and applies here unchanged.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: consent-service
+  namespace: oh-state-example
+  labels: { app: consent-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: consent-service }
+  template:
+    metadata:
+      labels: { app: consent-service }
+    spec:
+      containers:
+        - name: consent-service
+          image: ghcr.io/munisp/openhealthos/consent-service:latest
+          ports: [{ containerPort: 8082 }]
+          env:
+            - { name: LISTEN, value: ":8082" }
+            - name: CONSENT_HMAC_KEY
+              valueFrom:
+                secretKeyRef: { name: consent-keys, key: hmac-key }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8082 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: shr-service
+  namespace: oh-state-example
+  labels: { app: shr-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: shr-service }
+  template:
+    metadata:
+      labels: { app: shr-service }
+    spec:
+      containers:
+        - name: shr-service
+          image: ghcr.io/munisp/openhealthos/shr-service:latest
+          ports: [{ containerPort: 8085 }]
+          env:
+            - { name: LISTEN, value: ":8085" }
+            - { name: CONSENT_URL, value: "http://consent-service:8082" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8085 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telehealth-service
+  namespace: oh-state-example
+  labels: { app: telehealth-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: telehealth-service }
+  template:
+    metadata:
+      labels: { app: telehealth-service }
+    spec:
+      containers:
+        - name: telehealth-service
+          image: ghcr.io/munisp/openhealthos/telehealth-service:latest
+          ports: [{ containerPort: 8087 }]
+          env:
+            - { name: LISTEN, value: ":8087" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8087 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wallet-service
+  namespace: oh-state-example
+  labels: { app: wallet-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: wallet-service }
+  template:
+    metadata:
+      labels: { app: wallet-service }
+    spec:
+      containers:
+        - name: wallet-service
+          image: ghcr.io/munisp/openhealthos/wallet-service:latest
+          ports: [{ containerPort: 8084 }]
+          env:
+            - { name: LISTEN, value: ":8084" }
+            - { name: LEDGER, value: "/usr/local/bin/oh_ledger" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8084 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: equipment-service
+  namespace: oh-state-example
+  labels: { app: equipment-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: equipment-service }
+  template:
+    metadata:
+      labels: { app: equipment-service }
+    spec:
+      containers:
+        - name: equipment-service
+          image: ghcr.io/munisp/openhealthos/equipment-service:latest
+          ports: [{ containerPort: 8086 }]
+          env:
+            - { name: LISTEN, value: ":8086" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8086 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ussd-gateway
+  namespace: oh-state-example
+  labels: { app: ussd-gateway }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: ussd-gateway }
+  template:
+    metadata:
+      labels: { app: ussd-gateway }
+    spec:
+      containers:
+        - name: ussd-gateway
+          image: ghcr.io/munisp/openhealthos/ussd-gateway:latest
+          ports: [{ containerPort: 8083 }]
+          env:
+            - { name: LISTEN, value: ":8083" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8083 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: consent-service
+  namespace: oh-state-example
+spec:
+  selector: { app: consent-service }
+  ports: [{ port: 8082, targetPort: 8082 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: shr-service
+  namespace: oh-state-example
+spec:
+  selector: { app: shr-service }
+  ports: [{ port: 8085, targetPort: 8085 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telehealth-service
+  namespace: oh-state-example
+spec:
+  selector: { app: telehealth-service }
+  ports: [{ port: 8087, targetPort: 8087 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wallet-service
+  namespace: oh-state-example
+spec:
+  selector: { app: wallet-service }
+  ports: [{ port: 8084, targetPort: 8084 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: equipment-service
+  namespace: oh-state-example
+spec:
+  selector: { app: equipment-service }
+  ports: [{ port: 8086, targetPort: 8086 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ussd-gateway
+  namespace: oh-state-example
+spec:
+  selector: { app: ussd-gateway }
+  ports: [{ port: 8083, targetPort: 8083 }]

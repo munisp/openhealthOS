@@ -1,0 +1,27 @@
+# syntax=docker/dockerfile:1
+# Claims orchestrator image: the Go service plus its two hot-path seams —
+# the Rust double-entry ledger binary and the Python adjudication engine.
+# The subprocess seam is deliberate (ADR-0003/0005): the ledger and rules
+# engine are independently replaceable, and the image ships the reference
+# implementations so a state can boot the full money path from one pull.
+FROM golang:1.22-alpine AS go-build
+WORKDIR /src
+COPY services/claims-orchestrator/ ./
+RUN CGO_ENABLED=0 go vet . && CGO_ENABLED=0 go build -trimpath -o /out/claims-orchestrator .
+
+FROM rust:1.82-alpine AS rust-build
+WORKDIR /src
+COPY services/ledger/ ./
+RUN cargo build --release
+
+FROM alpine:3.20
+RUN apk add --no-cache python3 && adduser -D -u 10001 openhealth
+USER openhealth
+COPY --from=go-build /out/claims-orchestrator /usr/local/bin/claims-orchestrator
+COPY --from=rust-build --chown=openhealth /src/target/release/oh_ledger /usr/local/bin/oh_ledger
+COPY packages/adjudicator/adjudicate.py /opt/adjudicator/adjudicate.py
+ENV PYTHON=python3 \
+    ADJUDICATOR=/opt/adjudicator/adjudicate.py \
+    LEDGER=/usr/local/bin/oh_ledger
+EXPOSE 8080
+ENTRYPOINT ["/usr/local/bin/claims-orchestrator"]
