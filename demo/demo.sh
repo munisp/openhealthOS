@@ -19,16 +19,17 @@ sleep 0.3
 
 "$BUILD_DIR/payment-switch-mock" & MS=$!
 sleep 0.4
-SWITCH=http://127.0.0.1:9090 \
+PORT="${DEMO_PORT:-18080}"
+LISTEN=":$PORT" SWITCH=http://127.0.0.1:9090 \
 ADJUDICATOR=packages/adjudicator/adjudicate.py \
 LEDGER="$BUILD_DIR/cargo/release/oh_ledger" \
   "$BUILD_DIR/claims-orchestrator" & OR=$!
 sleep 0.4
 
 echo "== APPROVED CLAIM (C-1001) =="
-curl -s localhost:8080/claims -d @examples/claims/approve.json | python3 -m json.tool
+curl -s "localhost:${DEMO_PORT:-18080}/claims" -d @examples/claims/approve.json | python3 -m json.tool
 echo "== PENDED CLAIM (C-1002, price drift) =="
-curl -s localhost:8080/claims -d @examples/claims/pend.json | python3 -m json.tool
+curl -s "localhost:${DEMO_PORT:-18080}/claims" -d @examples/claims/pend.json | python3 -m json.tool
 
 kill $MS $OR 2>/dev/null || true
 echo "== demo complete =="
