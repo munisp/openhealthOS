@@ -152,6 +152,12 @@ func (s server) routes() *http.ServeMux {
 			"duplicates_dropped": dup, "ts": time.Now().UTC().Format(time.RFC3339),
 		})
 	})
+	// /events exports the applied log for the pilot-gates reporter
+	// (packages/analytics/reporter.py) — read-only, same seam as /metrics.
+	mux.HandleFunc("/events", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(s.store.Events())
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }

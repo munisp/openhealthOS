@@ -1,9 +1,11 @@
 package main
 
 import (
+	"context"
 	"log"
 	"net/http"
 	"os"
+	"time"
 )
 
 func main() {
@@ -11,9 +13,25 @@ func main() {
 	if v := os.Getenv("LISTEN"); v != "" {
 		addr = v
 	}
-	s := server{store: NewMemoryStore()}
+	// Storage seam: DATABASE_URL binds Postgres (state plane); unset keeps
+	// the in-memory store (edge nodes, local dev, tests).
+	var store Store = NewMemoryStore()
+	var patients PatientStore = NewMemoryPatientStore()
+	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
+		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		pg, err := NewPostgresStore(ctx, dsn)
+		cancel()
+		if err != nil {
+			log.Fatalf("postgres: %v", err)
+		}
+		store, patients = pg, NewPostgresPatientStore(pg.pool)
+		log.Print("registry storage: postgres (state plane)")
+	} else {
+		log.Print("registry storage: in-memory (set DATABASE_URL for postgres)")
+	}
+	s := server{store: store}
 	mux := s.routes()
-	registerPatientRoutes(mux, NewMemoryPatientStore())
+	registerPatientRoutes(mux, patients)
 	log.Printf("OpenHealth OS registry service on %s (facilities, providers, patients)", addr)
 	log.Fatal(http.ListenAndServe(addr, mux))
 }

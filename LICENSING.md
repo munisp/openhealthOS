@@ -30,6 +30,8 @@ Every third-party component is reviewed before adoption. The rule:
 | Last EHR Approval-Gated Agent Writes protocol | Apache-2.0 | Adopt protocol; conformance-tested in `packages/triage` |
 | CloudHealthOffice | **BSL 1.1 — source-available, not embeddable** | **Re-implemented** as our claims engine (`packages/adjudicator` + `services/claims-orchestrator`), clean-room in Python/Go, AGPL |
 | Elasticsearch | SSPL/Elastic — excluded | OpenSearch used instead |
+| pgx v5 (Go Postgres driver) | MIT | Reuse as-is — the only third-party Go dependency; state-plane stores bind Postgres through it (ADR-0006) |
+| `shared/authz` OIDC verification | AGPL-3.0 (ours) | **Deliberately stdlib-only** — JWT/JWKS verification is a security-critical path we audit line by line; no external JWT library |
 
 ### CI enforcement
 

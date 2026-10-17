@@ -74,11 +74,23 @@ python3 -m unittest discover -s benchmark          # harness self-tests
 python3 benchmark/million_claims.py --claims 10000  # smoke-run the challenge
 ```
 
+**Storage & auth seams** (ADR-0006): services default to in-memory stores (edge, dev,
+tests). Set `DATABASE_URL` to bind Postgres on the state plane — registry, sync-ingest
+(exactly-once survives restarts), consent (signed artefacts + audit), SHR (resources +
+append-only access audit). Set `OIDC_ISSUER` to enforce Keycloak bearer auth on the
+claims orchestrator and SHR gateways. Full platform plane:
+
+```bash
+docker compose -f infra/compose/platform.yaml up --build
+```
+
 ## Repository layout
 
 ```
 services/    Go + Rust deployable services (the runtime plane)
 packages/    Python domain packages (rules, analytics, ML seams)
+db/          State-plane Postgres migrations (idempotent, applied at boot)
+shared/      Shared Go modules — authz (stdlib-only OIDC/JWKS verification)
 fhir/        FHIR R4 implementation guide — Nigerian profiles (Apache-2.0)
 openapi/     Claims-gateway contract (NHCX-analogue): eligibility, pre-auth, claims, status
 infra/       Dockerfiles (shared Go/Rust builds) · compose infra + platform planes · Kubernetes skeletons

@@ -69,15 +69,20 @@ func canonical(c *Consent) string {
 	return strings.Join(fields, "|")
 }
 
-func (m *Manager) sign(c *Consent) string {
-	mac := hmac.New(sha256.New, m.key)
-	mac.Write([]byte(canonical(c)))
-	return hex.EncodeToString(mac.Sum(nil))
-}
+func (m *Manager) sign(c *Consent) string { return signWith(m.key, c) }
 
 // Verify recomputes the signature over the artefact's current contents.
 func (m *Manager) Verify(c *Consent) bool {
 	return hmac.Equal([]byte(c.Signature), []byte(m.sign(c)))
+}
+
+// signWith signs the canonical form with an explicit key — shared by the
+// in-memory manager and the Postgres store so an artefact verifies
+// identically on either side of a restart.
+func signWith(key []byte, c *Consent) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte(canonical(c)))
+	return hex.EncodeToString(mac.Sum(nil))
 }
 
 func (m *Manager) record(event, id, detail string) {
@@ -155,7 +160,17 @@ func (m *Manager) Audit() []AuditEntry {
 
 // ---- HTTP surface ----
 
-type server struct{ m *Manager }
+// ConsentService is the lifecycle seam: the in-memory Manager (edge,
+// tests) and PostgresManager (state plane) both satisfy it.
+type ConsentService interface {
+	Issue(patientID, grantee, scope, purpose string) (Consent, error)
+	Revoke(id string) error
+	Check(patientID, grantee, scope string) (bool, error)
+	Verify(c *Consent) bool
+	Audit() []AuditEntry
+}
+
+type server struct{ m ConsentService }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")

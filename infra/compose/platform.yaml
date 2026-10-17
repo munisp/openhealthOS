@@ -15,6 +15,39 @@
 # Edge components (sync-agent) run on facility devices, not in this plane.
 
 services:
+  # State-plane Postgres (schema: db/migrations/0001_init.sql, idempotent).
+  # Duplicated from the infra plane so this plane boots standalone; in a
+  # single-project deployment, share one postgres instead.
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: openhealth-dev
+      POSTGRES_DB: openhealth
+    ports: ["15432:5432"]
+    volumes: ["platform-pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+
+  migrate:
+    image: postgres:16-alpine
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes: ["../../db/migrations:/migrations:ro"]
+    command: >
+      sh -c "psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
+             -f /migrations/0001_init.sql"
+
+  # OIDC issuer for the gateways (ADR-0006): create the 'openhealth' realm,
+  # then uncomment OIDC_ISSUER on shr-service / claims-orchestrator below.
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: openhealth-dev
+    ports: ["18088:8080"]
+
   payment-switch:
     build:
       context: ../..
@@ -30,6 +63,7 @@ services:
     environment:
       LISTEN: ":8080"
       SWITCH: http://payment-switch:9090
+      # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment after realm setup
     ports: ["18080:8080"]
     depends_on: [payment-switch]
 
@@ -38,8 +72,11 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile.go-service
       args: { MODULE: registry-service }
-    environment: { LISTEN: ":8081" }
+    environment:
+      LISTEN: ":8081"
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
     ports: ["18081:8081"]
+    depends_on: [migrate]
 
   consent-service:
     build:
@@ -49,7 +86,9 @@ services:
     environment:
       LISTEN: ":8082"
       CONSENT_HMAC_KEY: dev-only-not-secret
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
     ports: ["18082:8082"]
+    depends_on: [migrate]
 
   shr-service:
     build:
@@ -59,8 +98,10 @@ services:
     environment:
       LISTEN: ":8085"
       CONSENT_URL: http://consent-service:8082
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment after realm setup
     ports: ["18085:8085"]
-    depends_on: [consent-service]
+    depends_on: [consent-service, migrate]
 
   telehealth-service:
     build:
@@ -98,5 +139,11 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile.go-service
       args: { MODULE: sync-ingest }
-    environment: { LISTEN: ":8443" }
+    environment:
+      LISTEN: ":8443"
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
     ports: ["18443:8443"]
+    depends_on: [migrate]
+
+volumes:
+  platform-pgdata:

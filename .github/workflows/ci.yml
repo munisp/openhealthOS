@@ -7,10 +7,30 @@ on:
 jobs:
   go:
     runs-on: ubuntu-latest
+    services:
+      # State-plane database for the Postgres store integration tests
+      # (TEST_DATABASE_URL-gated; skipped when unset).
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: openhealth-dev
+          POSTGRES_DB: openhealth
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://postgres:openhealth-dev@localhost:5432/openhealth
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-go@v5
         with: { go-version: "1.22" }
+      - name: apply state-plane migrations
+        run: psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f db/migrations/0001_init.sql
+      - name: vet and test the shared authz module (stdlib-only OIDC)
+        run: cd shared/authz && go vet ./... && go test ./...
       - name: vet and test all Go modules
         run: |
           set -e

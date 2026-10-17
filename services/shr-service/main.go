@@ -77,20 +77,72 @@ func (c HTTPConsentChecker) Check(patientID, grantee, scope string) (bool, error
 	return out.Allowed, nil
 }
 
-// Store keeps resources and the access audit log.
-type Store struct {
-	mu        sync.Mutex
-	resources map[string]*Resource // key: resourceType/id
+// backend is the persistence seam for resources and the audit log.
+// The access rule lives in Store — backends store and fetch, never decide.
+type backend interface {
+	put(r Resource) error
+	get(rt, id string) (*Resource, bool)
+	forPatient(patientID string) []*Resource
+	appendAudit(e AuditEntry)
+	auditLog() []AuditEntry
+}
+
+// memoryBackend is the default (edge nodes, tests).
+type memoryBackend struct {
+	resources map[string]*Resource
 	audit     []AuditEntry
-	consent   ConsentChecker
-	now       func() time.Time
+}
+
+func newMemoryBackend() *memoryBackend {
+	return &memoryBackend{resources: map[string]*Resource{}}
+}
+
+func (m *memoryBackend) put(r Resource) error {
+	stored := r
+	m.resources[key(r.ResourceType, r.ID)] = &stored
+	return nil
+}
+
+func (m *memoryBackend) get(rt, id string) (*Resource, bool) {
+	r, ok := m.resources[key(rt, id)]
+	return r, ok
+}
+
+func (m *memoryBackend) forPatient(patientID string) []*Resource {
+	var out []*Resource
+	for _, r := range m.resources {
+		if r.PatientID == patientID {
+			out = append(out, r)
+		}
+	}
+	return out
+}
+
+func (m *memoryBackend) appendAudit(e AuditEntry) { m.audit = append(m.audit, e) }
+
+func (m *memoryBackend) auditLog() []AuditEntry {
+	out := make([]AuditEntry, len(m.audit))
+	copy(out, m.audit)
+	return out
+}
+
+// Store applies the access rule; persistence lives behind the backend seam.
+type Store struct {
+	mu      sync.Mutex
+	be      backend
+	consent ConsentChecker
+	now     func() time.Time
 }
 
 func NewStore(consent ConsentChecker) *Store {
+	return NewStoreWithBackend(newMemoryBackend(), consent)
+}
+
+func NewStoreWithBackend(be backend, consent ConsentChecker) *Store {
 	return &Store{
-		resources: map[string]*Resource{},
-		consent:   consent,
-		now:       func() time.Time { return time.Now().UTC() },
+		be:      be,
+		consent: consent,
+		now:     func() time.Time { return time.Now().UTC() },
 	}
 }
 
@@ -105,16 +157,14 @@ func (s *Store) Put(r Resource) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	r.UpdatedAt = s.now().Format(time.RFC3339)
-	stored := r
-	s.resources[key(r.ResourceType, r.ID)] = &stored
-	return nil
+	return s.be.put(r)
 }
 
 // Get enforces the consent rule on a single-resource read.
 func (s *Store) Get(rt, id, actorFacility string, breakGlass bool) (*Resource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	r, ok := s.resources[key(rt, id)]
+	r, ok := s.be.get(rt, id)
 	if !ok {
 		return nil, ErrNotFound
 	}
@@ -130,12 +180,7 @@ func (s *Store) Get(rt, id, actorFacility string, breakGlass bool) (*Resource, e
 func (s *Store) PatientEverything(patientID, actorFacility string, breakGlass bool) ([]*Resource, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	var out []*Resource
-	for _, r := range s.resources {
-		if r.PatientID == patientID {
-			out = append(out, r)
-		}
-	}
+	out := s.be.forPatient(patientID)
 	if len(out) == 0 {
 		return nil, ErrNotFound
 	}
@@ -167,12 +212,12 @@ func (s *Store) authorizeLocked(r *Resource, actorFacility string, breakGlass bo
 		entry.Basis = "consent"
 		if err != nil || !allowed {
 			entry.Decision, entry.Basis = "denied", "no-consent"
-			s.audit = append(s.audit, entry)
+			s.be.appendAudit(entry)
 			return ErrNoConsent
 		}
 		entry.Decision = "allowed"
 	}
-	s.audit = append(s.audit, entry)
+	s.be.appendAudit(entry)
 	return nil
 }
 
@@ -180,9 +225,7 @@ func (s *Store) authorizeLocked(r *Resource, actorFacility string, breakGlass bo
 func (s *Store) Audit() []AuditEntry {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	out := make([]AuditEntry, len(s.audit))
-	copy(out, s.audit)
-	return out
+	return s.be.auditLog()
 }
 
 // ---------------------------------------------------------------- HTTP
