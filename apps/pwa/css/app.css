@@ -1,0 +1,328 @@
+/* OpenHealth OS — design system.
+ * Calm clinical sage palette; hairline borders; pill actions; generous
+ * vertical rhythm. Built for five-year-old Android in sunlight: 48px+
+ * touch targets, 16px+ body type, contrast-first.
+ */
+
+:root {
+  --green: #007f24;          /* primary action */
+  --sage: #85c093;           /* theme wash */
+  --ink: #09352e;            /* dark text */
+  --bg: #f7f7f7;
+  --surface: #ffffff;
+  --muted: #71807e;
+  --faint: #9ba8a7;
+  --hairline: rgba(0, 0, 0, 0.1);
+  --danger: #b3261e;
+  --danger-bg: #fdeceb;
+  --warn: #8a5a00;
+  --warn-bg: #fff4d6;
+  --ok-bg: #e6f3ea;
+  --radius: 14px;
+  --tabbar-h: 64px;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html { font-size: 16px; }
+
+body {
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  background: var(--bg);
+  color: var(--ink);
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+  padding-bottom: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+}
+
+::selection { background: var(--ink); color: #e9f5ec; }
+
+:focus-visible {
+  outline: 2px solid var(--green);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---------- shell ---------- */
+
+.appbar {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 14px 18px;
+  background: var(--surface);
+  border-bottom: 1px solid var(--hairline);
+}
+.appbar .logo {
+  width: 26px; height: 26px; border-radius: 8px;
+  background: linear-gradient(135deg, var(--green), var(--sage));
+  display: grid; place-items: center;
+  color: #fff; font-weight: 700; font-size: 14px;
+}
+.appbar h1 { font-size: 1.05rem; font-weight: 650; letter-spacing: -0.01em; }
+.appbar .net {
+  margin-left: auto;
+  width: 9px; height: 9px; border-radius: 50%;
+  background: var(--green);
+}
+.appbar .net.off { background: var(--faint); }
+
+.view {
+  max-width: 640px;
+  margin: 0 auto;
+  padding: 20px 16px 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.section-label {
+  font-size: 0.8rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-top: 8px;
+}
+
+/* ---------- cards ---------- */
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: var(--radius);
+  padding: 16px;
+  box-shadow: 0 1px 2px rgba(9, 53, 46, 0.04);
+}
+
+.task-card, .patient-card {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+.patient-card { cursor: pointer; }
+.patient-card:active { background: #f2f7f3; }
+
+.task-main, .patient-main { flex: 1; min-width: 0; }
+.task-title, .patient-name { font-weight: 600; font-size: 1rem; }
+.task-sub { color: var(--muted); font-size: 0.85rem; margin-top: 2px; }
+
+/* ---------- badges ---------- */
+
+.badge {
+  flex-shrink: 0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.badge-ok { background: var(--ok-bg); color: var(--green); border-color: #bfe3cb; }
+.badge-warn { background: var(--warn-bg); color: var(--warn); border-color: #eed9a3; }
+.badge-danger { background: var(--danger-bg); color: var(--danger); border-color: #f2c1bd; }
+
+/* ---------- buttons ---------- */
+
+.btn {
+  min-height: 48px;
+  padding: 0 22px;
+  border-radius: 999px;
+  font-size: 1rem;
+  font-weight: 600;
+  font-family: inherit;
+  cursor: pointer;
+  border: 1px solid var(--green);
+  background: transparent;
+  color: var(--green);
+  transition: transform 0.06s ease;
+}
+.btn:active { transform: scale(0.97); }
+.btn-primary { background: var(--green); color: #fff; }
+.btn-outline { background: transparent; }
+.btn-block { width: 100%; }
+.btn-done { min-height: 44px; padding: 0 18px; flex-shrink: 0; }
+
+.fab {
+  position: fixed;
+  right: 20px;
+  bottom: calc(var(--tabbar-h) + 20px + env(safe-area-inset-bottom));
+  width: 60px; height: 60px;
+  border-radius: 50%;
+  border: none;
+  background: var(--ink);
+  color: #fff;
+  font-size: 1.8rem;
+  font-weight: 500;
+  cursor: pointer;
+  box-shadow: 0 4px 14px rgba(9, 53, 46, 0.28);
+  z-index: 20;
+}
+.fab:active { transform: scale(0.94); }
+
+/* ---------- forms ---------- */
+
+.input {
+  width: 100%;
+  min-height: 48px;
+  padding: 10px 14px;
+  font-size: 1rem;
+  font-family: inherit;
+  color: var(--ink);
+  background: var(--surface);
+  border: 1px solid var(--hairline);
+  border-radius: 10px;
+}
+.input:focus { border-color: var(--green); outline: none; box-shadow: 0 0 0 2px rgba(0, 127, 36, 0.18); }
+
+.field { display: block; margin-bottom: 14px; }
+.field-label { display: block; font-size: 0.85rem; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+
+.checkrow {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  font-size: 1rem;
+  cursor: pointer;
+}
+.checkrow input {
+  width: 24px; height: 24px;
+  accent-color: var(--green);
+  cursor: pointer;
+}
+
+/* ---------- bottom sheet (register form) ---------- */
+
+.sheet {
+  position: fixed;
+  inset: 0;
+  z-index: 30;
+  background: rgba(9, 53, 46, 0.32);
+  display: flex;
+  align-items: flex-end;
+}
+.sheet-card {
+  background: var(--surface);
+  width: 100%;
+  max-width: 640px;
+  margin: 0 auto;
+  border-radius: 20px 20px 0 0;
+  padding: 22px 20px calc(20px + env(safe-area-inset-bottom));
+  max-height: 88vh;
+  overflow-y: auto;
+}
+.sheet-card h2 { font-size: 1.2rem; margin-bottom: 18px; }
+.sheet-actions { display: flex; gap: 12px; margin-top: 8px; }
+.sheet-actions .btn { flex: 1; }
+
+/* ---------- sync ---------- */
+
+.sync-hero {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 20px;
+  border-radius: var(--radius);
+  font-size: 1.05rem;
+  font-weight: 600;
+}
+.sync-online { background: var(--ok-bg); color: var(--green); }
+.sync-offline { background: var(--warn-bg); color: var(--warn); }
+.sync-dot { width: 14px; height: 14px; border-radius: 50%; background: currentColor; }
+
+.stat-row { display: flex; gap: 8px; }
+.stat { flex: 1; text-align: center; padding: 6px 0; }
+.stat-value { font-size: 1.5rem; font-weight: 700; letter-spacing: -0.02em; }
+.stat-label { font-size: 0.78rem; color: var(--muted); margin-top: 2px; }
+
+/* ---------- triage ---------- */
+
+.triage {
+  padding: 18px;
+  border-radius: var(--radius);
+  font-size: 1.15rem;
+  font-weight: 700;
+  text-align: center;
+}
+.triage-emergency { background: var(--danger-bg); color: var(--danger); border: 2px solid var(--danger); }
+.triage-ok { background: var(--ok-bg); color: var(--green); }
+
+/* ---------- banner / toast / nav ---------- */
+
+.banner {
+  position: fixed;
+  top: 0; left: 0; right: 0;
+  z-index: 40;
+  text-align: center;
+  font-size: 0.85rem;
+  font-weight: 600;
+  padding: 0;
+  max-height: 0;
+  overflow: hidden;
+  background: var(--ink);
+  color: #dff0e4;
+  transition: max-height 0.25s ease, padding 0.25s ease;
+}
+.banner-show { max-height: 40px; padding: 8px; }
+
+.toast {
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--tabbar-h) + 24px);
+  transform: translateX(-50%) translateY(20px);
+  background: var(--ink);
+  color: #e9f5ec;
+  padding: 12px 22px;
+  border-radius: 999px;
+  font-size: 0.95rem;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 0.2s ease, transform 0.2s ease;
+  z-index: 50;
+  max-width: 88vw;
+  text-align: center;
+}
+.toast-show { opacity: 1; transform: translateX(-50%) translateY(0); }
+
+#tabbar {
+  position: fixed;
+  left: 0; right: 0; bottom: 0;
+  height: calc(var(--tabbar-h) + env(safe-area-inset-bottom));
+  padding-bottom: env(safe-area-inset-bottom);
+  display: flex;
+  background: var(--surface);
+  border-top: 1px solid var(--hairline);
+  z-index: 25;
+}
+.tab {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  text-decoration: none;
+  color: var(--faint);
+  font-size: 0.68rem;
+  font-weight: 600;
+}
+.tab-glyph { font-size: 1.25rem; line-height: 1; }
+.tab-active { color: var(--green); }
+
+.empty {
+  text-align: center;
+  color: var(--muted);
+  padding: 48px 20px;
+  font-size: 1rem;
+}
+
+.about { line-height: 1.7; }
+
+/* larger screens: keep the phone-shaped focus column */
+@media (min-width: 720px) {
+  .card { padding: 20px; }
+}

@@ -93,13 +93,22 @@ type IngestResult struct {
 // idempotently. Events without an id are rejected — they cannot be made
 // safe under at-least-once delivery.
 func IngestBatch(body io.Reader, store Store) (IngestResult, error) {
-	var res IngestResult
 	gz, err := gzip.NewReader(body)
 	if err != nil {
-		return res, fmt.Errorf("bad gzip stream: %w", err)
+		return IngestResult{}, fmt.Errorf("bad gzip stream: %w", err)
 	}
 	defer gz.Close()
-	sc := bufio.NewScanner(gz)
+	return ingestLines(gz, store)
+}
+
+// IngestBatchPlain is the uncompressed twin (phones, curl, demos).
+func IngestBatchPlain(body io.Reader, store Store) (IngestResult, error) {
+	return ingestLines(body, store)
+}
+
+func ingestLines(r io.Reader, store Store) (IngestResult, error) {
+	var res IngestResult
+	sc := bufio.NewScanner(r)
 	sc.Buffer(make([]byte, 1<<20), 1<<20)
 	line := 0
 	for sc.Scan() {
@@ -138,6 +147,21 @@ func (s server) routes() *http.ServeMux {
 			return
 		}
 		res, err := IngestBatch(r.Body, s.store)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(res)
+	})
+	// Phone/PWA path: plain JSON-lines, no gzip — ancient Android browsers
+	// lack CompressionStream. Same idempotent apply, same ack shape.
+	mux.HandleFunc("/ingest/raw", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			http.Error(w, "POST only", http.StatusMethodNotAllowed)
+			return
+		}
+		res, err := IngestBatchPlain(r.Body, s.store)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
 			return

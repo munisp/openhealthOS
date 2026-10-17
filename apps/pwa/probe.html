@@ -1,0 +1,13 @@
+<!DOCTYPE html><html><body>
+<div id="probe">start</div>
+<script type="module">
+const log = (m) => { document.getElementById("probe").textContent += " | " + m; };
+try {
+  log("module-ran");
+  const req = indexedDB.open("probe-db", 1);
+  req.onupgradeneeded = () => { log("upgrade"); req.result.createObjectStore("t", {keyPath:"k"}); };
+  req.onsuccess = () => log("idb-open-ok");
+  req.onerror = () => log("idb-error:" + req.error);
+  setTimeout(() => log("timeout-1s"), 1000);
+} catch (e) { log("catch:" + e.message); }
+</script></body></html>

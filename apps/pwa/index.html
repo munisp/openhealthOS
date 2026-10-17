@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <title>OpenHealth OS</title>
+  <meta name="description" content="Offline-first healthcare OS — tasks, patients, encounters, sync.">
+  <meta name="theme-color" content="#85c093">
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="icons/icon.svg" type="image/svg+xml">
+  <link rel="apple-touch-icon" href="icons/icon-192.png">
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="offline-banner" class="banner" role="status"></div>
+
+  <header class="appbar">
+    <div class="logo">O</div>
+    <h1>OpenHealth</h1>
+    <div class="net" id="net-dot" title="connectivity"></div>
+  </header>
+
+  <main id="view-root" aria-live="polite"></main>
+
+  <div id="sheet-root"></div>
+  <div id="toast" class="toast" role="status"></div>
+
+  <nav id="tabbar" aria-label="primary"></nav>
+
+  <script>
+    // boot error trap: surfaces module/init failures in the DOM (and for CI)
+    window.__bootErrors = [];
+    addEventListener("error", (e) => {
+      window.__bootErrors.push(String(e.message || e.error));
+      document.body.setAttribute("data-boot-errors", window.__bootErrors.join(" | "));
+    });
+    addEventListener("unhandledrejection", (e) => {
+      window.__bootErrors.push("rejection: " + String(e.reason && e.reason.message || e.reason));
+      document.body.setAttribute("data-boot-errors", window.__bootErrors.join(" | "));
+    });
+  </script>
+  <script type="module" src="js/app.js"></script>
+  <script>
+    // connectivity dot (outside the module graph so it never blocks boot)
+    const dot = document.getElementById("net-dot");
+    const paint = () => dot.classList.toggle("off", !navigator.onLine);
+    addEventListener("online", paint); addEventListener("offline", paint); paint();
+  </script>
+</body>
+</html>

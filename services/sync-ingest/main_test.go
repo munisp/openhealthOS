@@ -80,3 +80,33 @@ func TestHTTPEndpoints(t *testing.T) {
 		t.Fatalf("metrics wrong: %s", rec.Body)
 	}
 }
+
+func TestIngestRawPlainJSONLines(t *testing.T) {
+	s := server{store: NewMemoryStore(), docs: NewMemoryDocStore()}
+	srv := httptest.NewServer(s.routes())
+	defer srv.Close()
+	body := `{"id":"ph-1","facility":"F-1","type":"encounter","ts":"2026-10-18T09:00:00Z"}
+{"id":"ph-2","facility":"F-1","type":"claim_submitted","ts":"2026-10-18T09:01:00Z"}
+`
+	resp, err := http.Post(srv.URL+"/ingest/raw", "application/jsonlines", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+	var res IngestResult
+	json.NewDecoder(resp.Body).Decode(&res)
+	if res.Applied != 2 {
+		t.Fatalf("raw ingest: %+v", res)
+	}
+	// retry is deduped — same ids
+	resp2, err := http.Post(srv.URL+"/ingest/raw", "application/jsonlines", strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp2.Body.Close()
+	var res2 IngestResult
+	json.NewDecoder(resp2.Body).Decode(&res2)
+	if res2.Duplicates != 2 || res2.Applied != 0 {
+		t.Fatalf("raw redelivery must dedup: %+v", res2)
+	}
+}
