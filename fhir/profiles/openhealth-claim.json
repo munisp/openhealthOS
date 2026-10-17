@@ -1,0 +1,56 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "openhealth-claim",
+  "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-claim",
+  "version": "0.1.0",
+  "name": "OpenHealthClaim",
+  "title": "OpenHealth Claim (claims rails)",
+  "status": "draft",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Claim",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Claim",
+  "derivation": "constraint",
+  "description": "Claim on the OpenHealth rails: carries pre-authorisation reference and adjudication status; every adjudication is an auditable event (NHCX-analogue contract in openapi/claims-gateway.yaml).",
+  "differential": {
+    "element": [
+      {
+        "id": "Claim.status",
+        "path": "Claim.status",
+        "min": 1
+      },
+      {
+        "id": "Claim.patient",
+        "path": "Claim.patient",
+        "min": 1
+      },
+      {
+        "id": "Claim.provider",
+        "path": "Claim.provider",
+        "min": 1,
+        "comment": "Registry-verified facility (Location) — claims from unregistered facilities never adjudicate."
+      },
+      {
+        "id": "Claim.insurance",
+        "path": "Claim.insurance",
+        "min": 1,
+        "comment": "Coverage reference: NHIA / state scheme / HMO. BHCPF poor-and-vulnerable flows are first-class."
+      },
+      {
+        "id": "Claim.preAuthRef",
+        "path": "Claim.preAuthRef",
+        "min": 0,
+        "comment": "Pre-authorisation reference when the tariff line requires it."
+      },
+      {
+        "id": "Claim.extension:adjudicationStatus",
+        "path": "Claim.extension",
+        "sliceName": "adjudicationStatus",
+        "min": 1,
+        "max": "1",
+        "comment": "url: https://openhealthos.org/fhir/StructureDefinition/claim-adjudication-status (valueCode: APPROVE | PEND | DENY) — zero unaccounted outcomes."
+      }
+    ]
+  }
+}

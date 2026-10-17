@@ -1,0 +1,49 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "openhealth-patient",
+  "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-patient",
+  "version": "0.1.0",
+  "name": "OpenHealthPatient",
+  "title": "OpenHealth Patient (Nigeria)",
+  "status": "draft",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Patient",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Patient",
+  "derivation": "constraint",
+  "description": "Patient identity bound to NIMC NIN where available, with a locally-resolvable offline identifier for the unlinked (progressive enrolment).",
+  "differential": {
+    "element": [
+      {
+        "id": "Patient.identifier",
+        "path": "Patient.identifier",
+        "min": 1,
+        "comment": "MUST carry either a NIN identifier (system: https://nimc.gov.ng/fhir/NamingSystem/nin) or an offline-resolvable OpenHealth local id (system: https://openhealthos.org/fhir/NamingSystem/offline-id)."
+      },
+      {
+        "id": "Patient.identifier:nin",
+        "path": "Patient.identifier",
+        "sliceName": "nin",
+        "min": 0,
+        "max": "1",
+        "patternIdentifier": {"system": "https://nimc.gov.ng/fhir/NamingSystem/nin"}
+      },
+      {
+        "id": "Patient.identifier:offlineId",
+        "path": "Patient.identifier",
+        "sliceName": "offlineId",
+        "min": 0,
+        "max": "1",
+        "patternIdentifier": {"system": "https://openhealthos.org/fhir/NamingSystem/offline-id"},
+        "comment": "Locally-resolvable id issued by the facility edge when NIN is unavailable; reconciled at the state plane on sync."
+      },
+      {
+        "id": "Patient.telecom",
+        "path": "Patient.telecom",
+        "min": 0,
+        "comment": "Phone number enables USSD/SMS eligibility and reminder channels (ADR-0001 fallback)."
+      }
+    ]
+  }
+}

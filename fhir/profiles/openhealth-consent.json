@@ -1,0 +1,49 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "openhealth-consent",
+  "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-consent",
+  "version": "0.1.0",
+  "name": "OpenHealthConsent",
+  "title": "OpenHealth Consent (HIE-CM pattern)",
+  "status": "draft",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Consent",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Consent",
+  "derivation": "constraint",
+  "description": "Signed, revocable consent artefact for cross-facility record sharing (HIE-CM pattern). NDPA 2023 baseline: consent is data — revocable and auditable, with a patient-facing receipt.",
+  "differential": {
+    "element": [
+      {
+        "id": "Consent.status",
+        "path": "Consent.status",
+        "min": 1,
+        "comment": "active | inactive (revoked) — revocation takes effect at the consent manager immediately."
+      },
+      {
+        "id": "Consent.patient",
+        "path": "Consent.patient",
+        "min": 1
+      },
+      {
+        "id": "Consent.policyRule",
+        "path": "Consent.policyRule",
+        "min": 1,
+        "comment": "NDPA 2023 lawful-basis coding."
+      },
+      {
+        "id": "Consent.provision.actor",
+        "path": "Consent.provision.actor",
+        "min": 1,
+        "comment": "Who may access: facility (Location) or provider (Practitioner) from the registry."
+      },
+      {
+        "id": "Consent.sourceAttachment",
+        "path": "Consent.sourceAttachment",
+        "min": 1,
+        "comment": "The signed artefact (digital signature or captured consent receipt)."
+      }
+    ]
+  }
+}

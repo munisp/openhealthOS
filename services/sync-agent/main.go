@@ -1,0 +1,97 @@
+package main
+
+import (
+	"bytes"
+	"fmt"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
+	"time"
+)
+
+// Sender uploads one packed batch. Returns nil on acknowledged delivery.
+type Sender interface {
+	Send(payload []byte) error
+}
+
+// HTTPSender POSTs the batch to the state plane ingest endpoint.
+type HTTPSender struct {
+	URL    string
+	Client *http.Client
+}
+
+func (s HTTPSender) Send(payload []byte) error {
+	c := s.Client
+	if c == nil {
+		c = &http.Client{Timeout: 30 * time.Second}
+	}
+	resp, err := c.Post(s.URL, "application/gzip", bytes.NewReader(payload))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode/100 != 2 {
+		return fmt.Errorf("ingest returned %s", resp.Status)
+	}
+	return nil
+}
+
+// FlushOnce packs and sends batches until the outbox is drained or a send
+// fails. Acknowledged events are removed from the outbox; anything unacked
+// stays for the next pass. At-least-once delivery, no silent loss.
+func FlushOnce(outbox string, sender Sender) (int, error) {
+	sent := 0
+	for {
+		events, err := ScanOutbox(outbox)
+		if err != nil {
+			return sent, err
+		}
+		if len(events) == 0 {
+			return sent, nil
+		}
+		payload, included, err := PackBatch(events, MaxBatchBytes)
+		if err != nil {
+			return sent, err
+		}
+		if len(included) == 0 {
+			return sent, nil
+		}
+		if err := sender.Send(payload); err != nil {
+			return sent, err // stop: outbox keeps everything unacked
+		}
+		for _, ev := range included {
+			if err := os.Remove(ev.Path); err != nil {
+				return sent, fmt.Errorf("acked but could not clear %s: %w", ev.Path, err)
+			}
+			sent++
+		}
+	}
+}
+
+func main() {
+	outbox := envOr("OUTBOX", "./facility.outbox")
+	ingest := envOr("INGEST_URL", "http://127.0.0.1:8443/ingest")
+	interval := 60 * time.Second
+	if err := os.MkdirAll(filepath.Clean(outbox), 0o755); err != nil {
+		log.Fatal(err)
+	}
+	sender := HTTPSender{URL: ingest}
+	log.Printf("sync-agent: outbox=%s ingest=%s interval=%s cap=%d bytes", outbox, ingest, interval, MaxBatchBytes)
+	for {
+		n, err := FlushOnce(outbox, sender)
+		if err != nil {
+			log.Printf("sync pass: sent=%d err=%v (offline or ingest down — outbox retained)", n, err)
+		} else if n > 0 {
+			log.Printf("sync pass: sent=%d events", n)
+		}
+		time.Sleep(interval)
+	}
+}
+
+func envOr(k, d string) string {
+	if v := os.Getenv(k); v != "" {
+		return v
+	}
+	return d
+}

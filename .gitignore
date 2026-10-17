@@ -1,0 +1,27 @@
+# Build artifacts
+target/
+**/target/
+__pycache__/
+*.pyc
+*.pyo
+
+# Binaries built in-place by demo/demo.sh
+services/claims-orchestrator/claims-orchestrator
+services/payment-switch-mock/payment-switch-mock
+services/sync-agent/sync-agent
+services/registry-service/registry-service
+
+# Go
+go.work.sum
+
+# Sync agent runtime state
+*.outbox/
+*.cursor
+
+# Editors / OS
+.vscode/
+.idea/
+.DS_Store
+
+# Local env
+.env

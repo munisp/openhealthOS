@@ -1,0 +1,78 @@
+name: ci
+
+on:
+  push: { branches: [main] }
+  pull_request:
+
+jobs:
+  go:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with: { go-version: "1.22" }
+      - name: vet and test all Go modules
+        run: |
+          set -e
+          for m in claims-orchestrator payment-switch-mock registry-service sync-agent; do
+            echo "== $m =="
+            (cd "services/$m" && go vet ./... && go test ./...)
+          done
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - name: ledger tests
+        run: cargo test --manifest-path services/ledger/Cargo.toml
+      - name: telemetry-collector tests
+        run: cargo test --manifest-path services/telemetry-collector/Cargo.toml
+
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: unit tests (stdlib-only packages)
+        run: |
+          python3 -m unittest discover -s packages/adjudicator
+          python3 -m unittest discover -s packages/triage
+          python3 -m unittest discover -s packages/dhis2-bridge
+
+  fhir-conformance:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: validate FHIR profiles
+        run: |
+          python3 - <<'EOF'
+          import glob, json, sys
+          bad = []
+          for p in glob.glob("fhir/profiles/*.json"):
+              d = json.load(open(p))
+              ok = (d.get("resourceType") == "StructureDefinition"
+                    and d.get("url", "").startswith("https://openhealthos.org/fhir/")
+                    and d.get("derivation") == "constraint"
+                    and d.get("fhirVersion") == "4.0.1")
+              if not ok:
+                  bad.append(p)
+          if bad:
+              sys.exit(f"non-conformant profiles: {bad}")
+          print(f"validated {len(glob.glob('fhir/profiles/*.json'))} profiles")
+          EOF
+
+  licence-hygiene:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: no prohibited licences in dependency manifests (LICENSING.md policy)
+        run: |
+          ! grep -rniE '"(license|licence)"\s*:\s*"(BSL|BUSL|SSPL|Elastic)' \
+            --include=package.json --include=Cargo.toml --include=go.mod \
+            --include=pyproject.toml . \
+            || (echo "prohibited licence found — re-implement, never embed (ADR-0005)" && exit 1)
+          echo "licence hygiene: clean"

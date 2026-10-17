@@ -1,0 +1,22 @@
+{
+  "resourceType": "ImplementationGuide",
+  "id": "openhealth-os",
+  "url": "https://openhealthos.org/fhir/ImplementationGuide/openhealth-os",
+  "version": "0.1.0",
+  "name": "OpenHealthOSIG",
+  "title": "OpenHealth OS FHIR R4 Implementation Guide (Nigeria)",
+  "status": "draft",
+  "publisher": "OpenHealth OS",
+  "description": "Nigerian FHIR R4 profiles for the OpenHealth OS platform: Patient, Encounter, Claim, Coverage, Consent. ABDM-pattern registry+gateway alignment, OpenHIE-compatible.",
+  "fhirVersion": ["4.0.1"],
+  "packageId": "org.openhealthos.fhir",
+  "license": "Apache-2.0",
+  "definition": {
+    "resource": [
+      {"reference": {"reference": "StructureDefinition/openhealth-patient"}, "name": "OpenHealth Patient"},
+      {"reference": {"reference": "StructureDefinition/openhealth-encounter"}, "name": "OpenHealth Encounter"},
+      {"reference": {"reference": "StructureDefinition/openhealth-claim"}, "name": "OpenHealth Claim"},
+      {"reference": {"reference": "StructureDefinition/openhealth-consent"}, "name": "OpenHealth Consent"}
+    ]
+  }
+}

@@ -1,0 +1,159 @@
+openapi: 3.0.3
+info:
+  title: OpenHealth OS Claims Gateway
+  version: 0.1.0
+  description: >-
+    National claims-gateway contract (NHCX-analogue, ADR-0002/0003): real-time
+    eligibility verification, pre-authorisation, electronic claim submission
+    and adjudication status for NHIA, state schemes (SHIA) and HMOs.
+    Every claim carries pre-auth and adjudication status; every adjudication
+    is an auditable event. Offline rule: submit may queue at the edge and
+    replay on reconnect (ADR-0001); status is eventually consistent.
+  license:
+    name: Apache-2.0
+tags:
+  - name: eligibility
+  - name: preauth
+  - name: claims
+paths:
+  /eligibility/check:
+    post:
+      tags: [eligibility]
+      summary: Verify member coverage in real time
+      description: >-
+        USSD/SMS fallback channel exposes the same operation for feature
+        phones. Degrades to cached eligibility at the edge when offline.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [member_id, provider_id]
+              properties:
+                member_id: { type: string, example: NG-0001 }
+                provider_id: { type: string, example: PHC-007 }
+                service_date: { type: string, format: date, example: "2026-10-17" }
+      responses:
+        "200":
+          description: Eligibility verdict
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  member_id: { type: string }
+                  eligible: { type: boolean }
+                  scheme: { type: string, example: BHCPF-VUL }
+                  valid_until: { type: string, format: date }
+                  source: { type: string, enum: [live, cached, ussd] }
+        "404": { description: Unknown member }
+  /preauth/request:
+    post:
+      tags: [preauth]
+      summary: Request pre-authorisation for tariff lines that require it
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [member_id, provider_id, items]
+              properties:
+                member_id: { type: string }
+                provider_id: { type: string }
+                items:
+                  type: array
+                  items:
+                    type: object
+                    required: [code, qty]
+                    properties:
+                      code: { type: string, example: ANC-001 }
+                      qty: { type: integer, example: 1 }
+                clinical_note: { type: string }
+      responses:
+        "200":
+          description: Pre-authorisation decision
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  preauth_id: { type: string }
+                  status: { type: string, enum: [APPROVED, PENDED, DENIED] }
+                  reasons: { type: array, items: { type: string } }
+  /claims/submit:
+    post:
+      tags: [claims]
+      summary: Submit a claim for adjudication
+      description: >-
+        Maps to the orchestrator's POST /claims. Idempotent on claim_id —
+        the sync agent may replay queued submissions after an outage.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/Claim"
+      responses:
+        "200":
+          description: Adjudication outcome (auditable event)
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ClaimResponse"
+  /claims/{claim_id}/status:
+    get:
+      tags: [claims]
+      summary: Poll adjudication/settlement status
+      parameters:
+        - { name: claim_id, in: path, required: true, schema: { type: string } }
+      responses:
+        "200":
+          description: Current status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  claim_id: { type: string }
+                  adjudication: { type: string, enum: [APPROVE, PEND, DENY, QUEUED] }
+                  settlement: { type: string, enum: [COMPLETED, PENDING, NOT_STARTED] }
+        "404": { description: Unknown claim }
+components:
+  schemas:
+    Claim:
+      type: object
+      required: [claim_id, member_id, provider_id, service_date, items, claimed_ngn]
+      properties:
+        claim_id: { type: string, example: C-1001 }
+        member_id: { type: string, example: NG-0001 }
+        provider_id: { type: string, example: PHC-007 }
+        service_date: { type: string, format: date }
+        preauth_id: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            required: [code, qty]
+            properties:
+              code: { type: string, example: MAL-RDT }
+              qty: { type: integer, example: 1 }
+        claimed_ngn: { type: integer, example: 3900 }
+        history:
+          type: array
+          description: Recent prior claims for duplicate detection (14-day window)
+          items:
+            $ref: "#/components/schemas/Claim"
+    ClaimResponse:
+      type: object
+      properties:
+        claim_id: { type: string }
+        decision: { type: string, enum: [APPROVE, PEND, DENY] }
+        reasons: { type: array, items: { type: string } }
+        flags: { type: array, items: { type: string } }
+        allowed_ngn: { type: integer }
+        copay_ngn: { type: integer }
+        payable_ngn: { type: integer }
+        ledger: { type: array, items: { type: string } }
+        settlement: { type: object }

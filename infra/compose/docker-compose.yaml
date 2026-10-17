@@ -1,0 +1,56 @@
+# Development plane — docker compose.
+#
+# Boots the infrastructure the spec composes (§5.8): Postgres (state-plane
+# OLTP), MinIO (object storage / lakehouse landing), Keycloak (OIDC),
+# Prometheus + Grafana (observability). Heavy components (Kafka, Temporal,
+# Medplum, APISIX) are intentionally out of the default dev plane — add them
+# per deployment profile as pilots require. All images are permissively or
+# AGPL-licensed (see LICENSING.md matrix).
+#
+#   docker compose -f infra/compose/docker-compose.yaml up -d
+#
+# The Go/Rust/Python services themselves run directly (go run / cargo run /
+# python3) — they are stdlib-only by design.
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_PASSWORD: openhealth-dev
+      POSTGRES_DB: openhealth
+    ports: ["5432:5432"]
+    volumes: ["pgdata:/var/lib/postgresql/data"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: openhealth
+      MINIO_ROOT_PASSWORD: openhealth-dev
+    ports: ["9000:9000", "9001:9001"]
+    volumes: ["minio:/data"]
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:24.0
+    command: start-dev
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: openhealth-dev
+    ports: ["8085:8080"]
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    ports: ["9091:9090"]
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    ports: ["3000:3000"]
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: openhealth-dev
+
+volumes:
+  pgdata:
+  minio:

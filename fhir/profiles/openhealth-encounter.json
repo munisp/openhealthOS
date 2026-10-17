@@ -1,0 +1,53 @@
+{
+  "resourceType": "StructureDefinition",
+  "id": "openhealth-encounter",
+  "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-encounter",
+  "version": "0.1.0",
+  "name": "OpenHealthEncounter",
+  "title": "OpenHealth Encounter (offline-first)",
+  "status": "draft",
+  "fhirVersion": "4.0.1",
+  "kind": "resource",
+  "abstract": false,
+  "type": "Encounter",
+  "baseDefinition": "http://hl7.org/fhir/StructureDefinition/Encounter",
+  "derivation": "constraint",
+  "description": "PHC encounter with offline-capture provenance: where it happened, whether it was captured offline, and when it reconciled to the state plane.",
+  "differential": {
+    "element": [
+      {
+        "id": "Encounter.status",
+        "path": "Encounter.status",
+        "min": 1
+      },
+      {
+        "id": "Encounter.subject",
+        "path": "Encounter.subject",
+        "min": 1,
+        "comment": "Reference to an OpenHealth Patient (NIN or offline id)."
+      },
+      {
+        "id": "Encounter.serviceProvider",
+        "path": "Encounter.serviceProvider",
+        "min": 1,
+        "comment": "Reference to the facility (Location) from the registry — effective coverage is measured per facility."
+      },
+      {
+        "id": "Encounter.extension:capturedOffline",
+        "path": "Encounter.extension",
+        "sliceName": "capturedOffline",
+        "min": 0,
+        "max": "1",
+        "comment": "url: https://openhealthos.org/fhir/StructureDefinition/encounter-captured-offline (valueBoolean) — feeds the ≥90% offline-continuity pilot gate."
+      },
+      {
+        "id": "Encounter.extension:reconciledAt",
+        "path": "Encounter.extension",
+        "sliceName": "reconciledAt",
+        "min": 0,
+        "max": "1",
+        "comment": "url: https://openhealthos.org/fhir/StructureDefinition/encounter-reconciled-at (valueDateTime) — feeds the <15min sync-SLA pilot gate."
+      }
+    ]
+  }
+}

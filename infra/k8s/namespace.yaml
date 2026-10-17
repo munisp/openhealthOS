@@ -1,0 +1,7 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: oh-state-example
+  labels:
+    app.kubernetes.io/part-of: openhealth-os
+    openhealthos.org/plane: state
