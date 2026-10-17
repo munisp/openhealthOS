@@ -127,6 +127,7 @@ func IngestBatch(body io.Reader, store Store) (IngestResult, error) {
 
 type server struct {
 	store Store
+	docs  DocStore
 }
 
 func (s server) routes() *http.ServeMux {
@@ -158,6 +159,7 @@ func (s server) routes() *http.ServeMux {
 		w.Header().Set("Content-Type", "application/json")
 		json.NewEncoder(w).Encode(s.store.Events())
 	})
+	crdtRoutes(mux, s.docs)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }

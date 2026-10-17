@@ -1,0 +1,54 @@
+# Facility edge node — ADR-0001. Runs on the $1,200 mini-PC (4-core, 16GB,
+# 1TB NVMe, ~15W avg). Everything here works with zero connectivity; the
+# sync agent uploads when a link appears.
+#
+#   docker compose -f edge.yaml up -d
+#
+# Self-healing: restart policies + journal-backed local stores; power loss
+# mid-write is survived (ledger-style journals, fsync before ack).
+services:
+  # The offline-first app itself: patients, encounters, tasks, claims queue.
+  # Served on the facility LAN; PWAs install from here onto Android phones.
+  pwa:
+    image: nginx:1.27-alpine
+    restart: unless-stopped
+    volumes:
+      - ../../apps/pwa:/usr/share/nginx/html:ro
+    ports:
+      - "80:80"
+    mem_limit: 64m
+
+  # Store-and-forward uplink: event outbox + CRDT replica -> state plane.
+  sync-agent:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: sync-agent }
+    restart: unless-stopped
+    environment:
+      OUTBOX: /var/lib/openhealth/outbox
+      REPLICA_FILE: /var/lib/openhealth/replica/replica.json
+      INGEST_URL: ${INGEST_URL:-https://state.openhealth.example/ingest}
+      MERGE_URL: ${MERGE_URL:-https://state.openhealth.example/sync/merge}
+    volumes:
+      - edge-outbox:/var/lib/openhealth/outbox
+      - edge-replica:/var/lib/openhealth/replica
+    mem_limit: 128m
+
+  # Local telemetry collector: solar SOC, battery, water, cold chain.
+  # Queues readings to the outbox; SMS alerting path documented in EDGE.md.
+  telemetry-collector:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.ledger # same rust alpine pattern
+      args: { MODULE: telemetry-collector }
+    restart: unless-stopped
+    environment:
+      OUTBOX: /var/lib/openhealth/outbox
+    volumes:
+      - edge-outbox:/var/lib/openhealth/outbox
+    mem_limit: 96m
+
+volumes:
+  edge-outbox:
+  edge-replica:

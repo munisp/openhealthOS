@@ -18,6 +18,7 @@ func main() {
 	// Storage seam: DATABASE_URL binds Postgres — exactly-once ingest that
 	// survives restarts. Unset keeps the in-memory store (dev, tests).
 	var store Store = NewMemoryStore()
+	var docs DocStore = NewMemoryDocStore()
 	if dsn := os.Getenv("DATABASE_URL"); dsn != "" {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		pg, err := NewPostgresStore(ctx, dsn)
@@ -26,11 +27,12 @@ func main() {
 			log.Fatalf("postgres: %v", err)
 		}
 		store = pg
+		docs = pg // PostgresStore implements DocStore too
 		log.Print("ingest storage: postgres (exactly-once survives restarts)")
 	} else {
 		log.Print("ingest storage: in-memory (set DATABASE_URL for postgres)")
 	}
-	s := server{store: store}
+	s := server{store: store, docs: docs}
 	log.Printf("OpenHealth OS sync-ingest on %s (idempotent, gzip JSON-lines)", addr)
 	handler := http.Handler(s.routes())
 	if v := authz.FromEnv(os.Getenv); v != nil {

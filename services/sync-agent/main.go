@@ -77,6 +77,14 @@ func main() {
 		log.Fatal(err)
 	}
 	sender := HTTPSender{URL: ingest}
+	// Optional CRDT replica flush (entity state sync, alongside events).
+	replica := os.Getenv("REPLICA_FILE")
+	var poster ReplicaPoster
+	if replica != "" {
+		merge := envOr("MERGE_URL", "http://127.0.0.1:8443/sync/merge")
+		poster = HTTPReplicaPoster{URL: merge}
+		log.Printf("sync-agent: replica=%s merge=%s", replica, merge)
+	}
 	log.Printf("sync-agent: outbox=%s ingest=%s interval=%s cap=%d bytes", outbox, ingest, interval, MaxBatchBytes)
 	for {
 		n, err := FlushOnce(outbox, sender)
@@ -84,6 +92,14 @@ func main() {
 			log.Printf("sync pass: sent=%d err=%v (offline or ingest down — outbox retained)", n, err)
 		} else if n > 0 {
 			log.Printf("sync pass: sent=%d events", n)
+		}
+		if poster != nil {
+			up, rerr := FlushReplica(replica, replica+".ack", poster)
+			if rerr != nil {
+				log.Printf("replica flush: %v (retained for retry)", rerr)
+			} else if up {
+				log.Print("replica flush: uploaded changed state")
+			}
 		}
 		time.Sleep(interval)
 	}
