@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
+	"strings"
+	"sync"
 )
 
 func (s server) mciRoutes(mux *http.ServeMux) {
@@ -20,6 +22,7 @@ func (s server) mciRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /mci/{id}/casualties/{cid}", s.mciUpdateCasualty)
 	mux.HandleFunc("GET /mci/{id}/surge", s.mciSurge)
 	mux.HandleFunc("POST /webhooks/voice", s.voiceInbound)
+	mux.HandleFunc("POST /webhooks/voice/converse", s.voiceConverse)
 }
 
 func (s server) mciCreate(w http.ResponseWriter, r *http.Request) {
@@ -198,5 +201,100 @@ func (s server) voiceInbound(w http.ResponseWriter, r *http.Request) {
 			"play":        "Press 1 if this is a medical emergency.",
 			"expect_dtmf": true, "call_id": req.CallID,
 		})
+	}
+}
+
+// ------------------------------------------------- conversational voice (AVA seam, ADR-0024)
+
+// voiceDialogues holds per-call conversational state. Voice calls are
+// ephemeral — minutes, not days — so memory is the right store; a restart
+// mid-call degrades gracefully to a fresh dialogue (the caller simply
+// repeats the complaint).
+type voiceDialogues struct {
+	mu    sync.Mutex
+	calls map[string]*voiceDialogue
+}
+
+type voiceDialogue struct {
+	complaints []string
+	triage     string
+	confirmed  bool
+	done       bool
+}
+
+func newVoiceDialogues() *voiceDialogues {
+	return &voiceDialogues{calls: map[string]*voiceDialogue{}}
+}
+
+func (v *voiceDialogues) get(callID string) *voiceDialogue {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+	d, ok := v.calls[callID]
+	if !ok {
+		d = &voiceDialogue{}
+		v.calls[callID] = d
+	}
+	return d
+}
+
+// voiceConverse is the conversational half of the voice seam (ADR-0024).
+// An on-prem Asterisk + AVA stack (MIT-licensed AVA Core) handles STT/TTS
+// in the caller's language and POSTs each transcribed utterance here. The
+// platform side stays deterministic — the same keyword triage protocol as
+// every other channel — because an emergency line must be auditable and
+// must work with zero cloud dependencies. The LLM lives at the edge (in
+// AVA) where it only translates speech to text and back; triage decisions
+// never leave deterministic code.
+func (s server) voiceConverse(w http.ResponseWriter, r *http.Request) {
+	var req struct {
+		From      string  `json:"from"`
+		CallID    string  `json:"call_id"`
+		Utterance string  `json:"utterance"`
+		Lat       float64 `json:"lat"`
+		Lng       float64 `json:"lng"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.CallID == "" {
+		writeJSON(w, 200, map[string]any{"received": false, "say": "Please say that again."})
+		return
+	}
+	if req.From == "" {
+		writeJSON(w, 200, map[string]any{"received": false, "say": "I could not identify your number. Please call again."})
+		return
+	}
+	d := s.voice.get(req.CallID)
+	utt := strings.ToLower(strings.TrimSpace(req.Utterance))
+
+	switch {
+	case d.done:
+		writeJSON(w, 200, map[string]any{"received": true, "done": true,
+			"say": "Your emergency is already registered. Help is being arranged. Keep this phone on."})
+	case len(d.complaints) == 0 && utt != "":
+		d.complaints = append(d.complaints, utt)
+		d.triage, _ = triage(defaultTriageProtocol, utt)
+		writeJSON(w, 200, map[string]any{"received": true, "expect_more": true, "triage": d.triage,
+			"say": "I understand. Is there anything else happening — for example bleeding, unconsciousness, or trouble breathing?"})
+	case !d.confirmed:
+		if utt != "" && utt != "no" && utt != "nothing" && utt != "no nothing else" {
+			d.complaints = append(d.complaints, utt)
+		}
+		whole := strings.Join(d.complaints, ". ")
+		d.triage, _ = triage(defaultTriageProtocol, whole)
+		d.confirmed = true
+		writeJSON(w, 200, map[string]any{"received": true, "expect_more": true, "triage": d.triage,
+			"say": "I am sending help now. Please confirm: is the patient with you? Say yes or no."})
+	case !d.done:
+		inc, created, err := s.intake("voice", req.From, "", req.Lat, req.Lng,
+			"cell-tower", "voice conversation: "+strings.Join(d.complaints, ". "))
+		if err != nil {
+			writeJSON(w, 200, map[string]any{"received": false, "say": "Please hold on and try again."})
+			return
+		}
+		d.done = true
+		msg := "Help is on the way. Keep the patient still and keep this phone on. We will call you back."
+		if !created {
+			msg = "We already have your emergency open. Help is being arranged. Keep this phone on."
+		}
+		writeJSON(w, 200, map[string]any{"received": true, "done": true,
+			"incident_id": inc.ID, "triage": inc.Triage, "say": msg})
 	}
 }

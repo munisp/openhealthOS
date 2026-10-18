@@ -16,7 +16,7 @@ func newTestServer() server {
 		registryURL: "http://127.0.0.1:1", // unreachable on purpose — assignment is best-effort
 		client:      &http.Client{Timeout: 200 * time.Millisecond},
 	}
-	return server{store: NewMemoryCaseStore(), ix: ix, fleet: NewFleetStore(), mci: NewMCIStore()}
+	return server{store: NewMemoryCaseStore(), ix: ix, fleet: NewFleetStore(), mci: NewMCIStore(), voice: newVoiceDialogues()}
 }
 
 func post(t *testing.T, s server, path, body string) (*httptest.ResponseRecorder, map[string]any) {

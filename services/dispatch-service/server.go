@@ -112,6 +112,7 @@ type server struct {
 	ix    Integrations
 	fleet *FleetStore
 	mci   *MCIStore
+	voice *voiceDialogues
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

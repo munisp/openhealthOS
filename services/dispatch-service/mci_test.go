@@ -109,3 +109,46 @@ func TestVoiceIVRSeam(t *testing.T) {
 		t.Fatalf("malformed voice event must 200, got %d", rec.Code)
 	}
 }
+
+func TestVoiceConverseSeam(t *testing.T) {
+	s := newTestServer()
+	// turn 1: caller describes the emergency (transcribed by AVA at the edge)
+	_, out := post(t, s, "/webhooks/voice/converse",
+		`{"from":"+2348030007777","call_id":"av1","utterance":"my husband collapsed and is not responding"}`)
+	if out["expect_more"] != true || out["triage"] != TriageRed {
+		t.Fatalf("turn 1 triages from speech: %v", out)
+	}
+	// turn 2: extra detail; bot confirms
+	_, out = post(t, s, "/webhooks/voice/converse",
+		`{"from":"+2348030007777","call_id":"av1","utterance":"he is bleeding"}`)
+	if out["expect_more"] != true || !strings.Contains(out["say"].(string), "yes or no") {
+		t.Fatalf("turn 2 confirms: %v", out)
+	}
+	// turn 3: confirmation files the intake on the voice channel
+	_, out = post(t, s, "/webhooks/voice/converse",
+		`{"from":"+2348030007777","call_id":"av1","utterance":"yes","lat":6.52,"lng":3.38}`)
+	if out["done"] != true || out["incident_id"] == nil {
+		t.Fatalf("turn 3 files intake: %v", out)
+	}
+	inc := s.store.List("", "")[0]
+	if inc.Channel != "voice" || inc.Triage != TriageRed {
+		t.Fatalf("conversational intake: %+v", inc)
+	}
+	if !strings.Contains(inc.Complaint, "collapsed") {
+		t.Fatalf("complaint carries the transcript: %q", inc.Complaint)
+	}
+	// turn 4: done calls reassure instead of re-filing
+	_, out = post(t, s, "/webhooks/voice/converse",
+		`{"from":"+2348030007777","call_id":"av1","utterance":"hello?"}`)
+	if out["done"] != true || !strings.Contains(out["say"].(string), "already registered") {
+		t.Fatalf("done dialogue reassures: %v", out)
+	}
+	if len(s.store.List("", "")) != 1 {
+		t.Fatal("no clone from a completed dialogue")
+	}
+	// missing call_id degrades to 200 + retry prompt (no-retry doctrine)
+	rec, _ := post(t, s, "/webhooks/voice/converse", `{"from":"+234"}`)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("malformed converse must 200, got %d", rec.Code)
+	}
+}
