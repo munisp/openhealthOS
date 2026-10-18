@@ -1,0 +1,13 @@
+{
+  "_comment": "Inbound SIP trunk from the Kamailio edge (which fronts the GSM gateways / NCC-licensed interconnect). One trunk per interconnect provider; add outbound trunks here for the 48-hour welfare callback.",
+  "trunks": [
+    {
+      "name": "national-emergency-inbound",
+      "address": "10.0.0.5",
+      "numbers": ["+2347000000000"],
+      "allowed_addresses": ["10.0.0.5/32"],
+      "auth_username": "REPLACE_PER_STATE",
+      "auth_password": "REPLACE_PER_STATE"
+    }
+  ]
+}

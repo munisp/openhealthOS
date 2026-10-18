@@ -1,0 +1,12 @@
+{
+  "_comment": "Every inbound call on the emergency number lands in its own LiveKit room named after the call; the agent worker joins 'emergency-*' rooms automatically.",
+  "rule": {
+    "type": "individual",
+    "room_prefix": "emergency-",
+    "pin": "",
+    "attrs": {
+      "channel": "voice",
+      "bridge": "openhealth-converse"
+    }
+  }
+}

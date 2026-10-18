@@ -1,0 +1,71 @@
+# Phase 2 voice stack (ADR-0025): national scale, >1,000 concurrent calls,
+# and one Apache-2.0 media fabric (LiveKit) carrying BOTH the emergency
+# voice line and telemedicine video consults.
+#
+#   caller -> GSM/SIP trunk -> Kamailio edge (GPLv2: DDoS filtering,
+#     trunk failover, rate limiting) -> RTPengine (GPLv3: RTP anchoring)
+#     -> LiveKit server + SIP (Apache-2.0) -> agent (LiveKit Agents,
+#     Apache-2.0) -> faster-whisper STT -> voicebridge core
+#     -> dispatch-service -> Piper TTS -> caller
+#
+# The voicebridge policy core is shared byte-for-byte with Phase 1:
+# swapping the media fabric NEVER changes emergency-line behaviour.
+
+services:
+  kamailio:
+    image: kamailio/kamailio:6.0      # GPLv2
+    network_mode: host
+    volumes:
+      - ./kamailio/kamailio.cfg:/etc/kamailio/kamailio.cfg:ro
+    restart: unless-stopped
+
+  rtpengine:
+    image: kris9789/rtpengine:latest  # GPLv3 (media plane only, no linkage)
+    network_mode: host
+    command: ["rtpengine", "--interface=0.0.0.0", "--listen-ng=127.0.0.1:22222",
+              "--port-min=30000", "--port-max=40000"]
+    restart: unless-stopped
+
+  livekit:
+    image: livekit/livekit-server:latest   # Apache-2.0
+    command: --config /etc/livekit.yaml
+    volumes:
+      - ./livekit.yaml:/etc/livekit.yaml:ro
+    restart: unless-stopped
+
+  sip-bridge:
+    image: livekit/sip:latest              # Apache-2.0
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LK_API_KEY}
+      LIVEKIT_API_SECRET: ${LK_API_SECRET}
+      SIP_CONFIG_FILE: /etc/sip.json
+    volumes:
+      - ./sip-trunk.json:/etc/sip.json:ro
+      - ./dispatch-rule.json:/etc/dispatch-rule.json:ro
+    depends_on: [livekit]
+    restart: unless-stopped
+
+  agent:
+    build: ./agent
+    environment:
+      LIVEKIT_URL: ws://livekit:7880
+      LIVEKIT_API_KEY: ${LK_API_KEY}
+      LIVEKIT_API_SECRET: ${LK_API_SECRET}
+      DISPATCH_URL: ${DISPATCH_URL:-http://127.0.0.1:8093}
+      VOICEBRIDGE_PATH: /opt/voicebridge
+    depends_on: [livekit]
+    restart: unless-stopped
+
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu   # MIT; scale out + GPU at national size
+    environment:
+      WHISPER__MODEL: small
+    deploy:
+      replicas: 2
+    restart: unless-stopped
+
+  piper:
+    image: rhasspy/wyoming-piper:latest               # MIT
+    command: --voice en_US-lessac-medium
+    restart: unless-stopped

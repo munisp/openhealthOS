@@ -1,0 +1,53 @@
+# Phase 1 voice stack (ADR-0025): state-pilot scale, ~100-500 concurrent calls.
+# Every component is OSI-approved; nothing phones home. STT/TTS/LLM all run
+# on-prem because the emergency line must survive a total internet outage.
+#
+#   caller -> GSM/SIP trunk -> Asterisk (GPLv2; protocol use does not
+#     contaminate) -> AudioSocket -> bridge (Pipecat, BSD-2-Clause)
+#     -> faster-whisper (MIT) STT -> voicebridge core -> dispatch-service
+#     -> reply text -> Piper TTS (MIT) -> caller
+#
+# Bring up:  docker compose up -d
+# Requires:  DISPATCH_URL pointing at a reachable dispatch-service.
+
+services:
+  asterisk:
+    image: andrius/asterisk:20        # Asterisk 20 LTS, GPLv2
+    network_mode: host                # SIP/RTP need real ports; host net is the honest way
+    volumes:
+      - ./asterisk/extensions.conf:/etc/asterisk/extensions.conf:ro
+      - ./asterisk/audiosocket.conf:/etc/asterisk/audiosocket.conf:ro
+      - ./asterisk/pjsip.conf:/etc/asterisk/pjsip.conf:ro
+      - ./asterisk/rtp.conf:/etc/asterisk/rtp.conf:ro
+    restart: unless-stopped
+
+  bridge:
+    build: ./bridge
+    environment:
+      DISPATCH_URL: ${DISPATCH_URL:-http://127.0.0.1:8093}
+      AUDIOSOCKET_PORT: "9092"
+      WHISPER_MODEL: small            # 'small' covers yo/ha/ig well; tiny for CPU-only
+      WHISPER_DEVICE: cpu             # set cuda on GPU hosts
+      PIPER_VOICE: en_US-lessac-medium  # swap in a Nigerian-accented voice when trained
+      OLLAMA_URL: http://ollama:11434   # rephrasing only; triage stays deterministic
+      OLLAMA_ENABLED: "false"           # keep off until a state LLM policy exists
+    depends_on: [asterisk]
+    restart: unless-stopped
+
+  whisper:
+    image: fedirz/faster-whisper-server:latest-cpu   # MIT model + MIT server
+    environment:
+      WHISPER__MODEL: small
+    restart: unless-stopped
+
+  piper:
+    image: rhasspy/wyoming-piper:latest              # MIT
+    command: --voice en_US-lessac-medium
+    restart: unless-stopped
+
+  # ollama:                               # MIT — uncomment when a state LLM
+  #   image: ollama/ollama:latest         # policy approves on-prem phrasing
+  #   volumes: [ollama-models:/root/.ollama]
+
+# volumes:
+#   ollama-models:
