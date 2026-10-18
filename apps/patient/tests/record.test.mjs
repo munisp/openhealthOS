@@ -85,7 +85,7 @@ test("groupRecord meds row carries the dose instruction", () => {
 
 test("groupRecord tolerates empty, null and malformed bundles", () => {
   assert.deepEqual(groupRecord(null), {
-    sections: { encounters: [], labs: [], meds: [], immunizations: [], conditions: [], allergies: [] },
+    sections: { encounters: [], labs: [], meds: [], immunizations: [], conditions: [], allergies: [], documents: [] },
     total: 0, skipped: 0,
   });
   const { total, skipped } = groupRecord({ entry: [{}, { resource: {} }, { resource: { resourceType: "AuditEvent" } }] });

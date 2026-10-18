@@ -189,6 +189,12 @@ func (s server) routes() *http.ServeMux {
 
 	registerFHIRInbox(mux, s.svc)
 	registerPortalRecord(mux, s.svc)
+	// Self-service rail (ADR-0017): booking, coverage, messages, consents.
+	registerPortalActions(mux, s.svc)
+	// Passkey unlock (ADR-0017): PORTAL_RP_ID / PORTAL_ORIGINS bind the
+	// relying party; defaults are the dev gateway.
+	passkeyAPI{Store: s.svc.store, Subs: s.svc.store, Jar: newChallengeJar(),
+		Config: passkeyConfigFromEnv(os.Getenv)}.registerRoutes(mux)
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))

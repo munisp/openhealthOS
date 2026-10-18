@@ -128,6 +128,26 @@ func (m *Manager) Revoke(id string) error {
 	return nil
 }
 
+// ForPatient lists a patient's consent artefacts (newest first) — the
+// portal's "who can see my record" view (ADR-0017).
+func (m *Manager) ForPatient(patientID string) []Consent {
+	m.mu.RLock()
+	defer m.mu.RUnlock()
+	out := []Consent{}
+	for _, c := range m.byID {
+		if c.PatientID == patientID {
+			out = append(out, *c)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].IssuedAt != out[j].IssuedAt {
+			return out[i].IssuedAt > out[j].IssuedAt
+		}
+		return out[i].ID > out[j].ID // sequential ids break same-second ties
+	})
+	return out
+}
+
 // Check answers the enforcement question: may grantee access patient's
 // records under scope right now? Every check is audited.
 func (m *Manager) Check(patientID, grantee, scope string) (bool, error) {
@@ -168,6 +188,8 @@ type ConsentService interface {
 	Check(patientID, grantee, scope string) (bool, error)
 	Verify(c *Consent) bool
 	Audit() []AuditEntry
+	// ForPatient lists a patient's consent artefacts, newest first.
+	ForPatient(patientID string) []Consent
 }
 
 type server struct{ m ConsentService }
@@ -181,6 +203,15 @@ func writeJSON(w http.ResponseWriter, code int, v any) {
 func (s server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/consents", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			pid := r.URL.Query().Get("patient_id")
+			if pid == "" {
+				http.Error(w, "patient_id required", http.StatusBadRequest)
+				return
+			}
+			writeJSON(w, 200, map[string]any{"consents": s.m.ForPatient(pid)})
+			return
+		}
 		if r.Method != http.MethodPost {
 			http.Error(w, "POST only", http.StatusMethodNotAllowed)
 			return

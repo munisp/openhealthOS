@@ -66,7 +66,10 @@ type Notification struct {
 }
 
 // Store is the persistence seam (memory default, Postgres for the plane).
+// PasskeyStore rides the same seam — portal credentials persist exactly
+// where subscriptions do.
 type Store interface {
+	PasskeyStore
 	PutSubscription(s Subscription) error
 	Subscription(patientID string) (Subscription, error)
 	Subscriptions() []Subscription
@@ -88,10 +91,11 @@ type MemoryStore struct {
 	mu   sync.Mutex
 	subs map[string]Subscription
 	nots map[string]Notification
+	keys map[string]PasskeyCredential
 }
 
 func NewMemoryStore() *MemoryStore {
-	return &MemoryStore{subs: map[string]Subscription{}, nots: map[string]Notification{}}
+	return &MemoryStore{subs: map[string]Subscription{}, nots: map[string]Notification{}, keys: map[string]PasskeyCredential{}}
 }
 
 func (m *MemoryStore) PutSubscription(s Subscription) error {
@@ -275,6 +279,15 @@ func renderMessage(ev DomainEvent) (kind, text string, ok bool) {
 		}
 		return "appointment", fmt.Sprintf("OpenHealth: reminder — your appointment at %s is %s. Reply or visit the clinic.",
 			facility, when), true
+	case "appointment_cancelled":
+		when := str("when_text")
+		if when == "" {
+			when = ""
+		} else {
+			when = " (" + when + ")"
+		}
+		return "appointment", fmt.Sprintf("OpenHealth: your appointment at %s%s has been cancelled. Visit the clinic or book again to reschedule.",
+			facility, when), true
 	case "lab_result":
 		if name := str("test_name"); name != "" {
 			return "lab_ready", fmt.Sprintf("OpenHealth: your test result (%s) is ready at %s. Please come with your card.",
@@ -393,4 +406,50 @@ func NormalizePhone(p string) string {
 		return "+234" + p[1:]
 	}
 	return p
+}
+
+// ---------- passkeys (ADR-0017) ----------
+
+func (m *MemoryStore) PutPasskey(p PasskeyCredential) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.keys == nil {
+		m.keys = map[string]PasskeyCredential{}
+	}
+	m.keys[p.CredID] = p
+	return nil
+}
+
+func (m *MemoryStore) Passkeys(patientID string) []PasskeyCredential {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	out := []PasskeyCredential{}
+	for _, k := range m.keys {
+		if k.PatientID == patientID {
+			out = append(out, k)
+		}
+	}
+	sort.Slice(out, func(i, j int) bool { return out[i].CredID < out[j].CredID })
+	return out
+}
+
+func (m *MemoryStore) PasskeyByCredID(credID string) (PasskeyCredential, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if k, ok := m.keys[credID]; ok {
+		return k, nil
+	}
+	return PasskeyCredential{}, ErrNotFound
+}
+
+func (m *MemoryStore) UpdatePasskeySignCount(credID string, count uint32) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	k, ok := m.keys[credID]
+	if !ok {
+		return ErrNotFound
+	}
+	k.SignCount = count
+	m.keys[credID] = k
+	return nil
 }

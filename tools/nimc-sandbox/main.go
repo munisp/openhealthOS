@@ -9,6 +9,13 @@
 //	→ 400 {"match":false}               malformed request / bad NIN format
 //	→ 401 {"match":false}               wrong/missing bearer token
 //
+//	POST /biometric/verify {"nin":"10000000001","template":"<hex>"}
+//	→ 200 {"match":true, "score":1.0, "name":...}  authority-side
+//	  biometric confirmation (ADR-0017): NIMC's real service verifies a
+//	  live capture against the biometric bound to the NIN at enrolment.
+//	  Fixture fingerprints are deterministic synthetics — sha256 of the
+//	  NIN — so the default fingerprint for a NIN is computable in tests.
+//
 // The point: the platform's NIN verification seam is proven end-to-end
 // over real HTTP against this binary (see the registry-service
 // conformance test), so swapping in the licensed NIMC endpoint is a
@@ -17,6 +24,8 @@
 package main
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"log"
@@ -96,7 +105,79 @@ func newSandboxHandler(fixtures map[string]fixture, token string) http.Handler {
 			w.Write(raw)
 		}
 	})
+	mux.HandleFunc("/biometric/verify", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodPost {
+			w.WriteHeader(http.StatusMethodNotAllowed)
+			w.Write([]byte(`{"match":false,"error":"method not allowed"}`))
+			return
+		}
+		if token != "" {
+			got := strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer ")
+			if got != token {
+				w.WriteHeader(http.StatusUnauthorized)
+				w.Write([]byte(`{"match":false,"error":"unauthorized"}`))
+				return
+			}
+		}
+		var body struct {
+			NIN      string `json:"nin"`
+			Template string `json:"template"` // hex-encoded live capture
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || !validNIN(body.NIN) {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"match":false,"error":"bad request"}`))
+			return
+		}
+		raw, derr := hex.DecodeString(body.Template)
+		if derr != nil || len(raw) < 16 {
+			w.WriteHeader(http.StatusBadRequest)
+			w.Write([]byte(`{"match":false,"error":"bad request"}`))
+			return
+		}
+		f, ok := fixtures[body.NIN]
+		if !ok {
+			w.Write([]byte(`{"match":false,"score":0}`))
+			return
+		}
+		score := hammingSimilarity(raw, fixtureFingerprint(body.NIN))
+		raw2, _ := json.Marshal(map[string]any{
+			"match": score >= 0.85, "score": score, "name": f.Name,
+		})
+		w.Write(raw2)
+	})
 	return mux
+}
+
+// fixtureFingerprint is the deterministic synthetic biometric bound to a
+// NIN — sha256(nin). Obviously synthetic; a deployment fixture set never
+// carries real biometrics in this sandbox.
+func fixtureFingerprint(nin string) []byte {
+	sum := sha256.Sum256([]byte("nimc-fp:" + nin))
+	return sum[:]
+}
+
+// hammingSimilarity mirrors the registry's SimMatcher semantics so the
+// two sides agree on what a score means over the wire.
+func hammingSimilarity(a, b []byte) float64 {
+	if len(a) == 0 || len(b) == 0 {
+		return 0
+	}
+	n := len(a)
+	if len(b) < n {
+		n = len(b)
+	}
+	same := 0
+	for i := 0; i < n; i++ {
+		x := a[i] ^ b[i]
+		set := 0
+		for x != 0 {
+			set += int(x & 1)
+			x >>= 1
+		}
+		same += 8 - set
+	}
+	return float64(same) / float64(n*8)
 }
 
 func itoa(n int) string {

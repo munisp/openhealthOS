@@ -5,7 +5,10 @@
  */
 
 import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
-import { kindMeta, groupFeed, relTime, stateLabel, groupRecord, groupConsults } from "./logic.js";
+import {
+  kindMeta, groupFeed, relTime, stateLabel, groupRecord, groupConsults,
+  upcomingAppointments, coverageSummary, bookableSlots, nextDue,
+} from "./logic.js";
 import { nearest, facilityRow } from "./geo.js";
 
 const LS_KEY = "openhealth-patient";
@@ -18,10 +21,14 @@ const state = {
   feed: null,        // { notifications: [...] } last good fetch
   updatedAt: null,
   loading: false,
-  tab: "updates",    // "updates" | "record"
+  tab: "updates",    // "updates" | "record" | "care"
   record: null,      // { record: <FHIR bundle>, consults: [...], complete } last good fetch
   recordAt: null,
   recordLoading: false,
+  coverage: null,    // last good eligibility payload
+  appts: null,       // last good appointment list
+  consents: null,    // last good consent list
+  careLoading: false,
 };
 
 function el(tag, attrs = {}, ...children) {
@@ -165,7 +172,8 @@ function SignInView() {
             err.textContent = t("wrong_code");
           }
         },
-      }, t("sign_in_btn"))),
+      }, t("sign_in_btn")),
+      PasskeyUnlock()),
     langRow());
   return wrap;
 }
@@ -193,10 +201,12 @@ function Tabs() {
     onclick: () => {
       state.tab = tab;
       if (tab === "record" && !state.record && navigator.onLine) loadRecord();
+      if (tab === "care" && state.appts === null && navigator.onLine) loadCare();
       render();
     },
   }, t(key));
-  return el("div", { class: "tabs", role: "tablist" }, mk("updates", "tab_updates"), mk("record", "tab_record"));
+  return el("div", { class: "tabs", role: "tablist" },
+    mk("updates", "tab_updates"), mk("record", "tab_record"), mk("care", "tab_care"));
 }
 
 function FeedView() {
@@ -230,6 +240,7 @@ function FeedView() {
         onclick: () => {
           state.patientId = state.phone = state.feed = state.updatedAt = null;
           state.record = state.recordAt = null;
+          state.coverage = state.appts = state.consents = null;
           state.tab = "updates";
           try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
           try { localStorage.removeItem(REC_CACHE_KEY); } catch { /* ignore */ }
@@ -396,6 +407,383 @@ function Card(n) {
         `${relTime(n.created_at)} · ${t("state_" + st)}`)));
 }
 
+
+/* ---------- self-service care tab (ADR-0017) ------------------------------
+ * Book a visit, see your coverage, ask the clinic, manage who can see
+ * your record — the Medplum-style interactive tier, on the same gate
+ * (patient code + phone) as everything else. Each card fetches on first
+ * view, keeps its last good answer, and says when it's stale. */
+
+function portalFetch(path, opts = {}) {
+  const sep = path.includes("?") ? "&" : "?";
+  const url = `${apiBase()}${path}${sep}patient_id=${encodeURIComponent(state.patientId)}&phone=${encodeURIComponent(state.phone)}`;
+  return fetch(url, { cache: "no-store", ...opts }).then((r) => {
+    if (!r.ok) throw new Error(String(r.status));
+    return r.json();
+  });
+}
+
+function portalPost(path, body) {
+  return portalFetch(path, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ ...body, patient_id: state.patientId, phone: state.phone }),
+  });
+}
+
+async function loadCare() {
+  if (!state.patientId || state.careLoading || !navigator.onLine) return;
+  state.careLoading = true;
+  if (state.tab === "care") render();
+  const settle = (p) => p.catch(() => null);
+  const [coverage, appts, consents] = await Promise.all([
+    settle(portalFetch("/portal/coverage")),
+    settle(portalFetch("/portal/appointments")),
+    settle(portalFetch("/portal/consents")),
+  ]);
+  if (coverage) state.coverage = coverage;
+  if (appts) state.appts = appts.appointments || appts || [];
+  if (consents) state.consents = consents.consents || [];
+  state.careLoading = false;
+  if (state.tab === "care") render();
+}
+
+/* --- coverage card --- */
+function CoverageCard() {
+  const sum = coverageSummary(state.coverage);
+  const badge = sum.status === "active"
+    ? el("span", { class: "pill pill-ok" }, t("cov_active"))
+    : sum.status === "inactive"
+      ? el("span", { class: "pill pill-warn" }, t("cov_inactive"))
+      : el("span", { class: "pill" }, state.careLoading && !state.coverage ? t("loading") : t("cov_unknown"));
+  return el("div", { class: "card care-card" },
+    el("div", { class: "care-head" },
+      el("div", { class: "notif-kind" }, t("cov_title")), badge),
+    sum.detail ? el("div", { class: "notif-text" }, sum.detail) : null,
+    !state.coverage && !state.careLoading
+      ? el("div", { class: "notif-meta" }, navigator.onLine ? t("cov_none") : t("offline"))
+      : null);
+}
+
+/* --- book-a-visit stepper: facility → service → date → slot --- */
+function BookVisitCard() {
+  const st = { facilities: null, facility: null, service: null, date: null, slots: null, busy: false, done: null };
+  const box = el("div", { class: "book-box" });
+
+  function dates() {
+    const out = [];
+    const d = new Date();
+    for (let i = 0; i < 7; i++) {
+      const x = new Date(d.getTime() + i * 86400000);
+      out.push(x.toISOString().slice(0, 10));
+    }
+    return out;
+  }
+
+  async function pickFacilities() {
+    box.innerHTML = "";
+    box.append(el("div", { class: "muted" }, t("loading")));
+    let facs = st.facilities;
+    if (!facs) {
+      try { facs = await portalFetch("/portal/facilities"); } catch { facs = null; }
+      st.facilities = Array.isArray(facs) ? facs : [];
+    }
+    box.innerHTML = "";
+    if (!st.facilities.length) { box.append(el("div", { class: "empty" }, t("bk_none"))); return; }
+    for (const f of st.facilities) {
+      box.append(el("button", {
+        class: "btn btn-outline btn-block book-choice",
+        onclick: () => { st.facility = f; st.service = null; pickService(); },
+      }, `${f.name} — ${f.level || ""}`));
+    }
+  }
+
+  function pickService() {
+    box.innerHTML = "";
+    box.append(el("div", { class: "muted book-crumb" }, st.facility.name));
+    const services = (st.facility.services || []).length ? st.facility.services : ["general"];
+    for (const sv of services) {
+      box.append(el("button", {
+        class: "btn btn-outline btn-block book-choice",
+        onclick: () => { st.service = sv; pickDate(); },
+      }, sv));
+    }
+    box.append(backBtn(pickFacilities));
+  }
+
+  function pickDate() {
+    box.innerHTML = "";
+    box.append(el("div", { class: "muted book-crumb" }, `${st.facility.name} · ${st.service}`));
+    const row = el("div", { class: "chip-row" });
+    for (const d of dates()) {
+      row.append(el("button", {
+        class: "chip" + (st.date === d ? " chip-on" : ""),
+        onclick: () => { st.date = d; pickSlots(); },
+      }, d.slice(5)));
+    }
+    box.append(row, backBtn(pickService));
+  }
+
+  async function pickSlots() {
+    box.innerHTML = "";
+    box.append(el("div", { class: "muted book-crumb" }, `${st.facility.name} · ${st.service} · ${st.date}`));
+    box.append(el("div", { class: "muted" }, t("loading")));
+    let slots = null;
+    try {
+      const d = await portalFetch(`/portal/slots?facility_id=${encodeURIComponent(st.facility.id)}&service=${encodeURIComponent(st.service)}&date=${st.date}`);
+      slots = bookableSlots(d.slots || d);
+    } catch { slots = null; }
+    box.innerHTML = "";
+    box.append(el("div", { class: "muted book-crumb" }, `${st.facility.name} · ${st.service} · ${st.date}`));
+    if (!slots || !slots.length) {
+      box.append(el("div", { class: "empty" }, t("bk_no_slots")), backBtn(pickDate));
+      return;
+    }
+    const grid = el("div", { class: "slot-grid" });
+    for (const sl of slots) {
+      const hhmm = (sl.start || "").slice(11, 16);
+      grid.append(el("button", { class: "slot-btn", onclick: () => book(sl) }, hhmm));
+    }
+    box.append(grid, backBtn(pickDate));
+  }
+
+  async function book(slot) {
+    if (st.busy) return;
+    st.busy = true;
+    try {
+      await portalPost("/portal/appointments", { slot_id: slot.id });
+      st.done = slot;
+      state.appts = null; // force refresh
+      loadCare();
+      box.innerHTML = "";
+      box.append(el("div", { class: "banner banner-show banner-inline" },
+        `${t("bk_done")} — ${(slot.start || "").slice(0, 10)} ${(slot.start || "").slice(11, 16)}`));
+    } catch {
+      box.append(el("div", { class: "banner banner-show banner-inline" }, t("bk_failed")));
+    }
+    st.busy = false;
+  }
+
+  function backBtn(fn) {
+    return el("button", { class: "btn btn-outline book-back", onclick: fn }, `← ${t("bk_back")}`);
+  }
+
+  return el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("bk_title"))),
+    el("div", { class: "notif-meta" }, t("bk_sub")),
+    box,
+    el("button", {
+      class: "btn btn-primary btn-block", onclick: () => { st.done = null; pickFacilities(); },
+    }, t("bk_start")));
+}
+
+/* --- my appointments --- */
+function MyAppointmentsCard() {
+  const card = el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("ap_title"))));
+  const up = upcomingAppointments(state.appts || []);
+  if (!up.length) {
+    card.append(el("div", { class: "notif-meta" }, t("ap_none")));
+    return card;
+  }
+  for (const a of up) {
+    const row = el("div", { class: "appt-row" },
+      el("div", { class: "notif-main" },
+        el("div", { class: "notif-kind" }, a.service || "visit"),
+        el("div", { class: "notif-meta" },
+          `${(a.start || "").slice(0, 10)} ${(a.start || "").slice(11, 16)} · ${a.facility_id || ""}`)),
+      el("button", {
+        class: "btn btn-outline appt-cancel",
+        onclick: async (ev) => {
+          ev.target.disabled = true;
+          try {
+            await portalPost("/portal/appointments/cancel", { appointment_id: a.id });
+            state.appts = null;
+            loadCare();
+          } catch { ev.target.disabled = false; toast(t("ap_cancel_failed")); }
+        },
+      }, t("ap_cancel")));
+    card.append(row);
+  }
+  return card;
+}
+
+/* --- ask the clinic --- */
+function AskClinicCard() {
+  const ta = el("textarea", { class: "ask-input", rows: 3, placeholder: t("ask_placeholder") });
+  const status = el("div", { class: "notif-meta" });
+  return el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("ask_title"))),
+    el("div", { class: "notif-meta" }, t("ask_sub")),
+    ta, status,
+    el("button", {
+      class: "btn btn-primary btn-block",
+      onclick: async (ev) => {
+        const complaint = ta.value.trim();
+        if (!complaint) { status.textContent = t("ask_empty"); return; }
+        ev.target.disabled = true;
+        try {
+          await portalPost("/portal/messages", { complaint, facility_id: "" });
+          ta.value = "";
+          status.textContent = t("ask_sent");
+        } catch { status.textContent = t("ask_failed"); }
+        ev.target.disabled = false;
+      },
+    }, t("ask_send")));
+}
+
+/* --- sharing: who can see my record --- */
+function SharingCard() {
+  const card = el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("sh_title"))));
+  const list = state.consents;
+  if (!list || !list.length) {
+    card.append(el("div", { class: "notif-meta" }, t("sh_none")));
+    return card;
+  }
+  for (const c of list) {
+    const revoked = c.status === "revoked";
+    card.append(el("div", { class: "appt-row" },
+      el("div", { class: "notif-main" },
+        el("div", { class: "notif-kind" }, c.grantee || ""),
+        el("div", { class: "notif-meta" }, `${c.scope || ""} · ${revoked ? t("sh_revoked") : c.status || ""}`)),
+      revoked ? null : el("button", {
+        class: "btn btn-outline appt-cancel",
+        onclick: async (ev) => {
+          ev.target.disabled = true;
+          try {
+            await portalPost("/portal/consents/revoke", { consent_id: c.id });
+            state.consents = null;
+            loadCare();
+          } catch { ev.target.disabled = false; toast(t("sh_failed")); }
+        },
+      }, t("sh_revoke"))));
+  }
+  return card;
+}
+
+/* --- passkey unlock (ADR-0017): device-bound, server-verified --- */
+const PASSKEY_KEY = "openhealth-passkey";
+
+function passkeySupported() {
+  return !!(window.PublicKeyCredential && navigator.credentials);
+}
+function b64ToBuf(b64) {
+  const s = atob(b64.replace(/-/g, "+").replace(/_/g, "/"));
+  const out = new Uint8Array(s.length);
+  for (let i = 0; i < s.length; i++) out[i] = s.charCodeAt(i);
+  return out.buffer;
+}
+function bufToB64(buf) {
+  const b = new Uint8Array(buf);
+  let s = "";
+  for (const x of b) s += String.fromCharCode(x);
+  return btoa(s).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/, "");
+}
+
+function PasskeyCard() {
+  if (!passkeySupported()) return null;
+  const bound = (() => { try { return JSON.parse(localStorage.getItem(PASSKEY_KEY) || "null"); } catch { return null; } })();
+  const status = el("div", { class: "notif-meta" },
+    bound && bound.patientId === state.patientId ? t("pk_on") : t("pk_off"));
+  return el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("pk_title"))),
+    el("div", { class: "notif-meta" }, t("pk_sub")), status,
+    el("button", {
+      class: "btn btn-outline btn-block",
+      onclick: async (ev) => {
+        ev.target.disabled = true;
+        try {
+          const begin = await portalPost("/portal/passkey/register/begin", {});
+          const cred = await navigator.credentials.create({
+            publicKey: {
+              challenge: b64ToBuf(begin.challenge),
+              rp: { id: begin.rp_id, name: "OpenHealth" },
+              user: { id: b64ToBuf(begin.user_id), name: state.patientId, displayName: state.patientId },
+              pubKeyCredParams: [{ type: "public-key", alg: -7 }],
+              authenticatorSelection: { authenticatorAttachment: "platform", userVerification: "required" },
+            },
+          });
+          await portalPost("/portal/passkey/register/finish", {
+            attestation_object: bufToB64(cred.response.attestationObject),
+            client_data_json: bufToB64(cred.response.clientDataJSON),
+          });
+          try { localStorage.setItem(PASSKEY_KEY, JSON.stringify({ patientId: state.patientId, phone: state.phone })); } catch { /* full */ }
+          status.textContent = t("pk_on");
+        } catch { status.textContent = t("pk_failed"); }
+        ev.target.disabled = false;
+      },
+    }, t("pk_setup")));
+}
+
+/* Sign-in unlock button — shown when a passkey was bound on this device. */
+function PasskeyUnlock() {
+  if (!passkeySupported()) return null;
+  let bound = null;
+  try { bound = JSON.parse(localStorage.getItem(PASSKEY_KEY) || "null"); } catch { /* none */ }
+  if (!bound || !bound.patientId || !bound.phone) return null;
+  return el("button", {
+    class: "btn btn-outline btn-block",
+    onclick: async (ev) => {
+      ev.target.disabled = true;
+      try {
+        const base = apiBase();
+        const begin = await fetch(`${base}/portal/passkey/login/begin`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ patient_id: bound.patientId }),
+        }).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
+        const cred = await navigator.credentials.get({
+          publicKey: {
+            challenge: b64ToBuf(begin.challenge),
+            rpId: begin.rp_id,
+            allowCredentials: (begin.allow_credentials || []).map((id) => ({ type: "public-key", id: b64ToBuf(id) })),
+            userVerification: "required",
+          },
+        });
+        await fetch(`${base}/portal/passkey/login/finish`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            patient_id: bound.patientId,
+            cred_id: bufToB64(cred.rawId),
+            authenticator_data: bufToB64(cred.response.authenticatorData),
+            client_data_json: bufToB64(cred.response.clientDataJSON),
+            signature: bufToB64(cred.response.signature),
+          }),
+        }).then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); });
+        state.patientId = bound.patientId;
+        state.phone = bound.phone;
+        saveLocal();
+        render();
+        refresh();
+      } catch { toast(t("pk_failed")); }
+      ev.target.disabled = false;
+    },
+  }, `☝ ${t("pk_unlock")}`);
+}
+
+function CareView() {
+  const wrap = el("div", { class: "view" },
+    Tabs(),
+    el("div", { class: "feed-head" },
+      el("h2", {}, t("tab_care")),
+      el("button", { class: "btn btn-outline btn-refresh", onclick: loadCare }, t("refresh"))));
+  const due = nextDue(state.appts || []);
+  if (due) {
+    wrap.append(el("div", { class: "card care-card care-due" },
+      el("div", { class: "notif-kind" }, t("due_title")),
+      el("div", { class: "notif-text" },
+        `${(due.when || "").slice(0, 10)} ${(due.when || "").slice(11, 16)} — ${due.service} · ${due.where}`)));
+  }
+  wrap.append(
+    CoverageCard(),
+    BookVisitCard(),
+    MyAppointmentsCard(),
+    AskClinicCard(),
+    SharingCard(),
+    PasskeyCard());
+  return wrap;
+}
+
 /* ---------- boot ------------------------------------------------------ */
 
 function render() {
@@ -404,7 +792,7 @@ function render() {
   const root = $("#view-root");
   root.innerHTML = "";
   root.append(state.patientId
-    ? (state.tab === "record" ? RecordView() : FeedView())
+    ? (state.tab === "record" ? RecordView() : state.tab === "care" ? CareView() : FeedView())
     : SignInView());
   const b = $("#offline-banner");
   if (!navigator.onLine) {

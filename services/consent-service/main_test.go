@@ -101,3 +101,22 @@ func TestHTTPLifecycle(t *testing.T) {
 		t.Fatalf("post-revoke check must deny: %s", rec.Body)
 	}
 }
+
+func TestForPatientListsNewestFirst(t *testing.T) {
+	m := NewManager([]byte("k"))
+	c1, _ := m.Issue("P-1", "FAC-A", "record:read", "care")
+	c2, _ := m.Issue("P-1", "FAC-B", "claims:submit", "reimbursement")
+	m.Issue("P-2", "FAC-A", "record:read", "care") // another patient's — excluded
+	got := m.ForPatient("P-1")
+	if len(got) != 2 {
+		t.Fatalf("want 2 consents, got %d", len(got))
+	}
+	if got[0].ID != c2.ID || got[1].ID != c1.ID {
+		t.Fatalf("newest first: %+v", got)
+	}
+	m.Revoke(c2.ID)
+	got = m.ForPatient("P-1")
+	if got[0].Status != "revoked" {
+		t.Fatalf("revocation visible in listing: %+v", got[0])
+	}
+}

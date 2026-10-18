@@ -88,3 +88,66 @@ func TestPostgresNotificationStore(t *testing.T) {
 		t.Fatalf("for patient: %+v", got)
 	}
 }
+
+// Passkey Postgres parity (ADR-0017) — credential round-trip and the
+// monotonic sign-count guard, gated on TEST_DATABASE_URL like the rest.
+func TestPostgresPasskeyStore(t *testing.T) {
+	dsn := os.Getenv("TEST_DATABASE_URL")
+	if dsn == "" {
+		t.Skip("TEST_DATABASE_URL not set")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	pool, err := pgxpool.New(ctx, dsn)
+	if err != nil {
+		t.Fatalf("connect: %v", err)
+	}
+	defer pool.Close()
+	_, file, _, _ := runtime.Caller(0)
+	sql, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "db", "migrations", "0012_passkeys.sql"))
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	if _, err := pool.Exec(ctx, string(sql)); err != nil {
+		t.Fatalf("apply 0012: %v", err)
+	}
+	if _, err := pool.Exec(ctx, "TRUNCATE portal_passkeys"); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	store, err := NewPostgresStore(dsn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer store.Close()
+
+	k := PasskeyCredential{CredID: "cred-pg-1", PatientID: "P-PG", PubX: "AAAA", PubY: "BBBB", SignCount: 1,
+		CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	if err := store.PutPasskey(k); err != nil {
+		t.Fatalf("put: %v", err)
+	}
+	got, err := store.PasskeyByCredID("cred-pg-1")
+	if err != nil || got.PatientID != "P-PG" || got.SignCount != 1 {
+		t.Fatalf("get: %v %+v", err, got)
+	}
+	if n := len(store.Passkeys("P-PG")); n != 1 {
+		t.Fatalf("passkeys by patient: %d", n)
+	}
+	if _, err := store.PasskeyByCredID("nope"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+	// Counter advances; a backwards write is a no-op, never a rollback.
+	if err := store.UpdatePasskeySignCount("cred-pg-1", 5); err != nil {
+		t.Fatalf("update count: %v", err)
+	}
+	if err := store.UpdatePasskeySignCount("cred-pg-1", 2); err != nil {
+		t.Fatalf("backwards update should be a guarded no-op, got %v", err)
+	}
+	got, _ = store.PasskeyByCredID("cred-pg-1")
+	if got.SignCount != 5 {
+		t.Fatalf("monotonic guard broken: %d", got.SignCount)
+	}
+	if err := store.UpdatePasskeySignCount("nope", 9); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}

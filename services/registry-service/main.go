@@ -10,6 +10,7 @@ import (
 
 	"github.com/munisp/openhealthOS/shared/authz"
 	"github.com/munisp/openhealthOS/shared/rebac"
+	"github.com/munisp/openhealthOS/shared/sealx"
 	"github.com/munisp/openhealthOS/shared/servex"
 )
 
@@ -53,6 +54,23 @@ func main() {
 		log.Print("kyc: OTP via SMS webhook")
 	}
 	registerKYCRoutes(mux, patients, verifier, sender)
+	// Biometrics (ADR-0017): anti-gaming identity assurance. Templates are
+	// sealed at rest via the sealx keyring; SEALX_KEY unset keeps the
+	// loud-plaintext dev mode (the stored sentinel makes that visible).
+	// BIOMETRIC_THRESHOLD (default 0.85) is the one policy knob.
+	var bioStore BiometricStore = NewMemoryBiometricStore()
+	if pgStore, ok := store.(*PostgresStore); ok {
+		bioStore = NewPostgresBiometricStore(pgStore.pool)
+	}
+	sealer, err := sealx.FromEnv(os.Getenv)
+	if err != nil {
+		log.Fatalf("sealx: %v", err)
+	}
+	if sealer == nil {
+		log.Print("biometrics: SEALX_KEY unset — templates stored PLAIN (dev only)")
+	}
+	registerBiometricRoutes(mux, NewBiometricEngine(bioStore, patients, sealer, os.Getenv))
+	log.Printf("biometrics: matcher=SimMatcher threshold=%.2f (set BIOMETRIC_THRESHOLD)", matchThreshold(os.Getenv))
 	// ReBAC (ADR-0015): tuple store on the same persistence seam as the
 	// registry itself; the patient-read gate binds only when
 	// REBAC_ENFORCE=true (state plane closed, edge open by default).

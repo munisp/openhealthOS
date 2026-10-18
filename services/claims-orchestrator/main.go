@@ -40,6 +40,7 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"payers": tally.Stats()})
 	})
 	mux.Handle("/eligibility", eligibilityHandler{Checker: adj})
+	mux.Handle("/enrolments", enrolmentHandler{Enroller: adj})
 	mux.Handle("/preauth", preauthHandler{Authorizer: adj})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	addr := env("LISTEN", ":8080")

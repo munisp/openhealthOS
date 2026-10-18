@@ -203,3 +203,86 @@ func (p *PostgresStore) Stats() (queued, sent, failed int) {
 }
 
 var _ Store = (*PostgresStore)(nil)
+
+// ---------- passkeys (ADR-0017) ----------
+
+func (p *PostgresStore) PutPasskey(k PasskeyCredential) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Upsert: re-registering the same credential id refreshes the key.
+	_, err := p.pool.Exec(ctx, `
+		INSERT INTO portal_passkeys (cred_id, patient_id, pub_x, pub_y, sign_count, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6)
+		ON CONFLICT (cred_id) DO UPDATE
+		  SET patient_id=$2, pub_x=$3, pub_y=$4, sign_count=$5`,
+		k.CredID, k.PatientID, k.PubX, k.PubY, int(k.SignCount), k.CreatedAt)
+	return err
+}
+
+func (p *PostgresStore) Passkeys(patientID string) []PasskeyCredential {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	rows, err := p.pool.Query(ctx,
+		"SELECT cred_id, patient_id, pub_x, pub_y, sign_count, created_at FROM portal_passkeys WHERE patient_id=$1 ORDER BY cred_id",
+		patientID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanPasskeys(rows)
+}
+
+func (p *PostgresStore) PasskeyByCredID(credID string) (PasskeyCredential, error) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	var k PasskeyCredential
+	var count int
+	var created time.Time
+	err := p.pool.QueryRow(ctx,
+		"SELECT cred_id, patient_id, pub_x, pub_y, sign_count, created_at FROM portal_passkeys WHERE cred_id=$1",
+		credID).Scan(&k.CredID, &k.PatientID, &k.PubX, &k.PubY, &count, &created)
+	if errors.Is(err, pgx.ErrNoRows) {
+		return PasskeyCredential{}, ErrNotFound
+	}
+	if err != nil {
+		return PasskeyCredential{}, err
+	}
+	k.SignCount = uint32(count)
+	k.CreatedAt = created.UTC().Format(time.RFC3339)
+	return k, nil
+}
+
+func (p *PostgresStore) UpdatePasskeySignCount(credID string, count uint32) error {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	// Monotonic guard at the storage layer too: a stale write can never
+	// roll the counter backwards (clone-detection invariant).
+	tag, err := p.pool.Exec(ctx,
+		"UPDATE portal_passkeys SET sign_count=$2 WHERE cred_id=$1 AND sign_count < $2",
+		credID, int(count))
+	if err != nil {
+		return err
+	}
+	if tag.RowsAffected() == 0 {
+		if _, err := p.PasskeyByCredID(credID); err != nil {
+			return ErrNotFound
+		}
+	}
+	return nil
+}
+
+func scanPasskeys(rows pgx.Rows) []PasskeyCredential {
+	out := []PasskeyCredential{}
+	for rows.Next() {
+		var k PasskeyCredential
+		var count int
+		var created time.Time
+		if err := rows.Scan(&k.CredID, &k.PatientID, &k.PubX, &k.PubY, &count, &created); err != nil {
+			continue
+		}
+		k.SignCount = uint32(count)
+		k.CreatedAt = created.UTC().Format(time.RFC3339)
+		out = append(out, k)
+	}
+	return out
+}

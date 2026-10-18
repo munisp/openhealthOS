@@ -32,3 +32,7 @@ replace github.com/munisp/openhealthOS/shared/rebac => ../../shared/rebac
 require github.com/munisp/openhealthOS/shared/cachex v0.0.0 // indirect
 
 replace github.com/munisp/openhealthOS/shared/cachex => ../../shared/cachex
+
+require github.com/munisp/openhealthOS/shared/sealx v0.0.0
+
+replace github.com/munisp/openhealthOS/shared/sealx => ../../shared/sealx

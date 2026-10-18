@@ -199,3 +199,48 @@ func TestPostgresKYC(t *testing.T) {
 		t.Fatalf("locked: want ErrOTPLocked, got %v", err)
 	}
 }
+
+func TestPostgresBiometrics(t *testing.T) {
+	store, _ := pgTestStore(t)
+	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	defer cancel()
+	// Self-apply the biometrics migration, then a clean slate.
+	_, file, _, _ := runtime.Caller(0)
+	sql, err := os.ReadFile(filepath.Join(filepath.Dir(file), "..", "..", "db", "migrations", "0011_biometrics.sql"))
+	if err != nil {
+		t.Fatalf("read migration: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, string(sql)); err != nil {
+		t.Fatalf("apply 0011: %v", err)
+	}
+	if _, err := store.pool.Exec(ctx, "TRUNCATE registry_biometrics"); err != nil {
+		t.Fatalf("truncate: %v", err)
+	}
+
+	bs := NewPostgresBiometricStore(store.pool)
+	t1 := EnrolledTemplate{PatientID: "P-1", Finger: "right-index", Sealed: "PLAIN:AAAA", CreatedAt: time.Now().UTC().Format(time.RFC3339)}
+	if err := bs.Enrol(t1); err != nil {
+		t.Fatalf("enrol: %v", err)
+	}
+	// Idempotent re-enrol of the same patient+finger.
+	if err := bs.Enrol(t1); err != nil {
+		t.Fatalf("re-enrol: %v", err)
+	}
+	bs.Enrol(EnrolledTemplate{PatientID: "P-1", Finger: "left-thumb", Sealed: "PLAIN:BBBB", CreatedAt: t1.CreatedAt})
+	bs.Enrol(EnrolledTemplate{PatientID: "P-2", Finger: "right-index", Sealed: "PLAIN:CCCC", CreatedAt: t1.CreatedAt})
+	if got := len(bs.ForPatient("P-1")); got != 2 {
+		t.Fatalf("ForPatient: %d rows, want 2", got)
+	}
+	if got := len(bs.ForPatient("P-1")); got == 2 && bs.ForPatient("P-1")[0].Finger != "left-thumb" {
+		t.Fatalf("ForPatient ordered by finger: %+v", bs.ForPatient("P-1"))
+	}
+	if got := len(bs.All()); got != 3 {
+		t.Fatalf("All: %d rows, want 3", got)
+	}
+	if got := bs.ForPatient("P-1")[0].Sealed; got != "PLAIN:BBBB" {
+		t.Fatalf("sealed token round-trip: %q", got)
+	}
+	if got := bs.ForPatient("P-1")[0].CreatedAt; got == "" {
+		t.Fatal("created_at lost in round-trip")
+	}
+}

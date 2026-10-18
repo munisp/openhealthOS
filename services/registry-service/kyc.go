@@ -46,6 +46,8 @@ func kycRank(level string) int {
 		return 2
 	case KYCNINVerified:
 		return 3
+	case KYCBiometricVerified:
+		return 4
 	default:
 		return 0
 	}

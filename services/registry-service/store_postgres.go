@@ -322,7 +322,7 @@ func (p *PostgresPatientStore) FindDuplicate(pt Patient) (Patient, error) {
 func (p *PostgresPatientStore) SetKYC(id, level, detail string) (Patient, error) {
 	ctx, cancel := pgCtx()
 	defer cancel()
-	rank := "CASE kyc_level WHEN 'phone' THEN 1 WHEN 'nin-format' THEN 2 WHEN 'nin-verified' THEN 3 ELSE 0 END"
+	rank := "CASE kyc_level WHEN 'phone' THEN 1 WHEN 'nin-format' THEN 2 WHEN 'nin-verified' THEN 3 WHEN 'biometric-verified' THEN 4 ELSE 0 END"
 	tag, err := p.pool.Exec(ctx,
 		"UPDATE patients SET kyc_level=$2, kyc_detail=$3 WHERE id=$1 AND "+rank+" <= $4",
 		id, level, detail, kycRank(level))
@@ -406,6 +406,69 @@ func (p *PostgresPatientStore) ListPatients() []Patient {
 			&pt.KYCLevel, &pt.KYCDetail, &pt.RegisteredAt) == nil {
 			out = append(out, pt)
 		}
+	}
+	return out
+}
+
+// ---------------------------------------------------------------- biometrics
+
+// PostgresBiometricStore is the state-plane BiometricStore (ADR-0017).
+// Templates are sealed before they reach the database — Postgres only
+// ever holds sealx tokens.
+type PostgresBiometricStore struct{ pool *pgxpool.Pool }
+
+func NewPostgresBiometricStore(pool *pgxpool.Pool) *PostgresBiometricStore {
+	return &PostgresBiometricStore{pool: pool}
+}
+
+func (b *PostgresBiometricStore) Enrol(t EnrolledTemplate) error {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	// ON CONFLICT DO NOTHING: re-enrolling the same finger is idempotent,
+	// matching the memory store.
+	_, err := b.pool.Exec(ctx, `
+		INSERT INTO registry_biometrics (patient_id, finger, sealed, created_at)
+		VALUES ($1, $2, $3, $4)
+		ON CONFLICT (patient_id, finger) DO NOTHING`,
+		t.PatientID, t.Finger, t.Sealed, t.CreatedAt)
+	return err
+}
+
+func (b *PostgresBiometricStore) ForPatient(patientID string) []EnrolledTemplate {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	rows, err := b.pool.Query(ctx,
+		"SELECT patient_id, finger, sealed, created_at FROM registry_biometrics WHERE patient_id=$1 ORDER BY finger",
+		patientID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanTemplates(rows)
+}
+
+func (b *PostgresBiometricStore) All() []EnrolledTemplate {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	rows, err := b.pool.Query(ctx,
+		"SELECT patient_id, finger, sealed, created_at FROM registry_biometrics ORDER BY patient_id, finger")
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	return scanTemplates(rows)
+}
+
+func scanTemplates(rows pgx.Rows) []EnrolledTemplate {
+	out := []EnrolledTemplate{}
+	for rows.Next() {
+		var t EnrolledTemplate
+		var created time.Time
+		if err := rows.Scan(&t.PatientID, &t.Finger, &t.Sealed, &created); err != nil {
+			continue
+		}
+		t.CreatedAt = created.UTC().Format(time.RFC3339)
+		out = append(out, t)
 	}
 	return out
 }

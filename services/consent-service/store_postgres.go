@@ -169,3 +169,29 @@ func (p *PostgresManager) record(event, id, detail string) {
 }
 
 var _ ConsentService = (*PostgresManager)(nil)
+
+// ForPatient lists a patient's consent artefacts, newest first.
+func (p *PostgresManager) ForPatient(patientID string) []Consent {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	rows, err := p.pool.Query(ctx, `
+		SELECT id, patient_id, grantee, scope, purpose, status, issued_at, revoked_at, signature
+		FROM consents WHERE patient_id=$1 ORDER BY issued_at DESC`, patientID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []Consent{}
+	for rows.Next() {
+		var c Consent
+		var revokedAt *string
+		if err := rows.Scan(&c.ID, &c.PatientID, &c.Grantee, &c.Scope, &c.Purpose, &c.Status, &c.IssuedAt, &revokedAt, &c.Signature); err != nil {
+			continue
+		}
+		if revokedAt != nil {
+			c.RevokedAt = *revokedAt
+		}
+		out = append(out, c)
+	}
+	return out
+}

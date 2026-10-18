@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -81,5 +82,51 @@ func TestHealthz(t *testing.T) {
 func TestLoadFixturesValidates(t *testing.T) {
 	if _, err := loadFixtures("/nonexistent"); err == nil {
 		t.Fatal("missing file should fail")
+	}
+}
+
+func bioVerify(t *testing.T, h http.Handler, token, body string) (int, map[string]any) {
+	t.Helper()
+	req := httptest.NewRequest(http.MethodPost, "/biometric/verify", strings.NewReader(body))
+	if token != "" {
+		req.Header.Set("Authorization", "Bearer "+token)
+	}
+	rr := httptest.NewRecorder()
+	h.ServeHTTP(rr, req)
+	var out map[string]any
+	json.NewDecoder(rr.Body).Decode(&out)
+	return rr.Code, out
+}
+
+func TestBiometricVerifyContract(t *testing.T) {
+	h := newSandboxHandler(defaultFixtures, "sekrit")
+	nin := "10000000001"
+	good := hex.EncodeToString(fixtureFingerprint(nin))
+
+	// Live capture matching the enrolled fingerprint.
+	code, out := bioVerify(t, h, "sekrit", `{"nin":"`+nin+`","template":"`+good+`"}`)
+	if code != 200 || out["match"] != true || out["score"] != 1.0 {
+		t.Fatalf("match: %d %v", code, out)
+	}
+	// Wrong finger.
+	bad := hex.EncodeToString(fixtureFingerprint("10000000002"))
+	code, out = bioVerify(t, h, "sekrit", `{"nin":"`+nin+`","template":"`+bad+`"}`)
+	if code != 200 || out["match"] != false {
+		t.Fatalf("mismatch: %d %v", code, out)
+	}
+	// Unknown NIN.
+	code, out = bioVerify(t, h, "sekrit", `{"nin":"99999999999","template":"`+good+`"}`)
+	if code != 200 || out["match"] != false {
+		t.Fatalf("unknown: %d %v", code, out)
+	}
+	// Malformed template → 400.
+	code, _ = bioVerify(t, h, "sekrit", `{"nin":"`+nin+`","template":"zz"}`)
+	if code != http.StatusBadRequest {
+		t.Fatalf("bad template: %d", code)
+	}
+	// Wrong token → 401.
+	code, _ = bioVerify(t, h, "wrong", `{"nin":"`+nin+`","template":"`+good+`"}`)
+	if code != http.StatusUnauthorized {
+		t.Fatalf("bad token: %d", code)
 	}
 }

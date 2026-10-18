@@ -8,6 +8,9 @@ package main
 // on the KYC ladder.
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -141,5 +144,54 @@ func TestKycLadderEndToEndOverHTTP(t *testing.T) {
 	}
 	if !strings.Contains(after.KYCDetail, "Adaeze Ngozi Okafor") {
 		t.Fatalf("detail missing authority name: %q", after.KYCDetail)
+	}
+}
+
+// Biometric conformance (ADR-0017): the registry-side matcher semantics
+// and the sandbox authority's /biometric/verify agree over real HTTP —
+// the same probe scores 1.0 on both sides, a foreign finger fails on
+// both sides. This is the proof that swapping in the licensed NIMC
+// biometric service is a URL change, not a semantics change.
+func TestBiometricConformanceAgainstNIMCSandbox(t *testing.T) {
+	url, token := startNIMCSandbox(t) // url ends in /verify
+	base := strings.TrimSuffix(url, "/verify")
+
+	nin := "10000000001"
+	// The sandbox binds a deterministic synthetic fingerprint per NIN
+	// (sha256("nimc-fp:"+nin)) — recomputed here, nothing hard-coded.
+	sum := sha256.Sum256([]byte("nimc-fp:" + nin))
+	probe := hex.EncodeToString(sum[:])
+
+	post := func(body string) (int, map[string]any) {
+		req, _ := http.NewRequest(http.MethodPost, base+"/biometric/verify", strings.NewReader(body))
+		req.Header.Set("Authorization", "Bearer "+token)
+		req.Header.Set("Content-Type", "application/json")
+		resp, err := http.DefaultClient.Do(req)
+		if err != nil {
+			t.Fatalf("post: %v", err)
+		}
+		defer resp.Body.Close()
+		var out map[string]any
+		json.NewDecoder(resp.Body).Decode(&out)
+		return resp.StatusCode, out
+	}
+
+	code, out := post(`{"nin":"` + nin + `","template":"` + probe + `"}`)
+	if code != 200 || out["match"] != true || out["score"] != 1.0 {
+		t.Fatalf("own biometric: %d %v", code, out)
+	}
+	// Registry's SimMatcher agrees the same bytes are a perfect match.
+	if (SimMatcher{}).Similarity(sum[:], sum[:]) != 1.0 {
+		t.Fatal("matcher semantics diverged: identical templates must score 1.0")
+	}
+	// A foreign finger fails on the authority side AND under the
+	// registry's threshold policy.
+	other := sha256.Sum256([]byte("nimc-fp:10000000002"))
+	code, out = post(`{"nin":"` + nin + `","template":"` + hex.EncodeToString(other[:]) + `"}`)
+	if code != 200 || out["match"] != false {
+		t.Fatalf("foreign biometric: %d %v", code, out)
+	}
+	if (SimMatcher{}).Similarity(sum[:], other[:]) >= matchThreshold(os.Getenv) {
+		t.Fatal("registry threshold would accept what the authority rejected")
 	}
 }

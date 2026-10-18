@@ -63,6 +63,7 @@ const RECORD_SECTIONS = {
   Immunization: "immunizations",
   Condition: "conditions",
   AllergyIntolerance: "allergies",
+  DocumentReference: "documents",
 };
 
 const text = (cc) =>
@@ -128,6 +129,16 @@ function recordRow(resource) {
         when: resource.recordedDate || "",
         source: refName(resource.recorder),
       };
+    case "DocumentReference": {
+      const content = resource.content && resource.content[0];
+      const attach = content && content.attachment;
+      return {
+        title: (resource.description || (resource.type && text(resource.type)) || (attach && attach.title) || "Document"),
+        value: (attach && attach.contentType) || "",
+        when: resource.date || "",
+        source: refName(resource.author && resource.author[0]),
+      };
+    }
     default:
       return null;
   }
@@ -138,7 +149,7 @@ function recordRow(resource) {
 export function groupRecord(bundle) {
   const sections = {
     encounters: [], labs: [], meds: [],
-    immunizations: [], conditions: [], allergies: [],
+    immunizations: [], conditions: [], allergies: [], documents: [],
   };
   let skipped = 0;
   const entries = (bundle && bundle.entry) || [];
@@ -169,4 +180,60 @@ export function groupConsults(consults) {
       status: c.status || "",
     }))
     .sort((a, b) => Date.parse(b.when || "") - Date.parse(a.when || ""));
+}
+
+/* ------------------------------------------------------------------ */
+/* Self-service care helpers (ADR-0017) — pure, testable.              */
+
+/* Appointments the patient can still act on: booked/checked-in, start
+ * in the future, soonest first. Cancelled and past visits fall out. */
+export function upcomingAppointments(appts, now = Date.now()) {
+  return (appts || [])
+    .filter((a) => a && (a.status === "booked" || a.status === "checked-in")
+      && Date.parse(a.start || "") >= now)
+    .sort((a, b) => Date.parse(a.start || "") - Date.parse(b.start || ""));
+}
+
+/* Past visits, newest first — the record-like tail of the list. */
+export function pastAppointments(appts, now = Date.now()) {
+  return (appts || [])
+    .filter((a) => a && a.status !== "cancelled" && Date.parse(a.start || "") < now)
+    .sort((a, b) => Date.parse(b.start || "") - Date.parse(a.start || ""));
+}
+
+/* The one-line coverage summary for the card: the eligibility payload
+ * already carries the honest reason text; we only shape the headline. */
+export function coverageSummary(payload) {
+  if (!payload || typeof payload !== "object") {
+    return { status: "unknown", headline: "", detail: "" };
+  }
+  if (payload.eligible === true) {
+    return {
+      status: "active",
+      headline: "active",
+      detail: [
+        payload.scheme || "",
+        payload.valid_until ? `until ${payload.valid_until}` : "",
+        typeof payload.benefit_services === "number" ? `${payload.benefit_services} benefit services` : "",
+      ].filter(Boolean).join(" · "),
+    };
+  }
+  return {
+    status: payload.eligible === false ? "inactive" : "unknown",
+    headline: payload.eligible === false ? "inactive" : "",
+    detail: payload.reason || "",
+  };
+}
+
+/* Slots for one day, soonest first, only those still bookable. */
+export function bookableSlots(slots) {
+  return (slots || [])
+    .filter((s) => s && s.id && (s.booked || 0) < (s.capacity || 0))
+    .sort((a, b) => Date.parse(a.start || "") - Date.parse(b.start || ""));
+}
+
+/* Next visit line for the care card, or null when nothing is due. */
+export function nextDue(appts, now = Date.now()) {
+  const up = upcomingAppointments(appts, now)[0];
+  return up ? { when: up.start, where: up.facility_id || "", service: up.service || "" } : null;
 }

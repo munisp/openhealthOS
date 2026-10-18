@@ -179,3 +179,68 @@ body {
 .near-results { margin-top: 10px; display: grid; gap: 10px; }
 .near-fac { padding: 12px; }
 .near-nav { margin-top: 8px; text-decoration: none; text-align: center; display: block; }
+
+
+/* Self-service care tab (ADR-0017) — Medplum-flavoured: clean white
+ * cards, soft shadows, pill badges, indigo accent inside the calm
+ * daylight theme. */
+:root {
+  --indigo: #4f46e5;
+  --indigo-soft: #eef2ff;
+  --indigo-ink: #3730a3;
+}
+
+.care-card {
+  background: var(--paper);
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  display: flex; flex-direction: column; gap: 8px;
+  margin-top: 12px;
+}
+.care-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.care-due { border-left: 4px solid var(--indigo); }
+
+.pill {
+  display: inline-block; padding: 3px 12px; border-radius: 999px;
+  font-size: 0.78rem; font-weight: 700;
+  background: var(--indigo-soft); color: var(--indigo-ink);
+  white-space: nowrap;
+}
+.pill-ok { background: var(--ok-bg); color: var(--green); }
+.pill-warn { background: var(--warn-bg); color: var(--warn); }
+
+/* booking stepper */
+.book-box { display: flex; flex-direction: column; gap: 8px; }
+.book-choice { text-align: left; }
+.book-crumb { font-size: 0.82rem; }
+.book-back { align-self: flex-start; min-height: 44px; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; }
+.chip {
+  padding: 10px 14px; border-radius: 999px; border: 1px solid var(--line);
+  background: var(--paper); color: var(--ink); font-weight: 600;
+  min-height: 44px; font-size: 0.92rem;
+}
+.chip-on { background: var(--indigo); border-color: var(--indigo); color: #fff; }
+.slot-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.slot-btn {
+  padding: 12px 6px; border-radius: 12px; border: 1px solid var(--indigo);
+  background: var(--indigo-soft); color: var(--indigo-ink);
+  font-weight: 700; font-size: 1rem; min-height: 48px;
+}
+.slot-btn:active { background: var(--indigo); color: #fff; }
+
+/* appointments + sharing rows */
+.appt-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 10px 0; border-top: 1px solid var(--line);
+}
+.appt-cancel { min-height: 44px; flex-shrink: 0; }
+
+/* ask the clinic */
+.ask-input {
+  width: 100%; border: 1px solid var(--line); border-radius: 12px;
+  padding: 12px; font: inherit; resize: vertical; background: var(--paper);
+  min-height: 84px;
+}
+.ask-input:focus { outline: 2px solid var(--indigo); outline-offset: 1px; }

@@ -17,13 +17,17 @@ import hashlib
 import json
 import os
 import sys
+import time
 from datetime import datetime
 
 # Sibling-module import that survives cross-package loading (replay,
 # benchmark, and tools import this file by path, not as a package).
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tariffs import active_bundle, tariff_map, freq_caps
+from enrolment import load_members, enrol as enrol_member, suspend as suspend_member
 
+# Fallback fixture for dev and tests. Production sets MEMBERS_FILE and
+# the registry below is ignored — see get_member (ADR-0017).
 MEMBERS = {
     "NG-0001": {"name": "Amina Yusuf", "scheme": "BHCPF-VUL", "active": True, "valid_until": "2027-12-31", "copay_waiver": True},
     "NG-0002": {"name": "Chinedu Okafor", "scheme": "STATE-BASIC", "active": True, "valid_until": "2027-06-30", "copay_waiver": False},
@@ -42,6 +46,34 @@ FREQ_CAP = freq_caps(_BUNDLE)         # max units per member per 14 days
 TARIFF_STAMP = f"{_BUNDLE['bundle_id']}@v{_BUNDLE['version']}"
 DUP_WINDOW_DAYS = 14
 PRICE_DRIFT_TOLERANCE = 0.10
+
+# Member registry seam (ADR-0017): MEMBERS_FILE points at the durable
+# enrolment store; unset means the dev fixture above. In-process
+# importers (benchmark, replay) cache with a stat signature AND a short
+# TTL — filesystem timestamp granularity varies (overlayfs, network
+# mounts), so correctness never rests on mtime alone: worst case the
+# cache is 1s stale, and the production path (subprocess per check)
+# always reads fresh. A state enrolment sync takes effect without a
+# redeploy, exactly like tariff bundles.
+_MEMBERS_CACHE_TTL_S = 1.0
+_members_cache: tuple[tuple, float, dict] | None = None
+
+
+def get_member(member_id: str) -> dict | None:
+    global _members_cache
+    path = os.environ.get("MEMBERS_FILE", "")
+    if not path:
+        return MEMBERS.get(member_id)
+    try:
+        st = os.stat(path)
+        sig = (st.st_mtime_ns, st.st_size, st.st_ino)
+    except OSError:
+        sig = (-1, -1, -1)
+    now = time.monotonic()
+    if (_members_cache is None or _members_cache[0] != sig
+            or now - _members_cache[1] > _MEMBERS_CACHE_TTL_S):
+        _members_cache = (sig, now, load_members(path))
+    return _members_cache[2].get(member_id)
 
 
 def _schedule() -> tuple[dict[str, int], dict[str, int], str]:
@@ -66,7 +98,7 @@ def _d(s):
 def adjudicate(claim: dict) -> dict:
     tariff, freq_cap, stamp = _schedule()
     reasons, flags = [], []
-    member = MEMBERS.get(claim.get("member_id", ""))
+    member = get_member(claim.get("member_id", ""))
     if not member:
         return {"claim_id": claim.get("claim_id"), "decision": "DENY",
                 "reasons": ["ELIGIBILITY: unknown member"], "flags": [], "allowed_ngn": 0}
@@ -121,15 +153,32 @@ def adjudicate(claim: dict) -> dict:
 
 def check_eligibility(member_id: str, service_date: str) -> dict:
     """Real-time eligibility verification (claims-gateway /eligibility/check).
-    The same verdict the USSD fallback channel returns — one seam, one answer."""
-    member = MEMBERS.get(member_id)
+    The same verdict the USSD fallback channel returns — one seam, one answer.
+
+    ADR-0017: the answer now says WHY when the answer is no (suspended vs
+    expired vs unknown — each has a different remedy at the desk), carries
+    the benefit package size so the point of care can talk plainly ("your
+    plan covers 7 services here"), and surfaces biometric_required for
+    schemes that demand a match before high-value care (anti card-sharing).
+    """
+    member = get_member(member_id)
     if not member:
         return {"member_id": member_id, "eligible": False,
                 "reason": "unknown member — visit your PHC to enrol", "source": "live"}
-    eligible = member["active"] and _d(service_date) <= _d(member["valid_until"])
-    return {"member_id": member_id, "eligible": eligible, "scheme": member["scheme"],
-            "valid_until": member["valid_until"], "copay_waiver": member["copay_waiver"],
-            "source": "live"}
+    scheme = member["scheme"]
+    benefit = BENEFIT.get(scheme, [])
+    out = {"member_id": member_id, "scheme": scheme,
+           "valid_until": member["valid_until"],
+           "copay_waiver": member.get("copay_waiver", False),
+           "biometric_required": member.get("biometric_required", False),
+           "benefit_services": len(benefit), "source": "live"}
+    if not member["active"]:
+        reason = member.get("suspend_reason") or "coverage suspended"
+        return {**out, "eligible": False, "reason": f"coverage inactive — {reason}"}
+    if _d(service_date) > _d(member["valid_until"]):
+        return {**out, "eligible": False,
+                "reason": f"coverage expired {member['valid_until']} — renew at your PHC"}
+    return {**out, "eligible": True, "reason": "active"}
 
 
 def preauth(request: dict) -> dict:
@@ -140,7 +189,7 @@ def preauth(request: dict) -> dict:
     request always yields the same id, so offline replays dedupe."""
     tariff, _caps, stamp = _schedule()
     reasons = []
-    member = MEMBERS.get(request.get("member_id", ""))
+    member = get_member(request.get("member_id", ""))
     if not member:
         return {"preauth_id": None, "status": "DENIED",
                 "reasons": ["ELIGIBILITY: unknown member"], "estimated_ngn": 0}
@@ -187,6 +236,11 @@ if __name__ == "__main__":
     if "--check" in sys.argv:  # eligibility mode: stdin {"member_id","service_date"}
         req = json.load(sys.stdin)
         print(json.dumps(check_eligibility(req["member_id"], req.get("service_date", "2026-10-17"))))
+    elif "--enrol" in sys.argv:  # enrolment mode (ADR-0017): stdin member record
+        print(json.dumps(enrol_member(json.load(sys.stdin)), indent=2))
+    elif "--suspend" in sys.argv:  # suspend mode: stdin {"member_id","reason"}
+        req = json.load(sys.stdin)
+        print(json.dumps(suspend_member(req["member_id"], req.get("reason", "")), indent=2))
     elif "--preauth" in sys.argv:  # preauth mode: stdin {"member_id","provider_id","items":[...]}
         print(json.dumps(preauth(json.load(sys.stdin)), indent=2))
     else:
