@@ -2,12 +2,15 @@ package main
 
 import (
 	"context"
-	"github.com/munisp/openhealthOS/shared/authz"
-	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
 	"net/http"
 	"os"
+	"strings"
 	"time"
+
+	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/rebac"
+	"github.com/munisp/openhealthOS/shared/servex"
 )
 
 func main() {
@@ -50,8 +53,22 @@ func main() {
 		log.Print("kyc: OTP via SMS webhook")
 	}
 	registerKYCRoutes(mux, patients, verifier, sender)
+	// ReBAC (ADR-0015): tuple store on the same persistence seam as the
+	// registry itself; the patient-read gate binds only when
+	// REBAC_ENFORCE=true (state plane closed, edge open by default).
+	var rebacStore rebac.Store = rebac.NewMemoryStore()
+	if pgStore, ok := store.(*PostgresStore); ok {
+		rebacStore = rebac.NewPostgresStoreFromPool(pgStore.pool)
+	}
+	checker := &rebac.Checker{Store: rebacStore}
+	rbac := newRebacAPI(checker, patients, strings.Split(os.Getenv("REBAC_BOOTSTRAP_ADMINS"), ","))
+	rbac.registerRoutes(mux)
 	log.Printf("OpenHealth OS registry service on %s (facilities, providers, patients)", addr)
 	handler := http.Handler(mux)
+	if os.Getenv("REBAC_ENFORCE") == "true" {
+		handler = rbac.gate(handler)
+		log.Print("rebac: patient reads gated (X-User-ID + grants required)")
+	}
 	authV, authErr := authz.RequireFromEnv(os.Getenv)
 	if authErr != nil {
 		log.Fatal(authErr)

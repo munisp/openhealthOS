@@ -16,7 +16,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from openhealth_ml import ab, data as D, features as F, monitor, registry as R
+from openhealth_ml import ab, catchment as C, data as D, features as F, monitor, registry as R
 from openhealth_ml.models import TORCH
 from openhealth_ml.train import auc_roc, pr_auc
 
@@ -116,6 +116,142 @@ class TestMetrics(unittest.TestCase):
         p = pr_auc([0] * 50 + [1] * 50,
                    [i / 100 for i in range(100)])
         self.assertTrue(0.0 <= p <= 1.0, p)
+
+
+class TestGovernance(unittest.TestCase):
+    def test_choose_threshold_respects_budget(self):
+        from openhealth_ml.train import choose_threshold
+        # separable case: fraud scores high
+        y = [0] * 90 + [1] * 10
+        s = [0.05] * 90 + [0.95] * 10
+        dt = choose_threshold(y, s, review_budget=0.10, min_precision=0.8)
+        self.assertEqual(dt["precision"], 1.0)
+        self.assertEqual(dt["recall"], 1.0)
+        self.assertIn("precision>=0.8", dt["policy"])
+
+    def test_choose_threshold_fallback_is_declared(self):
+        from openhealth_ml.train import choose_threshold
+        # 5 negatives out-score every positive: within a 10% review budget,
+        # precision 0.99 is genuinely infeasible — the policy must SAY so.
+        y = [0] * 90 + [0] * 5 + [1] * 5
+        s = [0.2] * 90 + [0.9] * 5 + [0.85] * 5
+        dt = choose_threshold(y, s, review_budget=0.10, min_precision=0.99)
+        self.assertIn("fallback", dt["policy"])
+        self.assertLess(dt["precision"], 0.99)
+
+    def test_calibration_table_shape(self):
+        from openhealth_ml.train import calibration_table
+        y = [0, 0, 0, 1, 1]
+        s = [0.05, 0.15, 0.25, 0.85, 0.95]
+        table = calibration_table(y, s)
+        self.assertTrue(all(set(r) == {"bin", "n", "mean_score", "fraud_rate"} for r in table))
+        top = table[-1]
+        self.assertEqual(top["fraud_rate"], 1.0)
+
+    def test_per_archetype_recall(self):
+        from openhealth_ml.train import per_archetype_recall
+        claims = [{"archetype": "ghost", "fraud": True},
+                  {"archetype": "ghost", "fraud": True},
+                  {"archetype": "upcoding", "fraud": True},
+                  {"archetype": "", "fraud": False}]
+        idx = [0, 1, 2, 3]
+        r = per_archetype_recall(claims, idx, [1, 1, 1, 0], [0.9, 0.1, 0.8, 0.1], 0.5)
+        self.assertEqual(r["ghost"], 0.5)
+        self.assertEqual(r["upcoding"], 1.0)
+        self.assertNotIn("", r)
+
+
+class TestRings(unittest.TestCase):
+    def test_rings_find_shared_member_components(self):
+        from openhealth_ml.rings import find_rings
+        claims = [
+            # ring: FAC-A and FAC-B share member M1
+            {"facility_id": "FAC-A", "member_id": "M1", "fraud": True},
+            {"facility_id": "FAC-B", "member_id": "M1", "fraud": True},
+            {"facility_id": "FAC-A", "member_id": "M2", "fraud": False},
+            # isolated facility — not a ring
+            {"facility_id": "FAC-C", "member_id": "M9", "fraud": False},
+        ]
+        rings = find_rings(claims)
+        self.assertEqual(len(rings), 1)
+        ring = rings[0]
+        self.assertEqual(sorted(ring["facilities"]), ["FAC-A", "FAC-B"])
+        self.assertIn("M1", ring["shared_members"])
+        self.assertEqual(ring["fraud_claims"], 2)
+
+    def test_fraud_only_isolates_ring_from_giant_component(self):
+        from openhealth_ml.rings import find_rings
+        claims = []
+        # Background sharing merges everything into one component...
+        for i in range(6):
+            claims.append({"facility_id": f"F{i}", "member_id": f"S{i}", "fraud": False})
+            claims.append({"facility_id": f"F{i+1}", "member_id": f"S{i}", "fraud": False})
+        # ...but the fraud edges only involve F0/F1.
+        claims[0]["fraud"] = True
+        claims[1]["fraud"] = True
+        full = find_rings(claims, min_facilities=2)
+        fraud_only = find_rings(claims, min_facilities=2, fraud_only=True)
+        self.assertGreater(full[0]["n_facilities"], fraud_only[0]["n_facilities"])
+        self.assertEqual(sorted(fraud_only[0]["facilities"]), ["F0", "F1"])
+        self.assertEqual(fraud_only[0]["fraud_share"], 1.0)
+
+
+class TestCatchment(unittest.TestCase):
+    def _facs(self):
+        return [
+            {"id": "A", "name": "A PHC", "state": "S1", "lga": "LGA-1",
+             "latitude": 9.0, "longitude": 7.0, "beds": 10, "doctors": 1, "nurses": 4},
+            {"id": "B", "name": "B PHC", "state": "S1", "lga": "LGA-1",
+             "latitude": 9.05, "longitude": 7.0, "beds": 0, "doctors": 0, "nurses": 1},
+            {"id": "C", "name": "C outreach", "state": "S2", "lga": "LGA-2",
+             "latitude": None, "longitude": None, "beds": 4, "doctors": 0, "nurses": 1},
+        ]
+
+    def test_haversine_matches_registry_constant(self):
+        # ~111.19 km per degree of latitude at the equator-ish; the exact
+        # value must agree with the shared earth radius (6371.0088 km).
+        d = C.haversine_km(9.0, 7.0, 10.0, 7.0)
+        self.assertAlmostEqual(d, 111.195, places=2)
+
+    def test_assign_nearest_skips_ungeolocated(self):
+        m = {"latitude": 9.0, "longitude": 7.001}
+        f, d = C.assign_nearest(m, self._facs())
+        self.assertEqual(f["id"], "A")  # C is closer on paper but unplaced
+        self.assertLess(d, 0.2)
+
+    def test_analyze_aggregation_and_underserved(self):
+        facs = self._facs()
+        members = [{"member_id": f"M{i}", "lga": "LGA-1",
+                    "latitude": 9.0 + i * 0.001, "longitude": 7.0} for i in range(100)]
+        rep = C.analyze(facs, members)
+        row = next(r for r in rep["per_lga"] if r["lga"] == "LGA-1")
+        self.assertEqual(row["facilities"], 2)
+        self.assertEqual(row["geolocated_facilities"], 2)
+        self.assertEqual(row["beds"], 10)
+        self.assertEqual(row["members"], 100)
+        self.assertAlmostEqual(row["beds_per_1k_members"], 100.0, places=1)
+        self.assertIsNotNone(row["avg_distance_km"])
+        self.assertEqual(rep["national"]["total_beds"], 14)  # includes ungeolocated C
+        # LGA-2 has capacity but no members and no geo — must not crash.
+        row2 = next(r for r in rep["per_lga"] if r["lga"] == "LGA-2")
+        self.assertFalse(row2["underserved"])
+
+    def test_underserved_flags_no_facility_lga(self):
+        members = [{"member_id": "M1", "lga": "NOWHERE",
+                    "latitude": 6.0, "longitude": 3.0}]
+        rep = C.analyze(self._facs(), members)
+        row = next(r for r in rep["per_lga"] if r["lga"] == "NOWHERE")
+        self.assertTrue(row["underserved"])
+        self.assertIn("members with no facility in LGA", row["reasons"])
+
+    def test_sample_csv_loads(self):
+        import os
+        path = os.path.join(os.path.dirname(__file__), "..", "..",
+                            "data", "facilities", "ng-phc-sample.csv")
+        facs = C.load_facilities_csv(os.path.abspath(path))
+        self.assertGreaterEqual(len(facs), 30)
+        self.assertTrue(any(f["latitude"] is None for f in facs))
+        self.assertGreater(sum(f["beds"] for f in facs), 1000)
 
 
 class TestAB(unittest.TestCase):

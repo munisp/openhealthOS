@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"errors"
+	"github.com/munisp/openhealthOS/shared/cachex"
 	"io"
 	"math/big"
 	"net/http"
@@ -220,5 +221,72 @@ func TestFromEnv(t *testing.T) {
 	})
 	if v == nil || v.JWKSURL != "https://idp.example/realms/openhealth/protocol/openid-connect/certs" {
 		t.Fatalf("FromEnv: %+v", v)
+	}
+}
+
+// ---------- JWKS shared-cache warm standby (ADR-0015) ----------
+
+func TestJWKSWarmStandbyServesWhenIdPDown(t *testing.T) {
+	keys := newTestKeys(t)
+	cache := cachex.NewLRU(8)
+
+	// Replica 1: sees the IdP once, writes JWKS through to the shared cache.
+	v1 := newVerifier(keys)
+	v1.SetSharedCache(cache)
+	if _, err := v1.Verify(keys.sign(t, goodClaims())); err != nil {
+		t.Fatalf("replica 1 verify: %v", err)
+	}
+	if _, ok := cache.Get("jwks:https://idp.example/realms/openhealth"); !ok {
+		t.Fatal("successful fetch should write JWKS through to the cache")
+	}
+
+	// Replica 2: cold memory, IdP unreachable — the standby must still
+	// verify a valid token.
+	v2 := newVerifier(keys)
+	v2.SetSharedCache(cache)
+	var events []string
+	v2.OnEvent = func(msg string) { events = append(events, msg) }
+	v2.httpGet = func(string) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	}
+	claims, err := v2.Verify(keys.sign(t, goodClaims()))
+	if err != nil {
+		t.Fatalf("standby verify: %v", err)
+	}
+	if claims.Subject != "nurse-7" {
+		t.Fatalf("claims: %+v", claims)
+	}
+	if len(events) == 0 {
+		t.Fatal("standby use should be observable via OnEvent")
+	}
+
+	// No cache + IdP down must still fail closed.
+	v3 := newVerifier(keys)
+	v3.httpGet = func(string) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	}
+	if _, err := v3.Verify(keys.sign(t, goodClaims())); err == nil {
+		t.Fatal("without a standby, IdP-down must reject")
+	}
+}
+
+func TestJWKSWarmStandbyRejectsTamperedToken(t *testing.T) {
+	keys := newTestKeys(t)
+	cache := cachex.NewLRU(8)
+	v1 := newVerifier(keys)
+	v1.SetSharedCache(cache)
+	if _, err := v1.Verify(keys.sign(t, goodClaims())); err != nil {
+		t.Fatal(err)
+	}
+	v2 := newVerifier(keys)
+	v2.SetSharedCache(cache)
+	v2.httpGet = func(string) (*http.Response, error) {
+		return nil, errors.New("connection refused")
+	}
+	token := keys.sign(t, goodClaims())
+	parts := strings.Split(token, ".")
+	parts[2] = parts[2][:len(parts[2])-2] + "AA" // tampered signature
+	if _, err := v2.Verify(strings.Join(parts, ".")); err == nil {
+		t.Fatal("standby must still verify signatures, not just presence of keys")
 	}
 }

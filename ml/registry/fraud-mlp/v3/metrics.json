@@ -1,0 +1,75 @@
+{
+  "calibration": [
+    {
+      "bin": "0.1-0.2",
+      "fraud_rate": 0.0,
+      "mean_score": 0.18,
+      "n": 91
+    },
+    {
+      "bin": "0.2-0.3",
+      "fraud_rate": 0.018,
+      "mean_score": 0.253,
+      "n": 449
+    },
+    {
+      "bin": "0.3-0.4",
+      "fraud_rate": 0.034,
+      "mean_score": 0.348,
+      "n": 436
+    },
+    {
+      "bin": "0.4-0.5",
+      "fraud_rate": 0.034,
+      "mean_score": 0.449,
+      "n": 349
+    },
+    {
+      "bin": "0.5-0.6",
+      "fraud_rate": 0.041,
+      "mean_score": 0.546,
+      "n": 171
+    },
+    {
+      "bin": "0.6-0.7",
+      "fraud_rate": 0.125,
+      "mean_score": 0.631,
+      "n": 48
+    },
+    {
+      "bin": "0.7-0.8",
+      "fraud_rate": 0.3,
+      "mean_score": 0.765,
+      "n": 10
+    },
+    {
+      "bin": "0.8-0.9",
+      "fraud_rate": 0.0,
+      "mean_score": 0.801,
+      "n": 1
+    },
+    {
+      "bin": "0.9-1.0",
+      "fraud_rate": 1.0,
+      "mean_score": 0.998,
+      "n": 45
+    }
+  ],
+  "decision_threshold": {
+    "policy": "precision>=0.8 within 10% review budget",
+    "precision": 0.8033,
+    "recall": 0.5104,
+    "threshold": 0.66
+  },
+  "epochs_ran": 40,
+  "holdout_auc_roc": 0.823,
+  "holdout_n": 1600,
+  "holdout_pr_auc": 0.4855,
+  "per_archetype_recall": {
+    "duplicate": 0.0,
+    "ghost": 1.0,
+    "upcoding": 0.1818,
+    "velocity": 1.0
+  },
+  "train_n": 6400
+}

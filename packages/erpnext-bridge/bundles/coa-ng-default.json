@@ -1,0 +1,17 @@
+{
+  "bundle": "coa-ng-default",
+  "version": 1,
+  "company": "OpenHealth Nigeria",
+  "suffix": "OHN",
+  "description": "Default chart-of-accounts mapping for a Nigerian state finance office: platform ledger account codes (wallet-service / settlement) → ERPNext GL accounts. Exact keys match whole codes; keys ending in '-*' are prefix rules for parameterized accounts (WALLET-<facility>, PREMIUM-<scheme>).",
+  "accounts": {
+    "SETTLE-POOL": "Scheme Settlement Pool - OHN",
+    "PSP-FLOAT": "PSP Float - OHN",
+    "CLAIMS-RECEIVABLE": "Debtors - OHN",
+    "SERVICE-REVENUE": "Sales - OHN",
+    "PHARMACY-STOCK": "Stock In Hand - OHN",
+    "PROCUREMENT-PAYABLE": "Creditors - OHN",
+    "WALLET-*": "Facility Wallets - OHN",
+    "PREMIUM-*": "Premium Contributions - OHN"
+  }
+}

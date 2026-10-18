@@ -25,10 +25,14 @@ require github.com/munisp/openhealthOS/shared/crdt v0.0.0
 
 replace github.com/munisp/openhealthOS/shared/crdt => ../../shared/crdt
 
-require github.com/munisp/openhealthOS/shared/otelx v0.0.0
+require github.com/munisp/openhealthOS/shared/otelx v0.0.0 // indirect
 
 replace github.com/munisp/openhealthOS/shared/otelx => ../../shared/otelx
 
 require github.com/munisp/openhealthOS/shared/eventschema v0.0.0
 
 replace github.com/munisp/openhealthOS/shared/eventschema => ../../shared/eventschema
+
+require github.com/munisp/openhealthOS/shared/cachex v0.0.0 // indirect
+
+replace github.com/munisp/openhealthOS/shared/cachex => ../../shared/cachex

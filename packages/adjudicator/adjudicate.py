@@ -7,14 +7,22 @@ code — adjudications are events, never silent verdicts.
 
 Clean-room re-implementation of the adjudication pipeline pattern
 (ADR-0005): eligibility → benefit → tariff → duplicate/fraud flags →
-APPROVE / PEND / DENY. Registries (members, benefits, tariffs) are in-file
-fixtures here; production reads them from the FHIR/claims services over
-Dapr/Kafka.
+APPROVE / PEND / DENY. Member/benefit registries are in-file fixtures
+here; production reads them from the FHIR/claims services over Dapr/Kafka.
+The tariff schedule is NOT hard-coded: it loads from a versioned,
+state-uploadable bundle (tariffs.py, ADR-0015) and every decision stamps
+the bundle that priced it.
 """
 import hashlib
 import json
+import os
 import sys
 from datetime import datetime
+
+# Sibling-module import that survives cross-package loading (replay,
+# benchmark, and tools import this file by path, not as a package).
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from tariffs import active_bundle, tariff_map, freq_caps
 
 MEMBERS = {
     "NG-0001": {"name": "Amina Yusuf", "scheme": "BHCPF-VUL", "active": True, "valid_until": "2027-12-31", "copay_waiver": True},
@@ -25,13 +33,25 @@ BENEFIT = {  # codes allowed per scheme family
     "BHCPF-VUL": ["MAL-RDT", "ANC-001", "ORS-001", "PARA-TAB", "AMX-SUS", "ITN-001", "LAB-HB"],
     "STATE-BASIC": ["MAL-RDT", "ANC-001", "ORS-001", "PARA-TAB", "AMX-SUS", "LAB-HB", "LAB-MP"],
 }
-TARIFF = {  # NGN per unit
-    "MAL-RDT": 1500, "ANC-001": 4500, "ORS-001": 900, "PARA-TAB": 1200,
-    "AMX-SUS": 2600, "ITN-001": 2100, "LAB-HB": 1800, "LAB-MP": 3500,
-}
-FREQ_CAP = {"MAL-RDT": 2, "PARA-TAB": 2}  # max units per member per 14 days
+
+# Tariff bundle in force at import time (ADR-0015). Per-call reload lives
+# in _schedule() so a state upload takes effect without a redeploy.
+_BUNDLE = active_bundle()
+TARIFF = tariff_map(_BUNDLE)          # kept as a module attr: importers relied on it
+FREQ_CAP = freq_caps(_BUNDLE)         # max units per member per 14 days
+TARIFF_STAMP = f"{_BUNDLE['bundle_id']}@v{_BUNDLE['version']}"
 DUP_WINDOW_DAYS = 14
 PRICE_DRIFT_TOLERANCE = 0.10
+
+
+def _schedule() -> tuple[dict[str, int], dict[str, int], str]:
+    """Reload the active bundle each call (state uploads take effect live);
+    fall back to the import-time bundle if the override vanishes."""
+    try:
+        b = active_bundle()
+        return tariff_map(b), freq_caps(b), f"{b['bundle_id']}@v{b['version']}"
+    except Exception:
+        return TARIFF, FREQ_CAP, TARIFF_STAMP
 
 # Pre-authorisation (claims-gateway /preauth/request). Lines at or above
 # this estimated cost always require a clinical note; without one the
@@ -44,6 +64,7 @@ def _d(s):
 
 
 def adjudicate(claim: dict) -> dict:
+    tariff, freq_cap, stamp = _schedule()
     reasons, flags = [], []
     member = MEMBERS.get(claim.get("member_id", ""))
     if not member:
@@ -60,13 +81,13 @@ def adjudicate(claim: dict) -> dict:
         if code not in allowed_codes:
             reasons.append(f"BENEFIT: {code} not covered under {scheme}")
             continue
-        if code not in TARIFF:
+        if code not in tariff:
             reasons.append(f"TARIFF: {code} missing from schedule")
             continue
-        cap = FREQ_CAP.get(code)
+        cap = freq_cap.get(code)
         if cap and qty > cap:
             flags.append(f"FREQUENCY: {code} qty {qty} exceeds cap {cap} — pend for review")
-        total += TARIFF[code] * qty
+        total += tariff[code] * qty
     # Duplicate detection: same member + provider + code within the window.
     window_start = _d(claim["service_date"])
     seen = {(h["member_id"], h["provider_id"], it["code"]) for h in claim.get("history", [])
@@ -94,7 +115,8 @@ def adjudicate(claim: dict) -> dict:
     return {"claim_id": claim.get("claim_id"), "member": member["name"], "scheme": scheme,
             "decision": decision, "reasons": reasons, "flags": flags,
             "allowed_ngn": total, "copay_ngn": copay, "payable_ngn": total - copay,
-            "currency": "NGN", "adjudicated_by": "openhealth-adjudicator@0.2.0"}
+            "currency": "NGN", "tariff_bundle": stamp,
+            "adjudicated_by": "openhealth-adjudicator@0.2.1"}
 
 
 def check_eligibility(member_id: str, service_date: str) -> dict:
@@ -116,6 +138,7 @@ def preauth(request: dict) -> dict:
     — a preauth that approves what adjudication would deny is a promise
     the scheme cannot keep. The preauth id is deterministic: the same
     request always yields the same id, so offline replays dedupe."""
+    tariff, _caps, stamp = _schedule()
     reasons = []
     member = MEMBERS.get(request.get("member_id", ""))
     if not member:
@@ -132,11 +155,11 @@ def preauth(request: dict) -> dict:
         if code not in allowed_codes:
             denied_lines.append(code)
             reasons.append(f"BENEFIT: {code} not covered under {scheme}")
-        elif code not in TARIFF:
+        elif code not in tariff:
             denied_lines.append(code)
             reasons.append(f"TARIFF: {code} missing from schedule")
         else:
-            total += TARIFF[code] * qty
+            total += tariff[code] * qty
     if denied_lines and total == 0:
         return {"preauth_id": None, "status": "DENIED", "reasons": reasons,
                 "estimated_ngn": 0}
@@ -156,8 +179,8 @@ def preauth(request: dict) -> dict:
     if not reasons:
         reasons = ["OK: eligible, in benefit, priced on tariff"]
     return {"preauth_id": preauth_id, "status": "APPROVED", "reasons": reasons,
-            "estimated_ngn": total, "scheme": scheme,
-            "adjudicated_by": "openhealth-adjudicator@0.3.0"}
+            "estimated_ngn": total, "scheme": scheme, "tariff_bundle": stamp,
+            "adjudicated_by": "openhealth-adjudicator@0.3.1"}
 
 
 if __name__ == "__main__":

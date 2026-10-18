@@ -1,0 +1,20 @@
+{
+  "bundle_id": "ng-default-2026",
+  "version": 1,
+  "state": "NG",
+  "effective_from": "2026-01-01",
+  "codes": {
+    "MAL-RDT": {"amount": 1500, "name": "Malaria rapid diagnostic test"},
+    "ANC-001": {"amount": 4500, "name": "Antenatal care visit"},
+    "ORS-001": {"amount": 900, "name": "Oral rehydration salts course"},
+    "PARA-TAB": {"amount": 1200, "name": "Paracetamol course"},
+    "AMX-SUS": {"amount": 2600, "name": "Amoxicillin suspension"},
+    "ITN-001": {"amount": 2100, "name": "Insecticide-treated net"},
+    "LAB-HB": {"amount": 1800, "name": "Haemoglobin estimation"},
+    "LAB-MP": {"amount": 3500, "name": "Malaria microscopy"}
+  },
+  "freq_caps": {
+    "MAL-RDT": 2,
+    "PARA-TAB": 2
+  }
+}

@@ -8,9 +8,9 @@ require (
 	github.com/jackc/pgpassfile v1.0.0 // indirect
 	github.com/jackc/pgservicefile v0.0.0-20240606120523-5a60cdf6a761 // indirect
 	github.com/jackc/puddle/v2 v2.2.2 // indirect
-	golang.org/x/crypto v0.27.0 // indirect
-	golang.org/x/sync v0.8.0 // indirect
-	golang.org/x/text v0.18.0 // indirect
+	golang.org/x/crypto v0.31.0 // indirect
+	golang.org/x/sync v0.10.0 // indirect
+	golang.org/x/text v0.21.0 // indirect
 )
 
 require github.com/munisp/openhealthOS/shared/servex v0.0.0
@@ -21,6 +21,14 @@ require github.com/munisp/openhealthOS/shared/authz v0.0.0
 
 replace github.com/munisp/openhealthOS/shared/authz => ../../shared/authz
 
-require github.com/munisp/openhealthOS/shared/otelx v0.0.0
+require github.com/munisp/openhealthOS/shared/otelx v0.0.0 // indirect
 
 replace github.com/munisp/openhealthOS/shared/otelx => ../../shared/otelx
+
+require github.com/munisp/openhealthOS/shared/rebac v0.0.0
+
+replace github.com/munisp/openhealthOS/shared/rebac => ../../shared/rebac
+
+require github.com/munisp/openhealthOS/shared/cachex v0.0.0 // indirect
+
+replace github.com/munisp/openhealthOS/shared/cachex => ../../shared/cachex

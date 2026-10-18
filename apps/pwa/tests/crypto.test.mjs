@@ -4,7 +4,7 @@
 import test from "node:test";
 import assert from "node:assert/strict";
 
-import { cryptoAvailable, ensureDeviceKey, sealValue, openValue, isSealed } from "../js/crypto.js";
+import { cryptoAvailable, ensureDeviceKey, rotateDeviceKey, sealValue, openValue, isSealed } from "../js/crypto.js";
 
 function memoryMeta() {
   const m = new Map();
@@ -59,4 +59,66 @@ test("null key is plaintext passthrough (memory fallback / legacy WebView)", asy
   const sealed = await sealValue(null, { x: 5 });
   assert.equal(isSealed(sealed), false);
   assert.deepEqual(await openValue(null, sealed), { x: 5 });
+});
+
+test("keyring: rows are stamped with the current key id (SXW2)", async () => {
+  const [get, set] = memoryMeta();
+  const ring = await ensureDeviceKey(get, set);
+  const sealed = await sealValue(ring, { secret: "tb-status" });
+  assert.equal(sealed.sealed, "SXW2");
+  assert.equal(sealed.kid, "k1");
+  assert.ok(isSealed(sealed));
+  assert.deepEqual(await openValue(ring, sealed), { secret: "tb-status" });
+});
+
+test("rotation: old rows keep opening, new rows use the new key", async () => {
+  const [get, set] = memoryMeta();
+  const ring1 = await ensureDeviceKey(get, set);
+  const oldRow = await sealValue(ring1, { sealed: "before rotation" });
+
+  const ring2 = await rotateDeviceKey(get, set);
+  assert.equal(ring2.current, "k2");
+  const newRow = await sealValue(ring2, { sealed: "after rotation" });
+  assert.equal(newRow.kid, "k2");
+
+  // A fresh load (app restart) opens both eras.
+  const reloaded = await ensureDeviceKey(get, set);
+  assert.deepEqual(await openValue(reloaded, oldRow), { sealed: "before rotation" });
+  assert.deepEqual(await openValue(reloaded, newRow), { sealed: "after rotation" });
+});
+
+test("unknown key id fails closed", async () => {
+  const [get, set] = memoryMeta();
+  const ring = await ensureDeviceKey(get, set);
+  const sealed = await sealValue(ring, { a: 1 });
+  await assert.rejects(() => openValue(ring, { sealed: "SXW2", kid: "k99", ct: sealed.ct }));
+});
+
+test("tampered SXW2 ciphertext rejects — no partial decrypt", async () => {
+  const [get, set] = memoryMeta();
+  const ring = await ensureDeviceKey(get, set);
+  const sealed = await sealValue(ring, { a: 1 });
+  const blob = atob(sealed.ct);
+  const flipped = btoa(blob.slice(0, -2) + String.fromCharCode(blob.charCodeAt(blob.length - 2) ^ 0xff) + blob.slice(-1));
+  await assert.rejects(() => openValue(ring, { sealed: "SXW2", kid: "k1", ct: flipped }));
+});
+
+test("migration: pre-rotation device key folds into the ring, SXW1 rows open", async () => {
+  // Simulate a device that sealed rows before rotation shipped: only the
+  // legacy "deviceKey" meta exists, rows are SXW1 (no kid).
+  const [get, set, m] = memoryMeta();
+  const raw = new Uint8Array(32);
+  for (let i = 0; i < 32; i++) raw[i] = i;
+  m.set("deviceKey", btoa(String.fromCharCode(...raw)));
+  const legacyKey = await crypto.subtle.importKey("raw", raw, "AES-GCM", false, ["encrypt", "decrypt"]);
+  const legacyRow = await sealValue(legacyKey, { era: "SXW1" }); // bare key → SXW1
+  assert.equal(legacyRow.sealed, "SXW1");
+
+  const ring = await ensureDeviceKey(get, set); // migration happens here
+  assert.equal(ring.legacyKid, "k1");
+  assert.deepEqual(await openValue(ring, legacyRow), { era: "SXW1" });
+  // New writes after migration are keyring-stamped.
+  const newRow = await sealValue(ring, { era: "SXW2" });
+  assert.equal(newRow.sealed, "SXW2");
+  assert.deepEqual(await openValue(ring, newRow), { era: "SXW2" });
 });

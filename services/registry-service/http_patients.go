@@ -35,6 +35,22 @@ func registerPatientRoutes(mux *http.ServeMux, ps PatientStore) {
 			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
 		}
 	})
+	// ADR-0015: AND-prefix full-text over name/phone/NIN/id.
+	// Registered before the /patients/ subtree (exact beats subtree).
+	mux.HandleFunc("/patients/search", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		q, limit, ok := parseSearchParams(w, r)
+		if !ok {
+			return
+		}
+		writeJSON(w, 200, map[string]any{
+			"query":   q,
+			"results": ps.SearchPatients(q, limit),
+		})
+	})
 	mux.HandleFunc("/patients/", func(w http.ResponseWriter, r *http.Request) {
 		path := strings.TrimPrefix(r.URL.Path, "/patients/")
 		if strings.HasSuffix(path, "/nin") && r.Method == http.MethodPost {

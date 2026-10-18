@@ -129,6 +129,12 @@ func (h HTTPVerifier) Verify(nin, dob string) Verification {
 		return Verification{Status: "deferred", Detail: "authority unreachable: " + err.Error()}
 	}
 	defer resp.Body.Close()
+	// A non-200 is an authority/configuration problem (bad credentials,
+	// rate limit, outage), never evidence about the patient — defer,
+	// don't condemn the record to no_match.
+	if resp.StatusCode != http.StatusOK {
+		return Verification{Status: "deferred", Detail: fmt.Sprintf("authority returned status %d", resp.StatusCode)}
+	}
 	var out struct {
 		Match bool   `json:"match"`
 		Name  string `json:"name"`

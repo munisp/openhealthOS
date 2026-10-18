@@ -59,6 +59,9 @@ type Store interface {
 	PutProvider(p Provider) error
 	GetProvider(id string) (Provider, error)
 	ListProviders() []Provider
+	// SearchFacilities (ADR-0015): AND-prefix full-text over
+	// name/state/lga/id, ranked. Empty query → nil.
+	SearchFacilities(q string, limit int) []Facility
 }
 
 var ErrNotFound = errors.New("not found")

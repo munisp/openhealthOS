@@ -31,22 +31,23 @@ jobs:
         run: |
           for m in 0001_init 0002_telehealth_equipment 0003_pharmacy \
                    0003_sync_docs 0004_notifications 0005_registry_kyc \
-                   0006_wallet_idempotency; do
+                   0006_wallet_idempotency 0007_facility_capacity_geo \
+                   0008_fts 0009_rebac; do
             psql "$TEST_DATABASE_URL" -v ON_ERROR_STOP=1 -f "db/migrations/$m.sql"
           done
       - name: gofmt gate
         run: |
-          out=$(gofmt -l services shared)
+          out=$(gofmt -l services shared tools)
           test -z "$out" || { echo "not gofmt-clean:"; echo "$out"; exit 1; }
       - name: vet and test shared modules
         run: |
-          for m in authz servex crdt eventbus otelx sealx eventschema; do
+          for m in authz cachex servex crdt eventbus otelx rebac sealx wafx eventschema; do
             echo "== shared/$m =="
             (cd "shared/$m" && go vet ./... && go test ./...)
           done
       - name: vet and test tools
         run: |
-          for t in ota ipsqr provcred; do
+          for t in ota ipsqr provcred facility-import ledger-mirror nimc-sandbox; do
             echo "== tools/$t =="
             (cd "tools/$t" && go vet ./... && go test ./...)
           done
@@ -127,6 +128,8 @@ jobs:
           assert fac and all(0 <= f["score"] <= 1 for f in fac)
           print("registry integrity OK:", out[0]["model_version"], fac[0]["model_version"])
           EOF
+      - name: champion governance gate — validate.py against unseen-seed holdout
+        run: PYTHONPATH=ml python3 -m openhealth_ml.validate
 
   fhir-conformance:
     runs-on: ubuntu-latest

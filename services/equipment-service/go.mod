@@ -24,3 +24,7 @@ replace github.com/munisp/openhealthOS/shared/authz => ../../shared/authz
 require github.com/munisp/openhealthOS/shared/otelx v0.0.0 // indirect
 
 replace github.com/munisp/openhealthOS/shared/otelx => ../../shared/otelx
+
+require github.com/munisp/openhealthOS/shared/cachex v0.0.0 // indirect
+
+replace github.com/munisp/openhealthOS/shared/cachex => ../../shared/cachex

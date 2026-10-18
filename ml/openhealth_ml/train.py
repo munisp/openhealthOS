@@ -59,6 +59,73 @@ def pr_auc(y_true: list[int], scores: list[float], steps: int = 50) -> float:
     return round(area, 4)
 
 
+# ------------------------------------------------------------- evaluation governance
+
+def choose_threshold(y_true: list[int], scores: list[float],
+                     review_budget: float = 0.10,
+                     min_precision: float = 0.80) -> dict:
+    """Pick the operating threshold an auditor can actually staff (ADR-0015).
+
+    Policy: within a review budget (fraction of claims a human team can
+    look at), find the highest-recall threshold whose precision clears
+    min_precision. If that is infeasible, take the best F1 inside the
+    budget and SAY SO in the policy string — a threshold chosen silently
+    is a threshold chosen badly.
+    """
+    n = max(1, len(scores))
+    total_pos = max(1, sum(y_true))
+    feas, fallback = None, None
+    for i in range(2, 100):
+        t = i / 100
+        flagged = [(y, s) for y, s in zip(y_true, scores) if s >= t]
+        if not flagged or len(flagged) / n > review_budget:
+            continue
+        tp = sum(1 for y, _ in flagged if y == 1)
+        prec, rec = tp / len(flagged), tp / total_pos
+        f1 = 2 * prec * rec / (prec + rec) if prec + rec else 0.0
+        if prec >= min_precision and (feas is None or rec > feas[0]):
+            feas = (rec, prec, t)
+        if fallback is None or f1 > fallback[0]:
+            fallback = (f1, rec, prec, t)
+    if feas:
+        rec, prec, t = feas
+        return {"threshold": t, "precision": round(prec, 4), "recall": round(rec, 4),
+                "policy": f"precision>={min_precision} within {review_budget:.0%} review budget"}
+    if fallback:
+        f1, rec, prec, t = fallback
+        return {"threshold": t, "precision": round(prec, 4), "recall": round(rec, 4),
+                "policy": f"best-F1 fallback (precision target {min_precision} infeasible within {review_budget:.0%} budget)"}
+    return {"threshold": 0.5, "precision": 0.0, "recall": 0.0,
+            "policy": "default (no feasible threshold)"}
+
+
+def per_archetype_recall(claims: list[dict], idx: list[int], y: list[int],
+                         scores: list[float], threshold: float) -> dict:
+    """Recall per fraud archetype on the holdout — the number a fraud
+    officer actually asks for ('do you catch ghost billing?')."""
+    out: dict[str, list[float]] = {}
+    for j, i in enumerate(idx):
+        arch = claims[i].get("archetype") or ""
+        if y[j] == 1 and arch:
+            out.setdefault(arch, []).append(1.0 if scores[j] >= threshold else 0.0)
+    return {a: round(sum(v) / len(v), 4) for a, v in sorted(out.items())}
+
+
+def calibration_table(y_true: list[int], scores: list[float], bins: int = 10) -> list[dict]:
+    """Decile calibration: mean predicted score vs empirical fraud rate.
+    A score a payer acts on must mean what it says."""
+    table = []
+    for i in range(bins):
+        lo, hi = i / bins, (i + 1) / bins
+        sel = [(y, s) for y, s in zip(y_true, scores)
+               if lo <= s < hi or (i == bins - 1 and s >= hi)]
+        if sel:
+            table.append({"bin": f"{lo:.1f}-{hi:.1f}", "n": len(sel),
+                          "mean_score": round(sum(s for _, s in sel) / len(sel), 3),
+                          "fraud_rate": round(sum(y for y, _ in sel) / len(sel), 3)})
+    return table
+
+
 # ------------------------------------------------------------- MLP
 
 def train_fraud_mlp(claims: list[dict], epochs: int = 40, seed: int = 7) -> dict:
@@ -103,11 +170,17 @@ def train_fraud_mlp(claims: list[dict], epochs: int = 40, seed: int = 7) -> dict
     model.load_state_dict(best_state)
     with torch.no_grad():
         scores = model.score(X[te]).tolist()
+    y_te = y[te].int().tolist()
+    dt = choose_threshold(y_te, scores)
     metrics = {
         "holdout_auc_roc": round(best_auc, 4),
-        "holdout_pr_auc": pr_auc(y[te].int().tolist(), scores),
+        "holdout_pr_auc": pr_auc(y_te, scores),
         "train_n": len(tr), "holdout_n": len(te),
         "epochs_ran": epoch + 1,
+        "decision_threshold": dt,
+        "per_archetype_recall": per_archetype_recall(claims, te, y_te, scores,
+                                                     dt["threshold"]),
+        "calibration": calibration_table(y_te, scores),
     }
     tmp = tempfile.NamedTemporaryFile(suffix=".pt", delete=False)
     torch.save(model.state_dict(), tmp.name)

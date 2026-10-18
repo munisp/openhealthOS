@@ -1,0 +1,81 @@
+{
+  "calibration": [
+    {
+      "bin": "0.0-0.1",
+      "fraud_rate": 0.003,
+      "mean_score": 0.063,
+      "n": 1586
+    },
+    {
+      "bin": "0.1-0.2",
+      "fraud_rate": 0.0,
+      "mean_score": 0.144,
+      "n": 693
+    },
+    {
+      "bin": "0.2-0.3",
+      "fraud_rate": 0.013,
+      "mean_score": 0.242,
+      "n": 317
+    },
+    {
+      "bin": "0.3-0.4",
+      "fraud_rate": 0.029,
+      "mean_score": 0.345,
+      "n": 138
+    },
+    {
+      "bin": "0.4-0.5",
+      "fraud_rate": 0.175,
+      "mean_score": 0.45,
+      "n": 120
+    },
+    {
+      "bin": "0.5-0.6",
+      "fraud_rate": 0.217,
+      "mean_score": 0.549,
+      "n": 69
+    },
+    {
+      "bin": "0.6-0.7",
+      "fraud_rate": 0.181,
+      "mean_score": 0.649,
+      "n": 72
+    },
+    {
+      "bin": "0.7-0.8",
+      "fraud_rate": 0.225,
+      "mean_score": 0.75,
+      "n": 71
+    },
+    {
+      "bin": "0.8-0.9",
+      "fraud_rate": 0.324,
+      "mean_score": 0.843,
+      "n": 37
+    },
+    {
+      "bin": "0.9-1.0",
+      "fraud_rate": 0.99,
+      "mean_score": 0.993,
+      "n": 97
+    }
+  ],
+  "decision_threshold": {
+    "policy": "precision>=0.8 within 10% review budget",
+    "precision": 0.806,
+    "recall": 0.5806,
+    "threshold": 0.8
+  },
+  "epochs_ran": 80,
+  "holdout_auc_roc": 0.9558,
+  "holdout_n": 3200,
+  "holdout_pr_auc": 0.4692,
+  "per_archetype_recall": {
+    "duplicate": 0.0,
+    "ghost": 1.0,
+    "upcoding": 0.3929,
+    "velocity": 1.0
+  },
+  "train_n": 12800
+}

@@ -21,11 +21,14 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"math/big"
 	"net/http"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/munisp/openhealthOS/shared/cachex"
 )
 
 // Claims is the verified token claim set.
@@ -74,6 +77,15 @@ type Verifier struct {
 	ttl     time.Duration
 	now     func() time.Time
 	httpGet func(url string) (*http.Response, error) // test seam
+
+	// JWKS warm standby (ADR-0015, the Redis row): when a shared cache is
+	// wired, every successful IdP fetch is written through, and when the
+	// IdP is unreachable with memory stale, the last-known JWKS comes from
+	// the cache — any replica that ever saw the keys can vouch for them.
+	// This is what keeps the edge verifying through a multi-hour IdP
+	// outage in a multi-replica deployment.
+	shared  cachex.Cache
+	OnEvent func(msg string) // optional log seam (library, not a logger)
 }
 
 // NewVerifier builds a verifier for an issuer. Audience may be empty.
@@ -93,6 +105,18 @@ func decodeSegment(seg string) ([]byte, error) {
 	return base64.RawURLEncoding.DecodeString(seg)
 }
 
+// SetSharedCache wires a distributed cache (shared/cachex) as the JWKS
+// warm standby. Passing nil disables the standby. The cache TTL is a day:
+// long enough to ride out any sane IdP outage, short enough that a realm
+// key compromise propagates out once the IdP is back.
+func (v *Verifier) SetSharedCache(c cachex.Cache) {
+	v.mu.Lock()
+	v.shared = c
+	v.mu.Unlock()
+}
+
+func (v *Verifier) jwksCacheKey() string { return "jwks:" + v.Issuer }
+
 func (v *Verifier) refreshKeys() error {
 	v.mu.RLock()
 	fresh := v.now().Sub(v.fetched) < v.ttl && len(v.keys) > 0
@@ -102,12 +126,70 @@ func (v *Verifier) refreshKeys() error {
 	}
 	resp, err := v.httpGet(v.JWKSURL)
 	if err != nil {
+		// IdP unreachable: the warm standby answers if it can.
+		if keys, ok := v.keysFromSharedCache(); ok {
+			v.mu.Lock()
+			v.keys = keys
+			v.fetched = v.now()
+			v.mu.Unlock()
+			v.event("jwks: IdP unreachable — verifying from shared-cache standby")
+			return nil
+		}
 		return fmt.Errorf("jwks fetch: %w", err)
 	}
 	defer resp.Body.Close()
+	raw, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	if err != nil {
+		return fmt.Errorf("jwks read: %w", err)
+	}
+	keys, err := parseJWKS(raw)
+	if err != nil {
+		return err
+	}
+	v.mu.Lock()
+	v.keys = keys
+	v.fetched = v.now()
+	shared := v.shared
+	v.mu.Unlock()
+	if shared != nil {
+		shared.Set(v.jwksCacheKey(), raw, 24*time.Hour)
+	}
+	return nil
+}
+
+// keysFromSharedCache reads the standby JWKS. ok=false when no cache is
+// wired or it has nothing for this issuer.
+func (v *Verifier) keysFromSharedCache() (map[string]*rsa.PublicKey, bool) {
+	v.mu.RLock()
+	shared := v.shared
+	v.mu.RUnlock()
+	if shared == nil {
+		return nil, false
+	}
+	raw, ok := shared.Get(v.jwksCacheKey())
+	if !ok {
+		return nil, false
+	}
+	keys, err := parseJWKS(raw)
+	if err != nil || len(keys) == 0 {
+		return nil, false
+	}
+	return keys, true
+}
+
+func (v *Verifier) event(msg string) {
+	v.mu.RLock()
+	fn := v.OnEvent
+	v.mu.RUnlock()
+	if fn != nil {
+		fn(msg)
+	}
+}
+
+func parseJWKS(raw []byte) (map[string]*rsa.PublicKey, error) {
 	var set jwks
-	if err := json.NewDecoder(resp.Body).Decode(&set); err != nil {
-		return fmt.Errorf("jwks decode: %w", err)
+	if err := json.Unmarshal(raw, &set); err != nil {
+		return nil, fmt.Errorf("jwks decode: %w", err)
 	}
 	keys := map[string]*rsa.PublicKey{}
 	for _, k := range set.Keys {
@@ -128,11 +210,7 @@ func (v *Verifier) refreshKeys() error {
 		}
 		keys[k.Kid] = &rsa.PublicKey{N: new(big.Int).SetBytes(nBytes), E: e}
 	}
-	v.mu.Lock()
-	v.keys = keys
-	v.fetched = v.now()
-	v.mu.Unlock()
-	return nil
+	return keys, nil
 }
 
 func (v *Verifier) keyFor(kid string) (*rsa.PublicKey, error) {

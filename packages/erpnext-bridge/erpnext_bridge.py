@@ -215,11 +215,17 @@ class FlushResult:
 
 
 class ERPNextBridge:
-    """Spool in, ERPNext out. The platform never blocks on the ERP."""
+    """Spool in, ERPNext out. The platform never blocks on the ERP.
 
-    def __init__(self, client: FrappeClient | None, spool: Spool):
+    coa (optional): a coa.COAMapping. When set, Journal Entry account
+    legs are rewritten platform-code → GL account at flush time, and an
+    unmapped account code fails the entry loudly instead of leaking an
+    operational code into the finance books."""
+
+    def __init__(self, client: FrappeClient | None, spool: Spool, coa=None):
         self.client = client      # None = offline mode: buffer only
         self.spool = spool
+        self.coa = coa
 
     def enqueue(self, kind: str, event_id: str, **payload) -> None:
         """Buffer one platform event. The payload kwargs are reassembled
@@ -240,6 +246,8 @@ class ERPNextBridge:
         for i, entry in enumerate(pending):
             try:
                 doc = MAPPERS[entry.kind](entry.payload)
+                if self.coa is not None and doc["doctype"] == "Journal Entry":
+                    doc = self.coa.apply_to_journal(doc)
                 if self.client.exists(doc["doctype"], entry.id):
                     result.skipped_duplicates += 1
                     continue

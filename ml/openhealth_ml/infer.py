@@ -56,13 +56,17 @@ class ChampionScorer:
 
     def score_claims(self, claims: list[dict]) -> list[dict]:
         """Score each claim. Returns one dict per claim:
-        {claim_id, score, action, model_version, archetype_hint}.
+        {claim_id, score, action, threshold, model_version, archetype_hint}.
+        The threshold comes from the champion's metrics (chosen by
+        choose_threshold at training time, ADR-0015) — not a hard-coded 0.5.
         Falls back to a rule-shaped heuristic when no champion exists."""
         loaded = self._load()
         rows = F.build_features(claims)
         if loaded is None:
             return [self._heuristic(c, r) for c, r in zip(claims, rows)]
-        version, model, _ = loaded
+        version, model, metrics = loaded
+        dt = metrics.get("decision_threshold") or {}
+        threshold = float(dt.get("threshold", PEND_THRESHOLD))
         with torch.no_grad():
             probs = model.score(torch.tensor(rows, dtype=torch.float32)).tolist()
         out = []
@@ -70,7 +74,8 @@ class ChampionScorer:
             out.append({
                 "claim_id": c["claim_id"],
                 "score": round(float(p), 4),
-                "action": "PEND" if p >= PEND_THRESHOLD else "PASS",
+                "action": "PEND" if p >= threshold else "PASS",
+                "threshold": threshold,
                 "model_version": version,
                 "archetype_hint": self._hint(c),
             })
@@ -94,6 +99,7 @@ class ChampionScorer:
         p = min(0.99, x / 2.0)
         return {"claim_id": c["claim_id"], "score": round(p, 4),
                 "action": "PEND" if p >= PEND_THRESHOLD else "PASS",
+                "threshold": PEND_THRESHOLD,
                 "model_version": "heuristic-fallback",
                 "archetype_hint": self._hint(c)}
 

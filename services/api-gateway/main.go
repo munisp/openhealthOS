@@ -23,8 +23,10 @@ import (
 	"time"
 
 	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/cachex"
 	"github.com/munisp/openhealthOS/shared/otelx"
 	"github.com/munisp/openhealthOS/shared/servex"
+	"github.com/munisp/openhealthOS/shared/wafx"
 )
 
 // Route maps one public prefix to one upstream service.
@@ -139,14 +141,36 @@ type gateway struct {
 	probes   map[string]string // service -> health URL
 	metrics  map[string]string // service -> metrics URL
 	appsRoot string            // static app shell root ("" disables serving)
+
+	breakersMu sync.Mutex
+	breakers   map[string]*upBreaker // service -> circuit breaker
+	now        func() time.Time      // test seam
 }
 
 func newGateway(routes []Route, rl *rateLimiter) *gateway {
-	g := &gateway{routes: routes, limiter: rl, probes: map[string]string{}, metrics: map[string]string{}}
+	g := &gateway{
+		routes: routes, limiter: rl,
+		probes: map[string]string{}, metrics: map[string]string{},
+		breakers: map[string]*upBreaker{}, now: time.Now,
+	}
 	for _, r := range routes {
 		g.probes[r.Service] = strings.TrimSuffix(r.Upstream, "/") + "/healthz"
 	}
 	return g
+}
+
+// breakerFor returns (creating on first use) the breaker for a service.
+// One breaker per logical service: all routes to the same upstream share
+// its health view.
+func (g *gateway) breakerFor(service string) *upBreaker {
+	g.breakersMu.Lock()
+	defer g.breakersMu.Unlock()
+	b, ok := g.breakers[service]
+	if !ok {
+		b = newUpBreaker(5, 30*time.Second)
+		g.breakers[service] = b
+	}
+	return b
 }
 
 func (g *gateway) proxyFor(route Route) http.Handler {
@@ -168,15 +192,33 @@ func (g *gateway) proxyFor(route Route) http.Handler {
 			}
 		}
 		// identity mapping: the OIDC facility claim becomes the header the
-		// SHR consent gate enforces — one trust decision, made here.
-		if claims, ok := authz.FromContext(req.Context()); ok && claims.Facility != "" {
-			req.Header.Set("X-Facility-ID", claims.Facility)
+		// SHR consent gate enforces, and the subject becomes the header the
+		// ReBAC patient gate checks — one trust decision, made here.
+		if claims, ok := authz.FromContext(req.Context()); ok {
+			if claims.Facility != "" {
+				req.Header.Set("X-Facility-ID", claims.Facility)
+			}
+			if claims.Subject != "" {
+				req.Header.Set("X-User-ID", claims.Subject)
+			}
 		}
 		// trace continuity into the upstream service
 		otelx.InjectOutbound(req)
 		req.Host = target.Host
 	}
+	br := g.breakerFor(route.Service)
+	// 5xx from the upstream counts as a failure toward the breaker; 4xx is
+	// the client's fault and must not trip it.
+	proxy.ModifyResponse = func(resp *http.Response) error {
+		if resp.StatusCode >= 500 {
+			br.failure(g.now())
+		} else {
+			br.success()
+		}
+		return nil
+	}
 	proxy.ErrorHandler = func(w http.ResponseWriter, _ *http.Request, err error) {
+		br.failure(g.now())
 		log.Printf("gateway: upstream %s error: %v", route.Service, err)
 		http.Error(w, `{"error":"upstream unavailable"}`, http.StatusBadGateway)
 	}
@@ -205,6 +247,12 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			if !g.limiter.allow(g.clientKey(r)) {
 				w.Header().Set("Retry-After", "1")
 				http.Error(w, `{"error":"rate limited"}`, http.StatusTooManyRequests)
+				return
+			}
+			br := g.breakerFor(route.Service)
+			if !br.allow(g.now()) {
+				w.Header().Set("Retry-After", "5")
+				http.Error(w, `{"error":"upstream circuit open"}`, http.StatusServiceUnavailable)
 				return
 			}
 			g.proxyFor(route).ServeHTTP(w, r)
@@ -310,12 +358,16 @@ func (g *gateway) serveOverview(w http.ResponseWriter) {
 	json.NewEncoder(w).Encode(out)
 }
 
-// serveHealth probes every upstream /healthz — one pane of glass.
+// serveHealth probes every upstream /healthz and reports each service's
+// circuit-breaker state — one pane of glass. A service with an open
+// breaker is failing fast (503s without upstream waits); the probe still
+// runs so the dashboard sees the moment the upstream recovers.
 func (g *gateway) serveHealth(w http.ResponseWriter) {
 	type result struct {
-		Up      bool   `json:"up"`
-		Latency int64  `json:"latency_ms"`
-		Err     string `json:"error,omitempty"`
+		Up      bool          `json:"up"`
+		Latency int64         `json:"latency_ms"`
+		Err     string        `json:"error,omitempty"`
+		Breaker BreakerStatus `json:"breaker"`
 	}
 	out := map[string]result{}
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -329,6 +381,13 @@ func (g *gateway) serveHealth(w http.ResponseWriter) {
 			res.Up = resp.StatusCode == 200
 			resp.Body.Close()
 		}
+		g.breakersMu.Lock()
+		if b, ok := g.breakers[svc]; ok {
+			res.Breaker = b.status(g.now())
+		} else {
+			res.Breaker = BreakerStatus{State: "closed"}
+		}
+		g.breakersMu.Unlock()
 		out[svc] = res
 	}
 	w.Header().Set("Content-Type", "application/json")
@@ -352,9 +411,26 @@ func main() {
 		log.Fatal(authErr)
 	}
 	if authV != nil {
+		// JWKS warm standby: every gateway replica shares one cache
+		// (CACHE_URL=redis://…); a verified key set survives an IdP
+		// outage for 24h. Without CACHE_URL the replica still gets a
+		// process-local LRU — degraded, but better than fail-closed on a
+		// 30-second IdP blip.
+		cache := cachex.FromEnv(os.Getenv)
+		authV.SetSharedCache(cache)
+		authV.OnEvent = func(msg string) { log.Printf("jwks: %s", msg) }
 		handler = authV.Middleware(handler)
-		log.Print("oidc: enforcing bearer auth at the platform edge")
+		log.Print("oidc: enforcing bearer auth at the platform edge (jwks warm standby on)")
 	}
+	// Edge screening (the in-platform WAF controls, shared/wafx) runs
+	// before auth: junk requests are rejected before any JWT crypto, and
+	// request-id sits outermost so even rejections are traceable.
+	handler = wafx.Middleware(handler, wafx.Policy{
+		OnReject: func(reason string, r *http.Request) {
+			log.Printf("wafx: %s %s from %s rejected: %s", r.Method, r.URL.Path, g.clientKey(r), reason)
+		},
+	})
+	handler = requestID(handler)
 	log.Printf("OpenHealth OS api-gateway on %s (%d routes)", addr, len(g.routes))
 	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
 }

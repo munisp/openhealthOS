@@ -3,6 +3,7 @@ package main
 import (
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 )
@@ -16,6 +17,7 @@ func (s server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/facilities", s.facilities)
 	mux.HandleFunc("/facilities/near", s.facilitiesNear) // exact beats subtree
+	mux.HandleFunc("/facilities/search", s.facilitiesSearch)
 	mux.HandleFunc("/facilities/", s.facility)
 	mux.HandleFunc("/providers", s.providers)
 	mux.HandleFunc("/providers/", s.provider)
@@ -41,6 +43,45 @@ func (s server) facilitiesNear(w http.ResponseWriter, r *http.Request) {
 		"query":   map[string]any{"lat": lat, "lng": lng, "radius_km": radius},
 		"results": NearbyFacilities(s.store.ListFacilities(), lat, lng, radius, r.URL.Query().Get("level"), r.URL.Query().Get("amenity"), limit),
 	})
+}
+
+// facilitiesSearch (ADR-0015): GET /facilities/search?q=&limit=
+// AND-prefix full-text, ranked — "mai" finds "Maiduguri Baga Road PHC".
+func (s server) facilitiesSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q, limit, ok := parseSearchParams(w, r)
+	if !ok {
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"query":   q,
+		"results": s.store.SearchFacilities(q, limit),
+	})
+}
+
+// parseSearchParams enforces the search contract shared by both search
+// endpoints: q >= 2 chars (a one-character query is a full scan in
+// disguise), limit capped at 100.
+func parseSearchParams(w http.ResponseWriter, r *http.Request) (string, int, bool) {
+	q := strings.TrimSpace(r.URL.Query().Get("q"))
+	if len([]rune(q)) < 2 {
+		http.Error(w, `{"error":"q must be at least 2 characters"}`, http.StatusBadRequest)
+		return "", 0, false
+	}
+	limit := 20
+	if v := r.URL.Query().Get("limit"); v != "" {
+		var n int
+		if _, err := fmt.Sscanf(v, "%d", &n); err == nil && n > 0 {
+			limit = n
+		}
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	return q, limit, true
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

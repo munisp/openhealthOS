@@ -1,0 +1,42 @@
+id,name,state,lga,ownership,level,services,bhcpf,power,water,latitude,longitude,beds,doctors,nurses,amenities,phone,hours
+PHC-KN-001,Gwale PHC,Kano,Gwale,public,primary,opd;maternity;immunization,true,solar,borehole,12.0022,8.5220,12,1,5,pharmacy;maternity;cold-chain,+2348010000001,24/7
+PHC-KN-002,Nassarawa PHC,Kano,Nassarawa,public,primary,opd;immunization,true,grid,borehole,12.0089,8.5480,8,1,4,pharmacy;lab,+2348010000002,08:00-16:00
+PHC-KN-003,Fagge PHC,Kano,Fagge,public,primary,opd,true,generator,well,12.0250,8.5350,6,0,3,pharmacy,+2348010000003,08:00-16:00
+PHC-KN-004,Kumbotso PHC,Kano,Kumbotso,public,primary,opd;maternity,false,solar,none,11.9120,8.4890,10,1,4,maternity;cold-chain,+2348010000004,24/7
+GH-KN-101,Murtala Mohammed Specialist Hospital,Kano,Fagge,public,tertiary,opd;maternity;lab;surgery,true,grid,borehole,12.0096,8.5320,250,45,120,pharmacy;lab;maternity;xray;ambulance;oxygen,+2348010000101,24/7
+PHC-KD-001,Kawo PHC,Kaduna,Kaduna North,public,primary,opd;maternity,true,solar,borehole,10.5560,7.4440,10,1,4,pharmacy;maternity;cold-chain,+2348020000001,24/7
+PHC-KD-002,Tudun Wada PHC,Kaduna,Kaduna South,public,primary,opd;immunization,true,grid,well,10.4820,7.4310,8,1,3,pharmacy,+2348020000002,08:00-16:00
+GH-KD-101,Barau Dikko Teaching Hospital,Kaduna,Kaduna North,public,tertiary,opd;lab;surgery;maternity,true,grid,borehole,10.5223,7.4384,300,60,150,pharmacy;lab;maternity;xray;ambulance;oxygen;cold-chain,+2348020000101,24/7
+PHC-KD-003,Zaria Sabon Gari PHC,Kaduna,Sabon Gari,public,primary,opd;maternity,true,solar,borehole,11.0850,7.7200,12,1,5,pharmacy;maternity;lab,+2348020000003,24/7
+PHC-LA-001,Ikeja PHC,Lagos,Ikeja,public,primary,opd;immunization,true,grid,borehole,6.6018,3.3515,15,2,6,pharmacy;lab,+2348030000001,08:00-20:00
+PHC-LA-002,Surulere PHC,Lagos,Surulere,public,primary,opd;maternity,true,grid,well,6.4969,3.3610,12,1,5,pharmacy;maternity,+2348030000002,24/7
+GH-LA-101,Lagos University Teaching Hospital,Lagos,Surulere,public,tertiary,opd;lab;surgery;maternity;icu,true,grid,borehole,6.5018,3.3966,760,180,420,pharmacy;lab;maternity;xray;ambulance;oxygen;cold-chain,+2348030000101,24/7
+PHC-LA-003,Eti-Osa PHC,Lagos,Eti-Osa,public,primary,opd,true,generator,well,6.4470,3.4740,8,1,3,pharmacy,+2348030000003,08:00-16:00
+PRV-LA-201,St Nicholas Clinic,Lagos,Lagos Island,private,secondary,opd;lab;surgery,false,grid,borehole,6.4550,3.3960,40,8,20,pharmacy;lab;xray;ambulance;oxygen,+2348030000201,24/7
+PHC-BO-001,Maiduguri Baga Road PHC,Borno,Maiduguri,public,primary,opd;maternity;immunization,true,solar,borehole,11.8311,13.1510,14,1,6,pharmacy;maternity;cold-chain;oxygen,+2348040000001,24/7
+GH-BO-101,University of Maiduguri Teaching Hospital,Borno,Maiduguri,public,tertiary,opd;lab;surgery;maternity,true,generator,borehole,11.8050,13.1210,530,110,260,pharmacy;lab;maternity;xray;ambulance;oxygen;cold-chain,+2348040000101,24/7
+PHC-BO-002,Konduga PHC,Borno,Konduga,public,primary,opd,true,solar,well,11.6530,13.4160,6,0,3,pharmacy,+2348040000002,08:00-16:00
+PHC-RV-001,Port Harcourt Township PHC,Rivers,Port Harcourt,public,primary,opd;maternity,true,grid,borehole,4.8156,7.0098,12,1,5,pharmacy;maternity;lab,+2348050000001,24/7
+GH-RV-101,University of Port Harcourt Teaching Hospital,Rivers,Port Harcourt,public,tertiary,opd;lab;surgery,true,grid,borehole,4.9000,6.9200,480,95,230,pharmacy;lab;maternity;xray;ambulance;oxygen,+2348050000101,24/7
+PHC-RV-002,Okrika PHC,Rivers,Okrika,public,primary,opd;immunization,false,generator,well,4.7410,7.0840,6,0,2,pharmacy,+2348050000002,08:00-16:00
+PHC-FC-001,Garki PHC,FCT,Abuja Municipal,public,primary,opd;maternity,true,grid,borehole,9.0360,7.4890,10,1,4,pharmacy;maternity;cold-chain,+2348060000001,24/7
+GH-FC-101,National Hospital Abuja,FCT,Abuja Municipal,public,tertiary,opd;lab;surgery;maternity;icu,true,grid,borehole,9.0300,7.4700,400,120,300,pharmacy;lab;maternity;xray;ambulance;oxygen;cold-chain,+2348060000101,24/7
+PHC-FC-002,Bwari PHC,FCT,Bwari,public,primary,opd,true,solar,well,9.2850,7.3810,8,1,3,pharmacy,+2348060000002,08:00-16:00
+PHC-OY-001,Ibadan North PHC,Oyo,Ibadan North,public,primary,opd;maternity;immunization,true,grid,borehole,7.4190,3.9040,12,1,5,pharmacy;maternity;lab,+2348070000001,24/7
+GH-OY-101,University College Hospital Ibadan,Oyo,Ibadan North,public,tertiary,opd;lab;surgery;maternity;icu,true,grid,borehole,7.4010,3.9000,850,200,500,pharmacy;lab;maternity;xray;ambulance;oxygen;cold-chain,+2348070000101,24/7
+PHC-EN-001,Enugu Urban PHC,Enugu,Enugu North,public,primary,opd;maternity,true,grid,well,6.4530,7.5050,10,1,4,pharmacy;maternity,+2348080000001,24/7
+GH-EN-101,University of Nigeria Teaching Hospital,Enugu,Enugu North,public,tertiary,opd;lab;surgery,true,grid,borehole,6.4400,7.4900,500,100,240,pharmacy;lab;maternity;xray;ambulance;oxygen,+2348080000101,24/7
+PHC-SO-001,Sokoto Central PHC,Sokoto,Sokoto North,public,primary,opd;immunization,true,solar,borehole,13.0610,5.2430,8,1,3,pharmacy;cold-chain,+2348090000001,08:00-16:00
+PHC-SO-002,Wamakko PHC,Sokoto,Wamakko,public,primary,opd,true,generator,well,13.0360,5.1030,6,0,2,pharmacy,+2348090000002,08:00-16:00
+PHC-CR-001,Calabar Marian PHC,Cross River,Calabar Municipal,public,primary,opd;maternity,true,grid,borehole,4.9750,8.3420,10,1,4,pharmacy;maternity;lab,+2348100000001,24/7
+GH-CR-101,University of Calabar Teaching Hospital,Cross River,Calabar Municipal,public,tertiary,opd;lab;surgery,true,grid,borehole,4.9520,8.3260,420,85,210,pharmacy;lab;maternity;xray;ambulance;oxygen,+2348100000101,24/7
+PHC-BA-001,Bauchi Central PHC,Bauchi,Bauchi,public,primary,opd;maternity;immunization,true,solar,borehole,10.3100,9.8400,10,1,4,pharmacy;maternity;cold-chain,+2348110000001,24/7
+PHC-BA-002,Toro PHC,Bauchi,Toro,public,primary,opd,false,generator,well,10.0600,9.0700,6,0,2,pharmacy,+2348110000002,08:00-16:00
+PHC-JO-001,Jos North PHC,Plateau,Jos North,public,primary,opd;maternity,true,grid,borehole,9.9280,8.8920,12,1,5,pharmacy;maternity;lab,+2348120000001,24/7
+GH-JO-101,Jos University Teaching Hospital,Plateau,Jos North,public,tertiary,opd;lab;surgery,true,grid,borehole,9.9050,8.8560,450,90,220,pharmacy;lab;maternity;xray;ambulance;oxygen,+2348120000101,24/7
+PHC-NI-001,Minna Central PHC,Niger,Chanchaga,public,primary,opd;immunization,true,solar,borehole,9.5830,6.5460,8,1,3,pharmacy;cold-chain,+2348130000001,08:00-16:00
+PHC-OG-001,Abeokuta South PHC,Ogun,Abeokuta South,public,primary,opd;maternity,true,grid,well,7.1560,3.3450,10,1,4,pharmacy;maternity,+2348140000001,24/7
+PHC-ED-001,Benin Central PHC,Edo,Oredo,public,primary,opd;maternity;immunization,true,grid,borehole,6.3390,5.6200,12,1,5,pharmacy;maternity;lab,+2348150000001,24/7
+GH-ED-101,University of Benin Teaching Hospital,Edo,Oredo,public,tertiary,opd;lab;surgery,true,grid,borehole,6.3980,5.6070,480,95,235,pharmacy;lab;maternity;xray;ambulance;oxygen,+2348150000101,24/7
+PHC-IM-001,Owerri Municipal PHC,Imo,Owerri Municipal,public,primary,opd,true,grid,well,5.4850,7.0260,8,1,3,pharmacy,+2348160000001,08:00-16:00
+PHC-UN-001,Ungelocated Outreach Post,Yobe,Geidam,public,primary,opd,false,none,none,,,2,0,1,,+2348170000001,08:00-14:00

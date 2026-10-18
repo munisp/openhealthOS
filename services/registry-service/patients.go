@@ -39,6 +39,9 @@ type PatientStore interface {
 	GetPatient(id string) (Patient, error)
 	FindByNIN(nin string) (Patient, error)
 	ListPatients() []Patient
+	// SearchPatients (ADR-0015): AND-prefix full-text over
+	// name/phone/nin/id, ranked. Empty query → nil.
+	SearchPatients(q string, limit int) []Patient
 	// FindDuplicate returns the existing record p would duplicate,
 	// or ErrNotFound when p is unique on every deterministic rule.
 	FindDuplicate(p Patient) (Patient, error)

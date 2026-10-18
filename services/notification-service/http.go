@@ -176,6 +176,17 @@ func (s server) routes() *http.ServeMux {
 		})
 	})
 
+	// Ops view of the failover chain: breaker state + counters per leg.
+	mux.HandleFunc("GET /providers", func(w http.ResponseWriter, _ *http.Request) {
+		if chain, ok := s.svc.provider.(*ChainProvider); ok {
+			writeJSON(w, http.StatusOK, map[string]any{"legs": chain.Status()})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"legs": []LegStatus{{Name: s.svc.provider.Name(), State: "closed"}},
+		})
+	})
+
 	registerFHIRInbox(mux, s.svc)
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
@@ -194,10 +205,7 @@ func main() {
 		store = pg
 	}
 
-	provider := SMSProvider(&LogProvider{})
-	if wh := os.Getenv("SMS_WEBHOOK_URL"); wh != "" {
-		provider = NewWebhookProvider(wh, os.Getenv("SMS_WEBHOOK_TOKEN"))
-	}
+	provider := providerFromEnv()
 
 	svc := NewService(store, provider)
 
