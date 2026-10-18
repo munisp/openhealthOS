@@ -193,6 +193,28 @@ func (s *Store) PatientEverything(patientID, actorFacility string, breakGlass bo
 	return out, nil
 }
 
+// PatientSelfEverything returns the patient's own record set on the
+// patient's own authority — the data-subject access right (NDPA 2023).
+// No consent artefact is needed: the requester IS the subject. The
+// portal proxy authenticates the patient (patient code + phone); the
+// SHR trusts X-Patient-Self only from platform-internal callers — its
+// ingress is NetworkPolicy-locked to platform services, and the audit
+// entry names the portal as actor regardless.
+func (s *Store) PatientSelfEverything(patientID, actor string) ([]*Resource, error) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := s.be.forPatient(patientID)
+	if len(out) == 0 {
+		return nil, ErrNotFound
+	}
+	s.be.appendAudit(AuditEntry{
+		At: s.now().Format(time.RFC3339), Actor: actor,
+		PatientID: patientID, Resource: key("Patient", "*"),
+		Decision: "allowed", Basis: "patient-self-access",
+	})
+	return out, nil
+}
+
 // authorizeLocked applies the access rule and writes the audit entry.
 // Caller holds s.mu.
 func (s *Store) authorizeLocked(r *Resource, actorFacility string, breakGlass bool) error {
@@ -319,12 +341,26 @@ func (s server) getResource(w http.ResponseWriter, r *http.Request, rt, id strin
 }
 
 func (s server) patientEverything(w http.ResponseWriter, r *http.Request, patientID string) {
-	facility, breakGlass := accessContext(r)
-	if facility == "" {
-		http.Error(w, "X-Facility-ID header required", http.StatusBadRequest)
-		return
+	var resources []*Resource
+	var err error
+	// Patient self-access (ADR-0016): the portal proxy authenticates the
+	// patient and asserts identity with X-Patient-Self. The header must
+	// match the requested patient exactly — anything else is rejected,
+	// never trusted.
+	if self := r.Header.Get("X-Patient-Self"); self != "" {
+		if self != patientID {
+			http.Error(w, "X-Patient-Self must match the requested patient", http.StatusBadRequest)
+			return
+		}
+		resources, err = s.store.PatientSelfEverything(patientID, "portal:"+self)
+	} else {
+		facility, breakGlass := accessContext(r)
+		if facility == "" {
+			http.Error(w, "X-Facility-ID header required", http.StatusBadRequest)
+			return
+		}
+		resources, err = s.store.PatientEverything(patientID, facility, breakGlass)
 	}
-	resources, err := s.store.PatientEverything(patientID, facility, breakGlass)
 	if err != nil {
 		switch {
 		case errors.Is(err, ErrNotFound):

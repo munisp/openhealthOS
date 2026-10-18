@@ -131,3 +131,44 @@ func TestUnknownResource(t *testing.T) {
 		t.Fatalf("want ErrNotFound, got %v", err)
 	}
 }
+
+// ADR-0016: the patient's own authority. No consent artefact is needed —
+// the requester IS the subject — but the access is still audited, with
+// the portal named as actor and "patient-self-access" as the basis.
+func TestPatientSelfAccessAllowedAndAudited(t *testing.T) {
+	s := newStore()
+	seed(t, s)
+	rs, err := s.PatientSelfEverything("OH-NG-KD-0014-000123", "portal:OH-NG-KD-0014-000123")
+	if err != nil || len(rs) != 1 {
+		t.Fatalf("self everything: %v len=%d", err, len(rs))
+	}
+	last := s.Audit()[len(s.Audit())-1]
+	if last.Decision != "allowed" || last.Basis != "patient-self-access" ||
+		last.Actor != "portal:OH-NG-KD-0014-000123" {
+		t.Fatalf("self-access not audited: %+v", last)
+	}
+}
+
+// Self-access needs no consent grant — even a pair the consent checker
+// would deny resolves on the patient's own authority.
+func TestPatientSelfAccessNeedsNoConsent(t *testing.T) {
+	s := NewStore(failingConsent{})
+	s.now = func() time.Time { return time.Date(2026, 10, 18, 12, 0, 0, 0, time.UTC) }
+	if err := s.Put(Resource{
+		ResourceType: "Observation", ID: "obs-self",
+		PatientID: "OH-NG-KD-0014-000123", SourceFacility: "NG-KD-0014",
+		Body: []byte(`{"resourceType":"Observation","id":"obs-self"}`),
+	}); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	if _, err := s.PatientSelfEverything("OH-NG-KD-0014-000123", "portal:OH-NG-KD-0014-000123"); err != nil {
+		t.Fatalf("self-access must not consult the consent checker: %v", err)
+	}
+}
+
+func TestPatientSelfAccessUnknownPatient(t *testing.T) {
+	s := newStore()
+	if _, err := s.PatientSelfEverything("OH-NG-XX-0000-000000", "portal:x"); !errors.Is(err, ErrNotFound) {
+		t.Fatalf("want ErrNotFound, got %v", err)
+	}
+}

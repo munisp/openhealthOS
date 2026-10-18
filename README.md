@@ -28,6 +28,7 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 | 12 | Innovation layer ([ADR-0013](docs/architecture/adr-0013-hardening-and-innovation.md)) | [`packages/ips`](packages/ips) + [`tools/ipsqr`](tools/ipsqr) (IPS QR patient summary) · [`packages/surveillance`](packages/surveillance) (syndromic surveillance) · [`packages/edgeai`](packages/edgeai) (offline AI copilot, approval-gated) · [`tools/provcred`](tools/provcred) (provider verifiable credentials) · [`packages/frauddetect`](packages/frauddetect) (advisory fraud scoring) · [`packages/households`](packages/households) (CHW catchment maps) · [`packages/payrails`](packages/payrails) (PSP-agnostic rails) · [`packages/coldchain`](packages/coldchain) (predictive cold chain) |
 | 13 | Geospatial + ML/DL/GNN ([ADR-0014](docs/architecture/adr-0014-geospatial-and-ml.md)) | facility capacity profile (beds/doctors/nurses/amenities, migration 0007) · haversine [`/facilities/near`](services/registry-service/geo.go) · offline canvas facility map (bundled Nigeria boundary — no tiles, no CDN, no WebGL) + near-me in the [patient app](apps/patient) (5 languages) with `geo:` navigation handoff · [`ml/`](ml) — real PyTorch: fraud MLP + claim GCN with shipped champion weights, CPU-only inference, file registry, PSI drift monitoring, champion/challenger A/B, continuous retraining on lakehouse data, optional Ray scale-out |
 | 14 | Production hardening ([ADR-0015](docs/architecture/adr-0015-production-hardening.md)) | [`shared/sealx`](shared/sealx) keyring rotation · Postgres FTS search (migration 0008) · SMS failover chain with circuit breakers · tariff bundles · [`tools/facility-import`](tools/facility-import) · [`tools/ledger-mirror`](tools/ledger-mirror) + [DR runbook](docs/runbooks/ledger-dr.md) · [`shared/cachex`](shared/cachex) (RESP2 + LRU failover) with authz JWKS warm standby · [`shared/wafx`](shared/wafx) edge screening · gateway per-upstream circuit breakers + request-id · [`shared/eventbus`](shared/eventbus) dead-letter queues with replay · [`shared/rebac`](shared/rebac) (migration 0009) enforced on patient reads · [`tools/nimc-sandbox`](tools/nimc-sandbox) wire-contract conformance · [COA bundles](packages/erpnext-bridge/bundles) with remote validation · [`packages/analytics`](packages/analytics) LGA/state rollups |
+| 15 | Patient record portal ([ADR-0016](docs/architecture/adr-0016-patient-record-portal.md)) | the patient's own record on their own phone: SHR self-access basis (`patient-self-access`, audited, needs no consent artefact) · telehealth consult thread endpoint · portal record proxy (`/portal/record`: subscription-gated fan-out, per-leg timeout, 404 = honest empty, dark leg = explicit null + `complete=false`) · patient app **My record** tab (visits · results · medicines · immunisations · conditions · allergies · consults, 5 languages, offline-cached) · [MyChart comparison](docs/patient-portal.md) · e2e: `demo/patient-record.sh` |
 
 Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) → [`services/lga-hub`](services/lga-hub) (LGA store-and-forward: priority queues — critical referrals overtake bulk telemetry — JSONL spill fsynced before ack, power-cut-proof, idempotent) → [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent). See [ADR-0011](docs/architecture/adr-0011-national-scale.md).
 
@@ -196,10 +197,15 @@ One PWA core, three vessels ([ADR-0009](docs/architecture/adr-0009-client-apps-o
   (dark ops theme: live facility map, pilot gates, alerts, platform health).
   Both render last-known data offline and never fake liveness.
 - **`apps/patient`** — the patient's own app: sign-in with patient code + phone
-  (mismatches are 404 — no enumeration), offline feed with action-needed
-  grouping (referrals, pickups, lab-ready within 14 days surface first),
-  relative timestamps, five languages, calm daylight theme. SMS notifications
-  (notification-service) reach feature phones too; USSD stays a peer channel.
+  (mismatches are 404 — no enumeration). Two tabs: **Updates** (offline feed
+  with action-needed grouping) and **My record**
+  ([ADR-0016](docs/architecture/adr-0016-patient-record-portal.md)) — the
+  patient's own FHIR record on their own authority (visits, test results,
+  medicines, immunisations, conditions, allergies, telehealth thread), cached
+  offline with an honest last-updated stamp, five languages, calm daylight
+  theme. SMS notifications (notification-service) reach feature phones too;
+  USSD stays a peer channel. See [docs/patient-portal.md](docs/patient-portal.md)
+  for the Epic MyChart comparison.
 - **`apps/android-shell`** — thin native WebView wrapper (minSdk 24) with a
   bundled PWA snapshot for zero-connectivity first launch; TWA for Play
   distribution.

@@ -48,3 +48,125 @@ export function relTime(iso, now = Date.now()) {
 export function stateLabel(state) {
   return state === "sent" ? "sent" : state === "failed" ? "failed" : "pending";
 }
+
+/* ------------------------------------------------------------------ */
+/* My Record (ADR-0016): normalise the patient's own FHIR $everything  */
+/* bundle into plain sections the phone can render. Defensive against  */
+/* missing fields — a half-written record must still show its truths.  */
+/* ------------------------------------------------------------------ */
+
+const RECORD_SECTIONS = {
+  Encounter: "encounters",
+  Observation: "labs",
+  MedicationRequest: "meds",
+  MedicationStatement: "meds",
+  Immunization: "immunizations",
+  Condition: "conditions",
+  AllergyIntolerance: "allergies",
+};
+
+const text = (cc) =>
+  (cc && (cc.text || (cc.coding && cc.coding[0] && (cc.coding[0].display || cc.coding[0].code)))) || "";
+
+const refName = (ref) => (ref && (ref.display || (ref.reference || "").split("/").pop())) || "";
+
+function recordRow(resource) {
+  switch (resource.resourceType) {
+    case "Encounter":
+      return {
+        title: text(resource.type && resource.type[0]) || text(resource.serviceType) || "Visit",
+        value: text(resource.reasonCode && resource.reasonCode[0]) || "",
+        when: (resource.period && resource.period.start) || resource.date || "",
+        source: refName(resource.serviceProvider),
+      };
+    case "Observation": {
+      let value = "";
+      if (resource.valueQuantity) value = `${resource.valueQuantity.value} ${resource.valueQuantity.unit || ""}`.trim();
+      else if (resource.valueString) value = resource.valueString;
+      else if (resource.valueCodeableConcept) value = text(resource.valueCodeableConcept);
+      const interp = resource.interpretation && resource.interpretation[0];
+      if (interp && text(interp)) value = `${value} (${text(interp)})`.trim();
+      return {
+        title: text(resource.code) || "Result",
+        value,
+        when: resource.effectiveDateTime || resource.issued || "",
+        source: refName(resource.performer && resource.performer[0]),
+      };
+    }
+    case "MedicationRequest":
+      return {
+        title: text(resource.medicationCodeableConcept) || refName(resource.medicationReference) || "Medication",
+        value: (resource.dosageInstruction && resource.dosageInstruction[0] && resource.dosageInstruction[0].text) || "",
+        when: resource.authoredOn || "",
+        source: refName(resource.requester),
+      };
+    case "MedicationStatement":
+      return {
+        title: text(resource.medicationCodeableConcept) || refName(resource.medicationReference) || "Medication",
+        value: resource.status || "",
+        when: resource.effectiveDateTime || resource.dateAsserted || "",
+        source: refName(resource.informationSource),
+      };
+    case "Immunization":
+      return {
+        title: text(resource.vaccineCode) || "Immunisation",
+        value: resource.status || "",
+        when: resource.occurrenceDateTime || resource.recorded || "",
+        source: refName(resource.performer && resource.performer[0] && resource.performer[0].actor),
+      };
+    case "Condition":
+      return {
+        title: text(resource.code) || "Condition",
+        value: text(resource.clinicalStatus) || "",
+        when: resource.onsetDateTime || resource.recordedDate || "",
+        source: refName(resource.recorder),
+      };
+    case "AllergyIntolerance":
+      return {
+        title: text(resource.code) || "Allergy",
+        value: resource.criticality || "",
+        when: resource.recordedDate || "",
+        source: refName(resource.recorder),
+      };
+    default:
+      return null;
+  }
+}
+
+/* Group a $everything bundle into display sections, newest first.
+ * Returns counts too, so the UI can show honest empty states. */
+export function groupRecord(bundle) {
+  const sections = {
+    encounters: [], labs: [], meds: [],
+    immunizations: [], conditions: [], allergies: [],
+  };
+  let skipped = 0;
+  const entries = (bundle && bundle.entry) || [];
+  for (const e of entries) {
+    const r = e && e.resource;
+    if (!r || !r.resourceType) { skipped++; continue; }
+    if (r.resourceType === "Patient") continue; // the cover page, not a row
+    const key = RECORD_SECTIONS[r.resourceType];
+    const row = recordRow(r);
+    if (!key || !row) { skipped++; continue; }
+    sections[key].push(row);
+  }
+  for (const key of Object.keys(sections)) {
+    sections[key].sort((a, b) => Date.parse(b.when || "") - Date.parse(a.when || ""));
+  }
+  const total = Object.values(sections).reduce((n, rows) => n + rows.length, 0);
+  return { sections, total, skipped };
+}
+
+/* Normalise the telehealth consult thread for the record view. */
+export function groupConsults(consults) {
+  return (consults || [])
+    .map((c) => ({
+      title: c.complaint || "Consultation",
+      value: [c.assessment, c.outcome].filter(Boolean).join(" — "),
+      when: c.created_at || "",
+      source: c.doctor_id || "",
+      status: c.status || "",
+    }))
+    .sort((a, b) => Date.parse(b.when || "") - Date.parse(a.when || ""));
+}

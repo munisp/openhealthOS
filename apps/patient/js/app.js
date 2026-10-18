@@ -5,10 +5,11 @@
  */
 
 import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
-import { kindMeta, groupFeed, relTime, stateLabel } from "./logic.js";
+import { kindMeta, groupFeed, relTime, stateLabel, groupRecord, groupConsults } from "./logic.js";
 import { nearest, facilityRow } from "./geo.js";
 
 const LS_KEY = "openhealth-patient";
+const REC_CACHE_KEY = "openhealth-patient-record";
 const $ = (sel) => document.querySelector(sel);
 
 const state = {
@@ -17,6 +18,10 @@ const state = {
   feed: null,        // { notifications: [...] } last good fetch
   updatedAt: null,
   loading: false,
+  tab: "updates",    // "updates" | "record"
+  record: null,      // { record: <FHIR bundle>, consults: [...], complete } last good fetch
+  recordAt: null,
+  recordLoading: false,
 };
 
 function el(tag, attrs = {}, ...children) {
@@ -82,6 +87,50 @@ async function refresh() {
   render();
 }
 
+/* ---------- my record (ADR-0016) ---------------------------------------
+ * The patient's own FHIR $everything bundle + telehealth thread, fetched
+ * through the portal record proxy. Cached in localStorage exactly like the
+ * feed: offline you see your saved copy, clearly stamped — never a
+ * fabricated "live" one. */
+async function fetchRecord() {
+  const url = `${apiBase()}/portal/record?patient_id=${encodeURIComponent(state.patientId)}&phone=${encodeURIComponent(state.phone)}`;
+  const resp = await fetch(url, { cache: "no-store" });
+  if (!resp.ok) throw new Error(String(resp.status));
+  return resp.json();
+}
+
+function saveRecordLocal() {
+  try {
+    localStorage.setItem(REC_CACHE_KEY, JSON.stringify({
+      patientId: state.patientId, data: state.record, at: state.recordAt,
+    }));
+  } catch { /* full — older copy still there */ }
+}
+
+function loadRecordLocal() {
+  try {
+    const rc = JSON.parse(localStorage.getItem(REC_CACHE_KEY) || "null");
+    if (rc && rc.patientId === state.patientId) {
+      state.record = rc.data;
+      state.recordAt = rc.at;
+    }
+  } catch { /* ignore */ }
+}
+
+async function loadRecord() {
+  if (!state.patientId || state.recordLoading) return;
+  state.recordLoading = true;
+  if (state.tab === "record") render();
+  try {
+    const data = await fetchRecord();
+    state.record = data;
+    state.recordAt = Date.now();
+    saveRecordLocal();
+  } catch { /* keep last-known copy */ }
+  state.recordLoading = false;
+  if (state.tab === "record") render();
+}
+
 /* ---------- views ----------------------------------------------------- */
 
 function SignInView() {
@@ -136,8 +185,23 @@ function langRow() {
   return row;
 }
 
+/* Tab switcher shared by the feed and record views. */
+function Tabs() {
+  const mk = (tab, key) => el("button", {
+    class: "tab-btn" + (state.tab === tab ? " tab-on" : ""),
+    role: "tab",
+    onclick: () => {
+      state.tab = tab;
+      if (tab === "record" && !state.record && navigator.onLine) loadRecord();
+      render();
+    },
+  }, t(key));
+  return el("div", { class: "tabs", role: "tablist" }, mk("updates", "tab_updates"), mk("record", "tab_record"));
+}
+
 function FeedView() {
   const wrap = el("div", { class: "view" },
+    Tabs(),
     el("div", { class: "feed-head" },
       el("h2", {}, t("updates")),
       el("button", { class: "btn btn-outline btn-refresh", onclick: refresh }, t("refresh"))),
@@ -165,10 +229,81 @@ function FeedView() {
         class: "btn btn-outline btn-block",
         onclick: () => {
           state.patientId = state.phone = state.feed = state.updatedAt = null;
+          state.record = state.recordAt = null;
+          state.tab = "updates";
           try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
+          try { localStorage.removeItem(REC_CACHE_KEY); } catch { /* ignore */ }
           render();
         },
       }, t("sign_out"))));
+  return wrap;
+}
+
+/* ---------- my record view (ADR-0016) -----------------------------------
+ * Sections mirror what a patient asks about: visits, test results,
+ * medicines, immunisations, conditions, allergies, and phone/video
+ * consults. Empty sections are hidden; an entirely empty record says so
+ * plainly, and a partially-fetched record carries an honest banner. */
+
+function RecordRow(glyph, r) {
+  return el("div", { class: "card notif-card accent-info" },
+    el("div", { class: "notif-glyph" }, glyph),
+    el("div", { class: "notif-main" },
+      el("div", { class: "notif-kind" }, r.title),
+      r.value ? el("div", { class: "notif-text" }, r.value) : null,
+      el("div", { class: "notif-meta" },
+        [relTime(r.when), r.source].filter(Boolean).join(" · "))));
+}
+
+function RecordSection(title, glyph, rows) {
+  const sec = el("div", {}, el("h3", { class: "section-label" }, title));
+  for (const r of rows) sec.append(RecordRow(glyph, r));
+  return sec;
+}
+
+function RecordView() {
+  const wrap = el("div", { class: "view" },
+    Tabs(),
+    el("div", { class: "feed-head" },
+      el("h2", {}, t("tab_record")),
+      el("button", { class: "btn btn-outline btn-refresh", onclick: loadRecord }, t("refresh"))),
+    state.recordAt
+      ? el("div", { class: "muted stamp" }, `${t("last_updated")}: ${new Date(state.recordAt).toLocaleString()}`)
+      : null);
+
+  if (state.recordLoading && !state.record) {
+    wrap.append(el("div", { class: "empty" }, t("rec_loading")));
+    return wrap;
+  }
+  const rec = state.record;
+  if (!rec) {
+    wrap.append(el("div", { class: "empty" }, navigator.onLine ? t("rec_loading") : t("rec_failed")));
+    return wrap;
+  }
+  if (rec.complete === false) {
+    wrap.append(el("div", { class: "banner banner-show banner-inline" }, t("rec_incomplete")));
+  }
+
+  const { sections, total } = groupRecord(rec.record);
+  const consults = groupConsults(rec.consults);
+  if (!total && !consults.length) {
+    wrap.append(el("div", { class: "empty" }, t("rec_empty")));
+    return wrap;
+  }
+
+  const SECTIONS = [
+    ["encounters", "rec_visits", "◷"],
+    ["labs", "rec_labs", "⚗"],
+    ["meds", "rec_meds", "✚"],
+    ["immunizations", "rec_immunizations", "❋"],
+    ["conditions", "rec_conditions", "◈"],
+    ["allergies", "rec_allergies", "⚠"],
+  ];
+  for (const [key, labelKey, glyph] of SECTIONS) {
+    const rows = sections[key];
+    if (rows.length) wrap.append(RecordSection(t(labelKey), glyph, rows));
+  }
+  if (consults.length) wrap.append(RecordSection(t("rec_telehealth"), "☎", consults));
   return wrap;
 }
 
@@ -268,7 +403,9 @@ function render() {
   $("#app-title").textContent = t("app_name");
   const root = $("#view-root");
   root.innerHTML = "";
-  root.append(state.patientId ? FeedView() : SignInView());
+  root.append(state.patientId
+    ? (state.tab === "record" ? RecordView() : FeedView())
+    : SignInView());
   const b = $("#offline-banner");
   if (!navigator.onLine) {
     b.textContent = t("offline");
@@ -295,6 +432,7 @@ function boot() {
     state.phone = saved.phone;
     state.feed = saved.feed;
     state.updatedAt = saved.updatedAt;
+    loadRecordLocal();
   }
   window.addEventListener("online", () => { render(); refresh(); });
   window.addEventListener("offline", render);

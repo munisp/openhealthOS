@@ -114,3 +114,29 @@ func TestNotFound(t *testing.T) {
 		t.Fatalf("dispense unknown: want ErrNotFound, got %v", err)
 	}
 }
+
+// ADR-0016: the patient reads their own consult thread in the portal —
+// oldest-first, and never another patient's consults.
+func TestConsultsForPatientThread(t *testing.T) {
+	svc := NewService()
+	first := svc.Open("PT-1", "NG-KD-0014", "NURSE-7", "fever")
+	second := svc.Open("PT-1", "NG-KD-0014", "NURSE-7", "follow-up cough")
+	svc.Open("PT-2", "NG-KD-0014", "NURSE-7", "someone else's rash")
+
+	thread := svc.ConsultsForPatient("PT-1")
+	if len(thread) != 2 {
+		t.Fatalf("thread length: %d", len(thread))
+	}
+	if thread[0].ID != first.ID || thread[1].ID != second.ID {
+		t.Fatalf("thread must be oldest-first: %q then %q", thread[0].ID, thread[1].ID)
+	}
+	for _, c := range thread {
+		if c.PatientID != "PT-1" {
+			t.Fatalf("cross-patient leak: %+v", c)
+		}
+	}
+	// Unknown patient: empty thread, never nil-as-error.
+	if got := svc.ConsultsForPatient("PT-NOBODY"); len(got) != 0 {
+		t.Fatalf("unknown patient: %d consults", len(got))
+	}
+}

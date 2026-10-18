@@ -17,6 +17,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"sort"
 	"sync"
 	"time"
 )
@@ -255,6 +256,28 @@ func (s *Service) ListPrescriptions(status string) []Prescription {
 	return out
 }
 
+// ConsultsForPatient lists a patient's consults oldest-first — the thread
+// the patient reads in the portal (ADR-0016).
+func (s *Service) ConsultsForPatient(patientID string) []Consult {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	out := []Consult{}
+	for _, c := range s.consults {
+		if c.PatientID == patientID {
+			out = append(out, *c)
+		}
+	}
+	// CreatedAt has second precision; consults opened inside the same
+	// second fall back to the monotonic ID so the thread order is stable.
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].CreatedAt != out[j].CreatedAt {
+			return out[i].CreatedAt < out[j].CreatedAt
+		}
+		return out[i].ID < out[j].ID
+	})
+	return out
+}
+
 func (s *Service) Dispense(prescriptionID string) (Prescription, error) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -281,6 +304,7 @@ type TelehealthService interface {
 	CompleteReferral(referralID string) (Referral, error)
 	Prescribe(consultID, prescriber, medication, dose string, quantity int, pharmacyID string) (Prescription, error)
 	Dispense(prescriptionID string) (Prescription, error)
+	ConsultsForPatient(patientID string) []Consult
 }
 
 var _ TelehealthService = (*Service)(nil)
@@ -295,6 +319,9 @@ type server struct {
 func (s server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("POST /consults", s.openConsult)
+	// Pull seam for the patient portal (ADR-0016): platform-internal, the
+	// portal gate in notification-service authenticates the patient.
+	mux.HandleFunc("GET /consults", s.listConsults)
 	mux.HandleFunc("POST /consults/{id}/assess", s.assess)
 	mux.HandleFunc("POST /consults/{id}/close", s.closeRoutine)
 	mux.HandleFunc("POST /consults/{id}/escalate", s.escalate)
@@ -435,6 +462,20 @@ func (s server) prescribe(w http.ResponseWriter, r *http.Request) {
 }
 
 // listPrescriptions is the pharmacy's pull fallback.
+func (s server) listConsults(w http.ResponseWriter, r *http.Request) {
+	pid := r.URL.Query().Get("patient_id")
+	if pid == "" {
+		http.Error(w, `{"error":"patient_id query param required"}`, http.StatusBadRequest)
+		return
+	}
+	consults := s.svc.ConsultsForPatient(pid)
+	if consults == nil {
+		consults = []Consult{} // never null — the portal unwraps this
+	}
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(map[string]any{"consults": consults})
+}
+
 func (s server) listPrescriptions(w http.ResponseWriter, r *http.Request) {
 	status := r.URL.Query().Get("status")
 	if l, ok := s.svc.(interface{ ListPrescriptions(string) []Prescription }); ok {

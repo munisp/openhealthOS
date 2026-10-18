@@ -188,6 +188,7 @@ func (s server) routes() *http.ServeMux {
 	})
 
 	registerFHIRInbox(mux, s.svc)
+	registerPortalRecord(mux, s.svc)
 
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
 		w.Write([]byte("ok"))

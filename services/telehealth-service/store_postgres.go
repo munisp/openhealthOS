@@ -277,4 +277,24 @@ func (p *PostgresService) ListPrescriptions(status string) []Prescription {
 	return out
 }
 
+// ConsultsForPatient is the portal read seam (ADR-0016) — the patient's
+// consult thread, oldest-first.
+func (p *PostgresService) ConsultsForPatient(patientID string) []Consult {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	rows, err := p.pool.Query(ctx,
+		"SELECT "+consultCols+" FROM consults WHERE patient_id=$1 ORDER BY created_at", patientID)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	out := []Consult{}
+	for rows.Next() {
+		if c, err := scanConsult(rows); err == nil {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 var _ TelehealthService = (*PostgresService)(nil)

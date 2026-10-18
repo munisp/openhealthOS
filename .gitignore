@@ -10,6 +10,9 @@ services/claims-orchestrator/claims-orchestrator
 services/payment-switch-mock/payment-switch-mock
 services/sync-agent/sync-agent
 services/registry-service/registry-service
+services/notification-service/notification-service
+services/shr-service/shr-service
+services/telehealth-service/telehealth-service
 
 # Go
 go.work.sum

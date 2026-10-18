@@ -124,6 +124,22 @@ body {
 .feed-head { display: flex; align-items: center; justify-content: space-between; }
 .feed-head h2 { margin: 0; font-size: 1.35rem; }
 
+/* Updates | My record tabs (ADR-0016) — thumb-sized, one-tap switch. */
+.tabs {
+  display: flex; gap: 8px; margin: 2px 0 14px;
+  background: var(--wash, #f2f4f1);
+  border-radius: 999px; padding: 4px;
+}
+.tab-btn {
+  flex: 1; border: 0; background: transparent; color: var(--ink);
+  border-radius: 999px; padding: 10px 12px;
+  font-size: 0.95rem; font-weight: 600;
+  min-height: 44px; cursor: pointer;
+}
+.tab-on { background: var(--green); color: #fff; }
+
+.banner-inline { position: static; margin: 8px 0; border-radius: 12px; }
+
 .section-label {
   margin: 6px 2px 0;
   font-size: 0.8rem; font-weight: 700;
