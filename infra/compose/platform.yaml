@@ -35,16 +35,12 @@ services:
       postgres: { condition: service_healthy }
     volumes: ["../../db/migrations:/migrations:ro"]
     command: >
-      sh -c "psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -v ON_ERROR_STOP=1 -f /migrations/0001_init.sql
-             && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -v ON_ERROR_STOP=1 -f /migrations/0002_telehealth_equipment.sql
-             && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -v ON_ERROR_STOP=1 -f /migrations/0003_pharmacy.sql
-             && psql postgresql://postgres:openhealth-dev@postgres:5432/openhealth
-             -v ON_ERROR_STOP=1 -f /migrations/0004_notifications.sql
-      && psql "$DATABASE_URL"
-             -v ON_ERROR_STOP=1 -f /migrations/0005_registry_kyc.sql"
+      sh -c "D=postgresql://postgres:openhealth-dev@postgres:5432/openhealth;
+             for m in 0001_init 0002_telehealth_equipment 0003_pharmacy
+                      0003_sync_docs 0004_notifications 0005_registry_kyc
+                      0006_wallet_idempotency; do
+               psql \"$D\" -v ON_ERROR_STOP=1 -f /migrations/$m.sql || exit 1;
+             done"
 
   # OIDC issuer for the gateways (ADR-0006): create the 'openhealth' realm,
   # then uncomment OIDC_ISSUER on shr-service / claims-orchestrator below.
@@ -143,8 +139,11 @@ services:
     environment:
       LISTEN: ":8084"
       LEDGER_DATA_DIR: /var/lib/openhealth/ledger
+      # Money-movement idempotency (0006): retries answered from the record.
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
     volumes: ["ledger-wallet:/var/lib/openhealth/ledger"]
     ports: ["18084:8084"]
+    depends_on: [migrate]
 
   equipment-service:
     build:
@@ -159,7 +158,10 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile.go-service
       args: { MODULE: ussd-gateway }
-    environment: { LISTEN: ":8083" }
+    environment:
+      LISTEN: ":8083"
+      # Clinic-updates feed over the notification rail (menu option 3).
+      NOTIFY_URL: http://notification-service:8089
     ports: ["18083:8083"]
 
   sync-ingest:

@@ -14,10 +14,12 @@ const (
 )
 
 // claimsHandler wires adjudication → ledger → settlement for one claim.
+// Tally, when set, folds every adjudication into the payer stats view.
 type claimsHandler struct {
 	Adjudicator Adjudicator
 	Ledger      Ledger
 	Switch      Switch
+	Tally       *PayerTally
 }
 
 func (h claimsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -34,6 +36,9 @@ func (h claimsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
+	}
+	if h.Tally != nil {
+		h.Tally.Record(dec)
 	}
 	resp := ClaimResponse{
 		ClaimID: dec.ClaimID, Decision: dec.Decision,

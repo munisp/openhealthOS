@@ -37,14 +37,14 @@ say() { echo; echo "── $*"; }
 
 say "1. facility sends a mixed batch to its LGA hub (bulk first)"
 curl -sf -X POST http://127.0.0.1:18090/ingest/raw -H "$J" -d \
-'{"id":"ev-bulk-1","facility":"PHC-1","type":"telemetry","ts":"2026-10-18T08:00:00Z"}
+'{"id":"ev-bulk-1","facility":"PHC-1","type":"telemetry","ts":"2026-10-18T08:00:00Z","payload":{"metric":"fridge_temp","value":4.1}}
 {"id":"ev-std-1","facility":"PHC-1","type":"encounter","ts":"2026-10-18T08:00:01Z"}
-{"id":"ev-crit-1","facility":"PHC-1","type":"referral","ts":"2026-10-18T08:00:02Z"}' \
+{"id":"ev-crit-1","facility":"PHC-1","type":"referral","ts":"2026-10-18T08:00:02Z","payload":{"patient_id":"PT-77","to_facility":"GH-Kaduna","urgency":"urgent"}}' \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print("   hub ack:", d["received"], "received via", d["hub"])'
 
 say "2. same batch retried (agent flakiness) — acked as duplicates"
 curl -sf -X POST http://127.0.0.1:18090/ingest/raw -H "$J" -d \
-'{"id":"ev-bulk-1","facility":"PHC-1","type":"telemetry","ts":"2026-10-18T08:00:00Z"}' \
+'{"id":"ev-bulk-1","facility":"PHC-1","type":"telemetry","ts":"2026-10-18T08:00:00Z","payload":{"metric":"fridge_temp","value":4.1}}' \
   | python3 -c 'import json,sys; d=json.load(sys.stdin); print("   duplicates:", d["duplicates"])'
 
 say "3. hub forwards to the state plane (critical first)"

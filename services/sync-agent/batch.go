@@ -22,6 +22,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+
+	"github.com/munisp/openhealthOS/shared/sealx"
 )
 
 // MaxBatchBytes is the wire cap per batch. The NFR budget is
@@ -65,13 +67,25 @@ func ScanOutbox(dir string) ([]Event, error) {
 // The cap is enforced on the compressed payload — what actually goes on
 // the wire — never on raw size estimates.
 func PackBatch(events []Event, maxBytes int) ([]byte, []Event, error) {
+	return PackBatchS(events, maxBytes, nil)
+}
+
+// PackBatchS is PackBatch with a sealer: sealed event files (sealx) are
+// opened before packing, so the wire format stays plain JSONL regardless
+// of at-rest encryption. A tampered or wrongly-keyed file fails the whole
+// batch — the outbox keeps everything, and ops sees the error.
+func PackBatchS(events []Event, maxBytes int, sealer *sealx.Sealer) ([]byte, []Event, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	included := []Event{}
 	for _, ev := range events {
-		data, err := os.ReadFile(ev.Path)
+		raw, err := os.ReadFile(ev.Path)
 		if err != nil {
 			return nil, nil, fmt.Errorf("read %s: %w", ev.Path, err)
+		}
+		data, err := openMaybeSealed(sealer, raw)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unseal %s: %w", ev.Path, err)
 		}
 		if _, err := gz.Write(data); err != nil {
 			return nil, nil, err
@@ -84,7 +98,7 @@ func PackBatch(events []Event, maxBytes int) ([]byte, []Event, error) {
 			if len(included) == 0 {
 				return nil, nil, fmt.Errorf("single event %s exceeds batch cap (%d bytes compressed)", ev.Path, maxBytes)
 			}
-			return repack(included)
+			return repackS(included, sealer)
 		}
 		included = append(included, ev)
 	}
@@ -97,13 +111,19 @@ func PackBatch(events []Event, maxBytes int) ([]byte, []Event, error) {
 	return buf.Bytes(), included, nil
 }
 
-func repack(events []Event) ([]byte, []Event, error) {
+func repack(events []Event) ([]byte, []Event, error) { return repackS(events, nil) }
+
+func repackS(events []Event, sealer *sealx.Sealer) ([]byte, []Event, error) {
 	var buf bytes.Buffer
 	gz := gzip.NewWriter(&buf)
 	for _, ev := range events {
-		data, err := os.ReadFile(ev.Path)
+		raw, err := os.ReadFile(ev.Path)
 		if err != nil {
 			return nil, nil, err
+		}
+		data, err := openMaybeSealed(sealer, raw)
+		if err != nil {
+			return nil, nil, fmt.Errorf("unseal %s: %w", ev.Path, err)
 		}
 		gz.Write(data)
 		gz.Write([]byte("\n"))

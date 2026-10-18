@@ -56,3 +56,24 @@ Edge fleets only run signed, staged images — see `tools/ota` (ed25519
 manifest signing, deterministic cohort rollout, one-command rollback).
 Never `docker pull` latest on an edge node; promote through stages:
 pilot cluster → LGA → state.
+
+## Encryption at rest (ADR-0013)
+
+Set `SEALX_KEY_FILE` (or `SEALX_KEY`) on the sync-agent to seal the
+on-disk outbox with AES-256-GCM (`SX1:` envelope):
+
+```sh
+umask 077 && openssl rand -hex 32 > /var/lib/openhealth/sealx.key
+# compose: SEALX_KEY_FILE=/run/secrets/sealx_key
+```
+
+- Key management: generate per-facility, store on the device's secret
+  plane, back up with the facility's key ceremony. Losing the key orphans
+  undelivered outbox events — re-keying requires a drained outbox.
+- Mixed mode is safe: already-plaintext events still upload; new writes
+  seal. Tampered files fail closed and are retained for forensics.
+- The PWA seals its IndexedDB rows independently (`SXW1:`, WebCrypto,
+  per-browser device key) — no operator action.
+- Threat model, stated plainly: this defeats lost-device/stolen-disk
+  extraction. Rooted devices and XSS are out of scope — those are
+  device-hardening and CSP concerns respectively.

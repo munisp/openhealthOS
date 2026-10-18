@@ -133,7 +133,7 @@ func TestIngestEndpointIdempotent(t *testing.T) {
 	defer ts.Close()
 
 	body := `{"id":"e1","facility":"F-1","type":"encounter","ts":"2026-10-18T09:00:00Z"}` + "\n" +
-		`{"id":"e2","facility":"F-1","type":"telemetry","ts":"2026-10-18T09:00:01Z"}` + "\n"
+		`{"id":"e2","facility":"F-1","type":"telemetry","ts":"2026-10-18T09:00:01Z","payload":{"metric":"fridge_temp","value":4.2}}` + "\n"
 	for i := 0; i < 2; i++ { // send twice — agents retry freely
 		resp, err := ts.Client().Post(ts.URL+"/ingest/raw", "application/x-ndjson", strings.NewReader(body))
 		if err != nil || resp.StatusCode != 200 {
@@ -173,3 +173,50 @@ func readAll(r *http.Request) string {
 
 var _ = fmt.Sprintf // keep fmt import stable across test edits
 var _ = os.Getenv
+
+func TestFileStoreSealedAtRest(t *testing.T) {
+	dir := t.TempDir()
+	path := dir + "/spill.jsonl"
+	t.Setenv("SEALX_KEY", "0011223344556677889900112233445566778899001122334455667788990011")
+
+	s, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ok, _ := s.Add(Event{ID: "ev-secret", Facility: "F1", Type: "encounter",
+		Payload: map[string]any{"diagnosis": "measles"}})
+	if !ok {
+		t.Fatal("add")
+	}
+	s.Close()
+
+	// Disk holds no plaintext PHI.
+	raw, _ := os.ReadFile(path)
+	if string(raw) == "" || !strings.HasPrefix(strings.TrimSpace(string(raw)), "SX1:") {
+		t.Fatalf("spill should be sealed, got: %.40s", raw)
+	}
+	if strings.Contains(string(raw), "measles") {
+		t.Fatal("PHI leaked to disk in plaintext")
+	}
+
+	// Restart with the same key: event replays fine.
+	s2, err := NewFileStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n := len(s2.Pending(Critical, 10)) + len(s2.Pending(Standard, 10)) + len(s2.Pending(Bulk, 10)); n != 1 {
+		t.Fatalf("sealed replay: want 1 pending, got %d", n)
+	}
+	s2.Close()
+
+	// Wrong key: boot must not crash (line skipped), and no plaintext served.
+	t.Setenv("SEALX_KEY", "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff")
+	s3, err := NewFileStore(path)
+	if err != nil {
+		t.Fatalf("wrong key must not crash boot: %v", err)
+	}
+	if n := len(s3.Pending(Standard, 10)); n != 0 {
+		t.Fatalf("wrong key must yield no plaintext, got %d pending", n)
+	}
+	s3.Close()
+}

@@ -52,8 +52,12 @@ func main() {
 	registerKYCRoutes(mux, patients, verifier, sender)
 	log.Printf("OpenHealth OS registry service on %s (facilities, providers, patients)", addr)
 	handler := http.Handler(mux)
-	if v := authz.FromEnv(os.Getenv); v != nil {
-		handler = v.Middleware(handler)
+	authV, authErr := authz.RequireFromEnv(os.Getenv)
+	if authErr != nil {
+		log.Fatal(authErr)
+	}
+	if authV != nil {
+		handler = authV.Middleware(handler)
 		log.Print("oidc: enforcing bearer auth")
 	}
 	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))

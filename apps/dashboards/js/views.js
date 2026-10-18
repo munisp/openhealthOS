@@ -5,7 +5,7 @@
 import { el } from "./dom.js";
 import { dial, sparkline, facilityMap, hbar } from "./charts.js";
 import { eventsByType, encountersToday, perFacilityCounts, pilotGates,
-         overviewRows, platformHealth } from "./data.js";
+         overviewRows, platformHealth, payerRows, payerSummary } from "./data.js";
 
 /* ---------- shared bits ---------- */
 
@@ -232,5 +232,47 @@ export function StateView(data) {
   page.append(
     el("div", { class: "grid-3" }, watch, mapPanel, alerts),
     el("div", { class: "grid-2" }, gatePanel, matrix));
+  return page;
+}
+
+/* ---------- payer board (NHIA + HMO view, ADR-0012) ---------- */
+
+function fmtNGN(n) {
+  return "₦" + (n || 0).toLocaleString("en-NG");
+}
+
+export function PayerView(data) {
+  const rows = payerRows(data.payers);
+  const sum = payerSummary(rows);
+  const page = el("div", { class: "page" },
+    el("div", { class: "kpis" },
+      kpi(sum.totalClaims.toLocaleString(), "claims adjudicated", { sub: `${sum.payers} payers` }),
+      kpi(fmtNGN(sum.totalPayable), "payable volume", { kind: "ok" }),
+      kpi(sum.unmapped ? String(sum.unmapped) : "0", "unmapped schemes",
+        { kind: sum.unmapped ? "warn" : "ok", sub: "claims with no payer route" })),
+    el("h2", {}, "Payable by payer"));
+  const bars = el("div", {});
+  for (const r of rows) {
+    bars.append(el("div", { class: "hbar-row" },
+      el("span", {}, `${r.payer}`),
+      hbar(r.payableShare / 100),
+      el("span", { class: "mono" }, fmtNGN(r.payable))));
+  }
+  page.append(bars);
+  const table = el("table", { class: "matrix" },
+    el("tr", {},
+      el("th", {}, "Payer"), el("th", {}, "Type"), el("th", {}, "Claims"),
+      el("th", {}, "Approval"), el("th", {}, "Pending"), el("th", {}, "Payable"), el("th", {}, "Share")));
+  for (const r of rows) {
+    table.append(el("tr", { class: r.kind === "unmapped" ? "warn" : "" },
+      el("td", {}, r.payer),
+      el("td", {}, r.kind),
+      el("td", { class: "mono" }, String(r.claims)),
+      el("td", { class: `mono ${r.approvalRate >= 85 ? "ok" : "warn"}` }, `${r.approvalRate}%`),
+      el("td", { class: `mono ${r.pendRate > 10 ? "warn" : ""}` }, `${r.pendRate}%`),
+      el("td", { class: "mono" }, fmtNGN(r.payable)),
+      el("td", { class: "mono" }, `${r.payableShare}%`)));
+  }
+  page.append(el("h2", {}, "Decision mix"), table);
   return page;
 }

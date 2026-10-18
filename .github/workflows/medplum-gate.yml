@@ -1,0 +1,85 @@
+name: medplum-gate
+
+# ADR-0013: the FHIR-subscription intake contract is proven against a REAL
+# Medplum server here — never a mock — so the "Medplum as FHIR foundation"
+# claim is gated in CI. The harness itself is validated offline (selftest)
+# in the main CI workflow.
+#
+# Medplum runs in Docker (available on GitHub-hosted runners; not in the
+# dev sandbox). The rest-hook callback reaches the notification service on
+# the runner host via the host-gateway mapping.
+
+on:
+  push:
+    paths:
+      - services/notification-service/**
+      - tools/conformance/**
+      - .github/workflows/medplum-gate.yml
+  workflow_dispatch:
+
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+
+      - name: Build notification-service
+        run: go build -o /tmp/notification-service ./services/notification-service
+
+      - name: Start Medplum stack (postgres + redis + server)
+        run: |
+          docker network create medplum-net
+          docker run -d --name postgres --network medplum-net \
+            -e POSTGRES_USER=medplum -e POSTGRES_PASSWORD=medplum -e POSTGRES_DB=medplum \
+            --health-cmd "pg_isready -U medplum" --health-interval 5s \
+            postgres:16-alpine
+          docker run -d --name redis --network medplum-net redis:7-alpine
+          docker run -d --name medplum --network medplum-net -p 8103:8103 \
+            --add-host host.docker.internal:host-gateway \
+            -e MEDPLUM_BASE_URL=http://localhost:8103/ \
+            -e MEDPLUM_PORT=8103 \
+            -e MEDPLUM_DATABASE_HOST=postgres \
+            -e MEDPLUM_DATABASE_PORT=5432 \
+            -e MEDPLUM_DATABASE_DBNAME=medplum \
+            -e MEDPLUM_DATABASE_USERNAME=medplum \
+            -e MEDPLUM_DATABASE_PASSWORD=medplum \
+            -e MEDPLUM_REDIS_HOST=redis \
+            -e MEDPLUM_REDIS_PORT=6379 \
+            medplum/medplum-server:latest
+
+      - name: Wait for Medplum healthcheck (first boot seeds the database)
+        run: |
+          for i in $(seq 1 60); do
+            if curl -sf http://localhost:8103/healthcheck | grep -q '"ok":true'; then
+              echo "medplum healthy after ~$((i * 5))s"; exit 0
+            fi
+            sleep 5
+          done
+          echo "medplum never became healthy — server logs:"
+          docker logs medplum 2>&1 | tail -80
+          exit 1
+
+      - name: Run notification-service on the runner host
+        run: |
+          LISTEN=:18090 /tmp/notification-service >/tmp/ntf.log 2>&1 &
+          for i in $(seq 1 20); do
+            curl -sf http://127.0.0.1:18090/healthz && exit 0
+            sleep 1
+          done
+          cat /tmp/ntf.log; exit 1
+
+      - name: Run the Medplum gate
+        run: |
+          python3 tools/conformance/medplum_gate.py \
+            --medplum http://localhost:8103 \
+            --openhealth http://127.0.0.1:18090 \
+            --inbox-endpoint http://host.docker.internal:18090/fhir/inbox
+
+      - name: Notification-service log (on failure)
+        if: failure()
+        run: cat /tmp/ntf.log

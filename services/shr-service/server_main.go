@@ -43,8 +43,12 @@ func main() {
 	}
 	s := server{store: NewStoreWithBackend(be, checker)}
 	handler := http.Handler(s.routes())
-	if v := authz.FromEnv(os.Getenv); v != nil {
-		handler = v.Middleware(handler)
+	authV, authErr := authz.RequireFromEnv(os.Getenv)
+	if authErr != nil {
+		log.Fatal(authErr)
+	}
+	if authV != nil {
+		handler = authV.Middleware(handler)
 		log.Print("oidc: enforcing bearer auth (claims carry facility attribution)")
 	}
 	log.Printf("OpenHealth OS shr-service on %s (FHIR store + consent enforcement)", addr)

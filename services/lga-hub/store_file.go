@@ -12,6 +12,8 @@ import (
 	"os"
 	"sync"
 	"time"
+
+	"github.com/munisp/openhealthOS/shared/sealx"
 )
 
 const compactAfter = 10000
@@ -20,28 +22,37 @@ type FileStore struct {
 	mu      sync.Mutex
 	path    string
 	f       *os.File
+	seal    *sealx.Sealer // nil = plaintext dev mode; set → PHI sealed at rest
 	seen    map[string]bool
 	entries []entry // includes forwarded ones until compaction
 	dirty   int     // forwarded-but-not-compacted count
 }
 
 func NewFileStore(path string) (*FileStore, error) {
-	s := &FileStore{path: path, seen: map[string]bool{}}
+	seal, err := sealx.FromEnv(os.Getenv)
+	if err != nil {
+		return nil, fmt.Errorf("spill encryption: %w", err)
+	}
+	s := &FileStore{path: path, seen: map[string]bool{}, seal: seal}
 	// replay: data lines carry ev, ack lines carry {"ack": id}
 	if f, err := os.Open(path); err == nil {
 		acks := map[string]bool{}
 		sc := bufio.NewScanner(f)
 		sc.Buffer(make([]byte, 1024*1024), 1024*1024)
 		for sc.Scan() {
+			text, err := s.sealLine(sc.Text())
+			if err != nil {
+				continue // sealed with another key or corrupt tail — never crash boot
+			}
 			var probe struct {
 				Ack string `json:"ack"`
 			}
-			if json.Unmarshal(sc.Bytes(), &probe) == nil && probe.Ack != "" {
+			if json.Unmarshal([]byte(text), &probe) == nil && probe.Ack != "" {
 				acks[probe.Ack] = true
 				continue
 			}
 			var e entry
-			if json.Unmarshal(sc.Bytes(), &e) == nil && e.Ev.ID != "" {
+			if json.Unmarshal([]byte(text), &e) == nil && e.Ev.ID != "" {
 				if !s.seen[e.Ev.ID] {
 					s.seen[e.Ev.ID] = true
 					s.entries = append(s.entries, e)
@@ -75,7 +86,7 @@ func (s *FileStore) Add(ev Event) (bool, error) {
 	if err != nil {
 		return false, err
 	}
-	if _, err := s.f.Write(append(line, '\n')); err != nil {
+	if _, err := s.f.Write(append([]byte(s.sealLineForWrite(string(line))), '\n')); err != nil {
 		return false, err
 	}
 	if err := s.f.Sync(); err != nil { // power cuts are the norm here
@@ -147,7 +158,7 @@ func (s *FileStore) compactLocked() error {
 			continue
 		}
 		line, _ := json.Marshal(e)
-		if _, err := f.Write(append(line, '\n')); err != nil {
+		if _, err := f.Write(append([]byte(s.sealLineForWrite(string(line))), '\n')); err != nil {
 			f.Close()
 			return err
 		}
@@ -207,3 +218,21 @@ func (s *FileStore) Close() error {
 
 var _ Store = (*FileStore)(nil)
 var _ Store = (*MemoryStore)(nil)
+
+// sealLine decrypts during replay (mixed-mode tolerant), sealLineForWrite
+// encrypts before append when a data key is provisioned. Ack lines carry
+// only pseudonymous event ids and stay plaintext so replay can apply them
+// even before the key is available.
+func (s *FileStore) sealLine(line string) (string, error) {
+	if s.seal == nil {
+		return line, nil
+	}
+	return s.seal.OpenLine(line)
+}
+
+func (s *FileStore) sealLineForWrite(line string) string {
+	if s.seal == nil {
+		return line
+	}
+	return s.seal.SealLine(line)
+}

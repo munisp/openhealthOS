@@ -25,7 +25,7 @@ func gzLines(t *testing.T, lines ...string) *bytes.Buffer {
 }
 
 const ev1 = `{"id":"E-1","facility":"PHC-007","type":"encounter","ts":"2026-10-17T09:00:00Z"}`
-const ev2 = `{"id":"E-2","facility":"PHC-007","type":"dispensing","ts":"2026-10-17T09:05:00Z"}`
+const ev2 = `{"id":"E-2","facility":"PHC-007","type":"dispensing","ts":"2026-10-17T09:05:00Z","payload":{"patient_id":"PT-1","drug_code":"AL8020","qty":24}}`
 
 func TestIngestAppliesOnce(t *testing.T) {
 	store := NewMemoryStore()
@@ -86,7 +86,7 @@ func TestIngestRawPlainJSONLines(t *testing.T) {
 	srv := httptest.NewServer(s.routes())
 	defer srv.Close()
 	body := `{"id":"ph-1","facility":"F-1","type":"encounter","ts":"2026-10-18T09:00:00Z"}
-{"id":"ph-2","facility":"F-1","type":"claim_submitted","ts":"2026-10-18T09:01:00Z"}
+{"id":"ph-2","facility":"F-1","type":"claim_submitted","ts":"2026-10-18T09:01:00Z","payload":{"claim_id":"CLM-1","amount_ngn":2880}}
 `
 	resp, err := http.Post(srv.URL+"/ingest/raw", "application/jsonlines", strings.NewReader(body))
 	if err != nil {

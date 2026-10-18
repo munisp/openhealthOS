@@ -8,12 +8,27 @@ import (
 
 // fakeLedger mirrors the seam contract in-memory for conformance tests.
 type fakeLedger struct {
-	bal   map[string]int
-	posts []string
+	bal       map[string]int
+	posts     []string
+	prepared  map[string]bool
+	committed map[string]bool
 }
 
 func newFake() *fakeLedger {
-	return &fakeLedger{bal: map[string]int{acctPool: 1_000_000, "PSP-FLOAT": 10_000_000}}
+	return &fakeLedger{bal: map[string]int{acctPool: 1_000_000, "PSP-FLOAT": 10_000_000},
+		prepared: map[string]bool{}, committed: map[string]bool{}}
+}
+
+// PostOnce mirrors the Rust seam's prepare/commit txid dedupe.
+func (f *fakeLedger) PostOnce(debit, credit, txid string, amount int) (string, bool, error) {
+	if f.committed[txid] {
+		return "duplicate of " + txid, true, nil
+	}
+	if _, err := f.Post(debit, credit, txid, amount); err != nil {
+		return "", false, err
+	}
+	f.committed[txid] = true
+	return "OK: posted tx " + txid, false, nil
 }
 
 func (f *fakeLedger) Open(id string, opening int) (string, error) {

@@ -172,6 +172,7 @@ export class DataSource {
       facilities: "/api/registry/facilities",
       equipment: "/api/equipment/equipment",
       tickets: "/api/equipment/tickets",
+      payers: "/api/claims/payers/stats",
     };
     const out = {};
     let anyLive = false;
@@ -187,6 +188,34 @@ export class DataSource {
     this.demo = !anyLive;
     return { ...out, demo: this.demo, loadedAt: Date.now() };
   }
+}
+
+/* Payer board transforms (ADR-0012): turn the orchestrator's tally into
+ * rows a payer relations desk can act on. */
+export function payerRows(stats) {
+  const payers = (stats && stats.payers) || [];
+  const totalPayable = payers.reduce((a, p) => a + (p.payable_ngn || 0), 0);
+  return payers.map((p) => {
+    const claims = p.claims || 0;
+    return {
+      payer: p.payer,
+      kind: p.kind || "unmapped",
+      claims,
+      approvalRate: claims ? Math.round(((p.approved || 0) / claims) * 100) : 0,
+      pendRate: claims ? Math.round(((p.pended || 0) / claims) * 100) : 0,
+      payable: p.payable_ngn || 0,
+      payableShare: totalPayable ? Math.round(((p.payable_ngn || 0) / totalPayable) * 100) : 0,
+    };
+  });
+}
+
+export function payerSummary(rows) {
+  return {
+    totalClaims: rows.reduce((a, r) => a + r.claims, 0),
+    totalPayable: rows.reduce((a, r) => a + r.payable, 0),
+    payers: rows.length,
+    unmapped: rows.filter((r) => r.kind === "unmapped").length,
+  };
 }
 
 /* ---------- demo set (offline-with-no-cache fallback) ---------- */
@@ -242,5 +271,12 @@ export function demoData() {
     { id: "TK-102", facility: "PHC-003", equipment: "solar inverter", status: "assigned", opened: new Date(now - 86400000).toISOString(), note: "Inverter trips under load" },
     { id: "TK-103", facility: "HOS-001", equipment: "autoclave", status: "open", opened: new Date(now - 3600000).toISOString(), note: "Pressure seal worn" },
   ];
-  return { facilities, events, overview, equipment, tickets };
+  const payers = {
+    payers: [
+      { payer: "NHIA", kind: "government", claims: 1284, approved: 1102, pended: 96, denied: 86, payable_ngn: 4281100 },
+      { payer: "HYGEIA", kind: "commercial", claims: 342, approved: 301, pended: 22, denied: 19, payable_ngn: 1213400 },
+      { payer: "RELIANCE", kind: "commercial", claims: 210, approved: 177, pended: 18, denied: 15, payable_ngn: 802300 },
+    ],
+  };
+  return { facilities, events, overview, equipment, tickets, payers };
 }

@@ -78,7 +78,7 @@ func TestHealthMatrix(t *testing.T) {
 		}
 	}))
 	defer up.Close()
-	g := newGateway([]Route{{"/api/x", "svc-x", up.URL, true}}, newRateLimiter(10, 20))
+	g := newGateway([]Route{{Prefix: "/api/x", Service: "svc-x", Upstream: up.URL, Strip: true}}, newRateLimiter(10, 20))
 	srv := httptest.NewServer(g)
 	defer srv.Close()
 	resp, err := http.Get(srv.URL + "/healthz")
@@ -96,7 +96,7 @@ func TestHealthMatrix(t *testing.T) {
 }
 
 func TestUpstreamFailure502(t *testing.T) {
-	g := newGateway([]Route{{"/api/dead", "dead", "http://127.0.0.1:1", true}},
+	g := newGateway([]Route{{Prefix: "/api/dead", Service: "dead", Upstream: "http://127.0.0.1:1", Strip: true}},
 		newRateLimiter(10, 20))
 	srv := httptest.NewServer(g)
 	defer srv.Close()
@@ -107,5 +107,41 @@ func TestUpstreamFailure502(t *testing.T) {
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusBadGateway {
 		t.Fatalf("want 502, got %s", resp.Status)
+	}
+}
+
+// TestPrefixRewrite pins the /api/fhir → /fhir rewrite (and the
+// /api/fhir/inbox intake): the upstream FHIR services serve /fhir/...,
+// so the gateway must rewrite, not merely strip or pass through.
+func TestPrefixRewrite(t *testing.T) {
+	var gotPath string
+	up := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPath = r.URL.Path
+		w.Write([]byte("{}"))
+	}))
+	defer up.Close()
+	g := newGateway([]Route{
+		{Prefix: "/api/fhir/inbox", Service: "notification-service", Upstream: up.URL, ToPrefix: "/fhir/inbox"},
+		{Prefix: "/api/fhir", Service: "shr-service", Upstream: up.URL, ToPrefix: "/fhir"},
+	}, newRateLimiter(100, 200))
+	srv := httptest.NewServer(g)
+	defer srv.Close()
+
+	resp, err := http.Post(srv.URL+"/api/fhir/inbox", "application/json", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp.Body.Close()
+	if gotPath != "/fhir/inbox" {
+		t.Fatalf("inbox rewrite wrong: %q", gotPath)
+	}
+
+	resp2, err := http.Get(srv.URL + "/api/fhir/Encounter/e-1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	resp2.Body.Close()
+	if gotPath != "/fhir/Encounter/e-1" {
+		t.Fatalf("fhir rewrite wrong: %q", gotPath)
 	}
 }

@@ -81,3 +81,31 @@ test("demoData is internally consistent", () => {
     assert.ok(d.facilities.some((f) => f.id === e.facility), `orphan event ${e.id}`);
   }
 });
+
+/* ---------- payer board transforms (ADR-0012) ---------- */
+
+test("payerRows: rates, shares, unmapped visibility", async () => {
+  const { payerRows } = await import("../js/data.js");
+  const rows = payerRows({
+    payers: [
+      { payer: "NHIA", kind: "government", claims: 100, approved: 90, pended: 5, denied: 5, payable_ngn: 3000 },
+      { payer: "HYGEIA", kind: "commercial", claims: 50, approved: 40, pended: 10, denied: 0, payable_ngn: 1000 },
+      { payer: "UNMAPPED", kind: "unmapped", claims: 10, approved: 0, pended: 0, denied: 10, payable_ngn: 0 },
+    ],
+  });
+  assert.equal(rows.length, 3);
+  assert.equal(rows[0].approvalRate, 90);
+  assert.equal(rows[0].payableShare, 75);
+  assert.equal(rows[1].pendRate, 20);
+  assert.equal(rows[2].kind, "unmapped");
+});
+
+test("payerRows: empty stats render as empty, never crash", async () => {
+  const { payerRows, payerSummary } = await import("../js/data.js");
+  assert.deepEqual(payerRows(null), []);
+  assert.deepEqual(payerRows({}), []);
+  const sum = payerSummary(payerRows({ payers: [{ payer: "NHIA", claims: 2, payable_ngn: 100 }] }));
+  assert.equal(sum.totalClaims, 2);
+  assert.equal(sum.totalPayable, 100);
+  assert.equal(sum.payers, 1);
+});

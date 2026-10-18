@@ -15,7 +15,7 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 |---|--------|----------------|
 | 1 | Identity & registries (patient / provider / facility / terminology) | [`services/registry-service`](services/registry-service) — KYC ladder (self → phone-OTP → NIN-format → NIMC-verified) that never blocks care, deterministic dedupe gates (NIN / phone+DOB / name+DOB), offline-resolvable patient IDs, `/kyc/signals` fraud view |
 | 2 | Core health record (FHIR R4 SHR, consent artefacts) | [`fhir/`](fhir) profiles + [`services/shr-service`](services/shr-service) (FHIR store, consent-enforced cross-facility reads) + [`services/consent-service`](services/consent-service) (HIE-CM pattern) |
-| 3 | Community health (CHW tasks, USSD fallback) | [`packages/chw-tasks`](packages/chw-tasks) (ANC/NPI schedules, danger-sign referrals) + [`services/ussd-gateway`](services/ussd-gateway) — feature-phone eligibility & enrolment |
+| 3 | Community health (CHW tasks, USSD fallback) | [`packages/chw-tasks`](packages/chw-tasks) (ANC/NPI schedules, danger-sign referrals) + [`services/ussd-gateway`](services/ussd-gateway) — feature-phone eligibility & enrolment **and a read channel**: "My clinic updates" serves the patient's notification feed over USSD (MSISDN + clinic code, no enumeration) |
 | 4 | Claims & insurance rails (eligibility, pre-auth, adjudication) | [`services/claims-orchestrator`](services/claims-orchestrator) + [`packages/adjudicator`](packages/adjudicator) — scheme-driven payer network (`payers.py`): NHIA schemes and commercial HMOs route by config, unknown schemes refused, cross-payer double-dipping structurally impossible |
 | 5 | Payments (wallets, instant payment, reconciliation) | [`services/wallet-service`](services/wallet-service) (micro-collections, payouts) + [`services/ledger`](services/ledger) + Mojaloop-pattern switch seam |
 | 6 | Procurement marketplace | [`packages/procurement`](packages/procurement) — pooled ordering + supplier scorecards from stock-out telemetry |
@@ -23,8 +23,9 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 | 8 | Telehealth + AI triage | [`services/telehealth-service`](services/telehealth-service) (nurse-first **asynchronous store-and-forward** consults — no workflow requires a live session, so no bandwidth floor below which care stops; referral loop; every consult closes as a FHIR Encounter, every prescription as a FHIR MedicationRequest in the SHR **and** a routed pharmacy dispense-request) + [`packages/triage`](packages/triage) — approval-gated writes only |
 | 8a | Pharmacy & dispensing | [`services/pharmacy-service`](services/pharmacy-service) — tracer-drug formulary with allergy classes, per-facility stock, atomic dispense = status flip + stock decrement + NHIA claim draft; the allergy gate is structural (blocked prescriptions are recorded, never dropped) |
 | 9 | **Infrastructure layer (the differentiator)** — power, water, cold chain, equipment | [`services/telemetry-collector`](services/telemetry-collector) + [`services/equipment-service`](services/equipment-service) (BMET ticket routing, donation screening) |
-| 11 | Patient engagement & notification rails | [`services/notification-service`](services/notification-service) — subscriptions, SMS provider seam (webhook, never a proprietary SDK), persisted-attempt delivery states, five-language rendering, no clinical detail over SMS |
-| 10 | Analytics & developer platform | [`packages/analytics`](packages/analytics) (pilot-gate metrics) + [`packages/dhis2-bridge`](packages/dhis2-bridge) + public FHIR APIs |
+| 11 | Patient engagement & notification rails | [`services/notification-service`](services/notification-service) — subscriptions, SMS provider seam (webhook, never a proprietary SDK), persisted-attempt delivery states, five-language rendering, no clinical detail over SMS, **event-driven FHIR intake** (`/fhir/inbox`: Medplum rest-hook Subscriptions fire notifications off the clinical record itself — CI-gated against a real Medplum server) |
+| 10 | Analytics & developer platform | [`packages/analytics`](packages/analytics) (pilot-gate metrics) + [`packages/dhis2-bridge`](packages/dhis2-bridge) + public FHIR APIs + the **payer dashboard** (`/payers/stats` → approval mix & payable share per payer — the number an agency negotiates with) |
+| 12 | Innovation layer ([ADR-0013](docs/architecture/adr-0013-hardening-and-innovation.md)) | [`packages/ips`](packages/ips) + [`tools/ipsqr`](tools/ipsqr) (IPS QR patient summary) · [`packages/surveillance`](packages/surveillance) (syndromic surveillance) · [`packages/edgeai`](packages/edgeai) (offline AI copilot, approval-gated) · [`tools/provcred`](tools/provcred) (provider verifiable credentials) · [`packages/frauddetect`](packages/frauddetect) (advisory fraud scoring) · [`packages/households`](packages/households) (CHW catchment maps) · [`packages/payrails`](packages/payrails) (PSP-agnostic rails) · [`packages/coldchain`](packages/coldchain) (predictive cold chain) |
 
 Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) → [`services/lga-hub`](services/lga-hub) (LGA store-and-forward: priority queues — critical referrals overtake bulk telemetry — JSONL spill fsynced before ack, power-cut-proof, idempotent) → [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent). See [ADR-0011](docs/architecture/adr-0011-national-scale.md).
 
@@ -102,12 +103,15 @@ apps/        Client apps — offline-first PWA (nurse/CHW EMR), patient app,
 services/    Go + Rust deployable services (the runtime plane)
 packages/    Python domain packages (rules, analytics, ML seams)
 db/          State-plane Postgres migrations (idempotent, applied at boot)
-shared/      Shared Go modules — authz (OIDC), servex (timeouts/metrics),
-             crdt (edge replication), eventbus, otelx (tracing)
+shared/      Shared Go modules — authz (OIDC, fail-closed), servex (timeouts/metrics),
+             crdt (edge replication), eventbus, otelx (tracing),
+             sealx (AES-256-GCM edge encryption), eventschema (sync event contracts)
 fhir/        FHIR R4 implementation guide — Nigerian profiles (Apache-2.0)
 openapi/     Claims-gateway contract (NHCX-analogue): eligibility, pre-auth, claims, status
 infra/       Dockerfiles (shared Go/Rust builds) · compose infra + platform planes · Kubernetes skeletons
-tools/       ota — signed, staged edge/OTA image channel
+tools/       ota — signed, staged edge/OTA image channel · conformance —
+             OpenHIE-pattern + Medplum gates · ipsqr / provcred · syncbench ·
+             a11y-contrast · dr-drill
 benchmark/   Million-Claim Challenge harness (truthful scoring, CI-checked invariants)
 docs/        product / technical / business specs, ADRs, runbooks
 demo/        end-to-end claims demo script
@@ -147,6 +151,16 @@ needs from day one:
 - **Identity** — stdlib-only OIDC (RS256/JWKS) on all state-plane
   services, with the Keycloak realm checked in as code; edge facilities
   keep running with the identity provider down ([ADR-0008](docs/architecture/adr-0008-production-security-baseline.md)).
+  `AUTH_REQUIRED=1` makes auth **fail closed**: a service with no issuer
+  configured refuses to boot ([ADR-0013](docs/architecture/adr-0013-hardening-and-innovation.md)).
+- **Encryption at rest at the edge** — the sync-agent outbox (`SX1:`)
+  and the PWA's IndexedDB (`SXW1:` via WebCrypto) seal PHI with
+  AES-256-GCM; the wire format is unchanged, tampered data fails closed,
+  and legacy plaintext rows still read (no migration).
+- **Gated claims, not asserted claims** — CI runs the OpenHIE-pattern
+  conformance harness (the consent gate must not leak), the Medplum
+  subscription gate against a real Medplum server, FHIR profile
+  validation, licence hygiene, and app-shell self-containment.
 - **Hardened runtime** — restricted Pod Security, seccomp, read-only
   root filesystems, dropped capabilities, and default-deny
   NetworkPolicies in `infra/k8s/`.

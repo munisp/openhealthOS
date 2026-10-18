@@ -16,6 +16,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"io"
 	"log"
 	"net/http"
@@ -27,6 +28,8 @@ import (
 
 	"github.com/munisp/openhealthOS/shared/authz"
 	"github.com/munisp/openhealthOS/shared/servex"
+
+	"github.com/munisp/openhealthOS/shared/eventschema"
 )
 
 type hub struct {
@@ -71,6 +74,13 @@ func readNDJSON(r *http.Request) ([]Event, error) {
 		}
 		if ev.ID == "" {
 			return nil, errMissingID
+		}
+		// Contract registry (ADR-0013): malformed known types are rejected
+		// at the hub too — the first tier that can stop bad data should.
+		// Unregistered types pass (rolling upgrades); the state plane
+		// counts them as warnings.
+		if _, verr := eventschema.Validate(ev.Type, ev.TS, ev.Payload); verr != nil {
+			return nil, fmt.Errorf("event %s: %w", ev.ID, verr)
 		}
 		events = append(events, ev)
 	}
@@ -239,8 +249,12 @@ func main() {
 		addr = v
 	}
 	var handler http.Handler = h.routes()
-	if v := authz.FromEnv(os.Getenv); v != nil {
-		handler = v.Middleware(handler)
+	authV, authErr := authz.RequireFromEnv(os.Getenv)
+	if authErr != nil {
+		log.Fatal(authErr)
+	}
+	if authV != nil {
+		handler = authV.Middleware(handler)
 	}
 	mode := "receive-only"
 	if h.upstream != "" {

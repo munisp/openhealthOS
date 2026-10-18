@@ -22,8 +22,9 @@ type EligibilityChecker interface {
 
 // Session holds one USSD dialog's position in the menu tree.
 type Session struct {
-	Step   string // "menu" | "eligibility-member" | "enrol-member"
+	Step   string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient"
 	Buffer string
+	Phone  string // msisdn from the telco — the patient's second factor
 }
 
 // Gateway drives USSD sessions.
@@ -31,24 +32,43 @@ type Gateway struct {
 	mu       sync.Mutex
 	sessions map[string]*Session
 	checker  EligibilityChecker
+	reader   FeedReader
 }
 
 func NewGateway(c EligibilityChecker) *Gateway {
-	return &Gateway{sessions: map[string]*Session{}, checker: c}
+	return &Gateway{sessions: map[string]*Session{}, checker: c, reader: EmptyFeedReader{}}
 }
 
-const menu = "CON OpenHealth\n1. Check my coverage\n2. My enrolment ID\n0. Exit"
+// NewGatewayWithFeed wires the patient read channel (ADR-0013).
+func NewGatewayWithFeed(c EligibilityChecker, r FeedReader) *Gateway {
+	g := NewGateway(c)
+	if r != nil {
+		g.reader = r
+	}
+	return g
+}
 
-// Handle processes one USSD step. text is the full cumulative input string
-// (e.g. "1*NG-0001") per telco convention; returns the reply with the
-// CON (continue) / END (terminate) prefix.
+const menu = "CON OpenHealth\n1. Check my coverage\n2. My enrolment ID\n3. My clinic updates\n0. Exit"
+
+// Handle processes one USSD step with no caller identity (tests, legacy
+// aggregators); HandleWithPhone is the production path.
 func (g *Gateway) Handle(sessionID, text string) string {
+	return g.HandleWithPhone(sessionID, "", text)
+}
+
+// HandleWithPhone processes one USSD step. text is the full cumulative
+// input string (e.g. "1*NG-0001") per telco convention; phone is the
+// telco-supplied msisdn. Returns CON (continue) / END (terminate) replies.
+func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 	g.mu.Lock()
 	defer g.mu.Unlock()
 	s, ok := g.sessions[sessionID]
 	if !ok {
 		s = &Session{Step: "menu"}
 		g.sessions[sessionID] = s
+	}
+	if phone != "" {
+		s.Phone = phone
 	}
 	if text == "" {
 		s.Step = "menu"
@@ -66,6 +86,9 @@ func (g *Gateway) Handle(sessionID, text string) string {
 		case "2":
 			s.Step = "enrol-member"
 			return "CON Enter the phone or ID you enrolled with:"
+		case "3":
+			s.Step = "feed-patient"
+			return "CON Enter your patient code (on your clinic card):"
 		case "0":
 			delete(g.sessions, sessionID)
 			return "END Thank you."
@@ -85,6 +108,19 @@ func (g *Gateway) Handle(sessionID, text string) string {
 	case "enrol-member":
 		delete(g.sessions, sessionID)
 		return "END Your enrolment is linked to " + last + ". Your care team can confirm at your next visit."
+	case "feed-patient":
+		phone := s.Phone
+		delete(g.sessions, sessionID)
+		if phone == "" {
+			return "END This network did not send your number. Use the patient app or ask at your PHC."
+		}
+		items, err := g.reader.Feed(last, phone)
+		if err != nil {
+			// Never reveal which factor failed (no enumeration, same as the
+			// web portal); a transient error reads identically to no feed.
+			return "END No clinic updates found for that code on this number. Check the code on your clinic card."
+		}
+		return ussdFeed(items)
 	}
 	delete(g.sessions, sessionID)
 	return "END Session ended."
@@ -115,7 +151,7 @@ func (s server) routes() *http.ServeMux {
 			return
 		}
 		w.Header().Set("Content-Type", "text/plain")
-		w.Write([]byte(s.g.Handle(req.SessionID, req.Text)))
+		w.Write([]byte(s.g.HandleWithPhone(req.SessionID, req.MSISDN, req.Text)))
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux

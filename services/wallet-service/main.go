@@ -20,6 +20,11 @@ import (
 type Ledger interface {
 	Open(id string, opening int) (string, error)
 	Post(debit, credit, tx string, amount int) (string, error)
+	// PostOnce posts through two-phase prepare/commit with a caller-chosen
+	// deterministic txid: the ledger refuses to prepare the same txid
+	// twice, so a retry after a crash can never double-post. duplicate is
+	// true when the txid was already fully committed before this call.
+	PostOnce(debit, credit, txid string, amount int) (result string, duplicate bool, err error)
 	Balance(id string) (int, error)
 }
 
@@ -54,6 +59,31 @@ func (l SubprocessLedger) Post(debit, credit, tx string, amount int) (string, er
 	return lines[len(lines)-1], nil
 }
 
+// PostOnce drives prepare+commit over the seam binary. The txid is the
+// idempotency anchor: a repeated prepare errors "already prepared" (the
+// crash window — commit completes it), and a commit with nothing prepared
+// means the tx fully posted before (true duplicate).
+func (l SubprocessLedger) PostOnce(debit, credit, txid string, amount int) (string, bool, error) {
+	prep := fmt.Sprintf(`{"op":"prepare","txid":%q,"debit":%q,"credit":%q,"amount":%d}`, txid, debit, credit, amount)
+	com := fmt.Sprintf(`{"op":"commit","txid":%q}`, txid)
+	lines, err := l.cmd(prep, com)
+	if err != nil {
+		return "", false, err
+	}
+	if len(lines) < 2 {
+		return "", false, fmt.Errorf("ledger: short reply: %v", lines)
+	}
+	prepLine, comLine := lines[len(lines)-2], lines[len(lines)-1]
+	switch {
+	case strings.HasPrefix(comLine, "OK:"):
+		return comLine, false, nil // posted now (fresh or crash-window completion)
+	case strings.Contains(comLine, "no prepared tx") && strings.Contains(prepLine, "already prepared"):
+		return "duplicate of " + txid, true, nil // fully committed before
+	default:
+		return "", false, fmt.Errorf("ledger: %s | %s", prepLine, comLine)
+	}
+}
+
 func (l SubprocessLedger) Balance(id string) (int, error) {
 	lines, err := l.cmd(fmt.Sprintf(`{"op":"balance","id":%q}`, id))
 	if err != nil {
@@ -78,8 +108,11 @@ const (
 // WalletService exposes collections and payouts over the ledger seam.
 type WalletService struct {
 	Ledger Ledger
-	mu     sync.Mutex
-	txSeq  int
+	// refs is the idempotency record store (ADR-0013); nil keeps the
+	// legacy non-idempotent path for tests and demos.
+	refs  IdemStore
+	mu    sync.Mutex
+	txSeq int
 }
 
 var ErrBadAmount = errors.New("amount must be positive minor units (kobo)")
@@ -175,14 +208,19 @@ func (s server) routes() *http.ServeMux {
 		var req struct {
 			MemberID   string `json:"member_id"`
 			AmountKobo int    `json:"amount_kobo"`
+			Ref        string `json:"ref"` // idempotency key (PSP receipt no.)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		res, err := s.w.CollectPremium(req.MemberID, req.AmountKobo)
+		res, dup, err := s.w.CollectPremiumRef(req.MemberID, req.AmountKobo, req.Ref)
 		if err != nil {
 			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		if dup {
+			writeJSON(w, 200, map[string]any{"ledger": res, "duplicate": true})
 			return
 		}
 		writeJSON(w, 201, map[string]string{"ledger": res})
@@ -195,18 +233,23 @@ func (s server) routes() *http.ServeMux {
 		var req struct {
 			FacilityID string `json:"facility_id"`
 			AmountKobo int    `json:"amount_kobo"`
-			Ref        string `json:"ref"` // e.g. claim id
+			Ref        string `json:"ref"` // e.g. claim id — REQUIRED (idempotency)
 		}
 		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 			http.Error(w, "bad request", http.StatusBadRequest)
 			return
 		}
-		res, err := s.w.Payout(req.FacilityID, req.AmountKobo, req.Ref)
-		if err != nil {
+		res, dup, err := s.w.PayoutRef(req.FacilityID, req.AmountKobo, req.Ref)
+		switch {
+		case errors.Is(err, ErrRefRequired):
 			http.Error(w, err.Error(), http.StatusBadRequest)
-			return
+		case err != nil:
+			http.Error(w, err.Error(), http.StatusBadRequest)
+		case dup:
+			writeJSON(w, 200, map[string]any{"ledger": res, "duplicate": true})
+		default:
+			writeJSON(w, 201, map[string]string{"ledger": res})
 		}
-		writeJSON(w, 201, map[string]string{"ledger": res})
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux

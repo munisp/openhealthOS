@@ -10,6 +10,7 @@
  */
 
 import { Replica } from "./crdt.js";
+import { cryptoAvailable, ensureDeviceKey, sealValue, openValue } from "./crypto.js";
 
 const DB_NAME = "openhealth";
 const DB_VERSION = 1;
@@ -83,9 +84,10 @@ function reqToPromise(req) {
 }
 
 export class LocalDB {
-  constructor(db, deviceId) {
+  constructor(db, deviceId, key = null) {
     this.db = db;
     this.deviceId = deviceId;
+    this.key = key; // AES-GCM device key; null = plaintext (memory fallback, legacy WebView)
   }
 
   static async init() {
@@ -99,7 +101,16 @@ export class LocalDB {
         await withTimeout(reqToPromise(
           db.transaction("meta", "readwrite").objectStore("meta").put({ k: "deviceId", v: deviceId })));
       }
-      return new LocalDB(db, deviceId);
+      const getMeta = async (k) =>
+        (await withTimeout(reqToPromise(db.transaction("meta", "readonly").objectStore("meta").get(k))))?.v;
+      const setMeta = (k, v) =>
+        withTimeout(reqToPromise(db.transaction("meta", "readwrite").objectStore("meta").put({ k, v })));
+      let key = null;
+      try {
+        key = await ensureDeviceKey(getMeta, setMeta);
+      } catch { /* key store hiccup — run plaintext rather than block care */ }
+      if (!key && !cryptoAvailable()) console.warn("openhealth: no WebCrypto — IndexedDB is plaintext");
+      return new LocalDB(db, deviceId, key);
     } catch {
       // IndexedDB hung or is unavailable (embedded WebView, private mode):
       // fall back to an in-memory store so care workflows still run.
@@ -111,21 +122,36 @@ export class LocalDB {
   async replica() {
     const r = new Replica(this.deviceId);
     const all = await reqToPromise(this.db.transaction("docs", "readonly").objectStore("docs").getAll());
-    for (const d of all) r.docs.set(d.id, d);
+    for (const d of all) r.docs.set(d.id, await this._openDoc(d));
     return r;
   }
 
+  /* Docs at rest: {id, type, body: <sealed payload>}. Envelope fields stay
+   * clear so filters and key lookups work; the clinical body is sealed. */
+  async _openDoc(row) {
+    if (row == null) return row;
+    if (row.body === undefined) return row; // legacy plaintext row
+    const opened = await openValue(this.key, row.body);
+    return { id: row.id, type: row.type, ...opened };
+  }
+
+  async _sealDoc(doc) {
+    const { id, type, ...body } = doc;
+    return { id, type, body: await sealValue(this.key, body) };
+  }
+
   async putDoc(doc) {
-    await reqToPromise(this.db.transaction("docs", "readwrite").objectStore("docs").put(doc));
+    await reqToPromise(this.db.transaction("docs", "readwrite").objectStore("docs").put(await this._sealDoc(doc)));
   }
 
   async docsByType(type) {
     const all = await reqToPromise(this.db.transaction("docs", "readonly").objectStore("docs").getAll());
-    return all.filter((d) => d.type === type);
+    const rows = all.filter((d) => d.type === type);
+    return Promise.all(rows.map((r) => this._openDoc(r)));
   }
 
   async getDoc(id) {
-    return reqToPromise(this.db.transaction("docs", "readonly").objectStore("docs").get(id));
+    return this._openDoc(await reqToPromise(this.db.transaction("docs", "readonly").objectStore("docs").get(id)));
   }
 
   async queueEvent(type, payload) {
@@ -133,14 +159,18 @@ export class LocalDB {
       id: `${this.deviceId}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
       type,
       ts: new Date().toISOString(),
-      payload,
+      body: await sealValue(this.key, payload),
     };
     await reqToPromise(this.db.transaction("outbox", "readwrite").objectStore("outbox").put(ev));
-    return ev;
+    return { id: ev.id, type, ts: ev.ts, payload };
   }
 
   async outbox() {
-    return reqToPromise(this.db.transaction("outbox", "readonly").objectStore("outbox").getAll());
+    const all = await reqToPromise(this.db.transaction("outbox", "readonly").objectStore("outbox").getAll());
+    return Promise.all(all.map(async (ev) =>
+      ev.body === undefined
+        ? ev // legacy plaintext event
+        : { id: ev.id, type: ev.type, ts: ev.ts, payload: await openValue(this.key, ev.body) }));
   }
 
   async clearOutbox(ids) {
@@ -159,7 +189,7 @@ export class LocalDB {
   /* Persist every doc of a replica (after local mutations or merges). */
   async saveReplica(replica) {
     const s = this.db.transaction("docs", "readwrite").objectStore("docs");
-    for (const d of replica.docs.values()) s.put(d);
+    for (const d of replica.docs.values()) s.put(await this._sealDoc(d));
     await new Promise((res, rej) => {
       s.transaction.oncomplete = res;
       s.transaction.onerror = () => rej(s.transaction.error);

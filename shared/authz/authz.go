@@ -252,3 +252,15 @@ func FromEnv(getenv func(string) string) *Verifier {
 	}
 	return NewVerifier(issuer, getenv("OIDC_AUDIENCE"))
 }
+
+// RequireFromEnv is FromEnv with a production posture: when AUTH_REQUIRED=1
+// the service MUST run behind OIDC — a missing issuer is a boot failure,
+// never a silent downgrade to open access (ADR-0013). State-plane
+// manifests set AUTH_REQUIRED=1; edge and dev stay permissive by default.
+func RequireFromEnv(getenv func(string) string) (*Verifier, error) {
+	v := FromEnv(getenv)
+	if v == nil && getenv("AUTH_REQUIRED") == "1" {
+		return nil, errors.New("AUTH_REQUIRED=1 but OIDC_ISSUER is unset — refusing to start unauthenticated")
+	}
+	return v, nil
+}

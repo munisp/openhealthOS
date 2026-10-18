@@ -30,6 +30,7 @@ import (
 // Route maps one public prefix to one upstream service.
 type Route struct {
 	Prefix   string // public path prefix, e.g. "/api/claims"
+	ToPrefix string // when set, rewrite Prefix → ToPrefix (e.g. /api/fhir → /fhir)
 	Service  string // logical name (health matrix, spans)
 	Upstream string // base URL, e.g. http://claims-orchestrator:8080
 	Strip    bool   // strip the public prefix before forwarding
@@ -45,19 +46,22 @@ func DefaultRoutes(env func(string) string) []Route {
 		return def
 	}
 	return []Route{
-		{"/api/claims", "claims-orchestrator", up("CLAIMS_URL", "http://claims-orchestrator:8080"), true},
-		{"/api/preauth", "claims-orchestrator", up("CLAIMS_URL", "http://claims-orchestrator:8080"), true},
-		{"/api/registry", "registry-service", up("REGISTRY_URL", "http://registry-service:8081"), true},
-		{"/api/consents", "consent-service", up("CONSENT_URL", "http://consent-service:8082"), true},
-		{"/api/ussd", "ussd-gateway", up("USSD_URL", "http://ussd-gateway:8083"), true},
-		{"/api/wallet", "wallet-service", up("WALLET_URL", "http://wallet-service:8084"), true},
-		{"/api/shr", "shr-service", up("SHR_URL", "http://shr-service:8085"), true},
-		{"/api/fhir", "shr-service", up("SHR_URL", "http://shr-service:8085"), false},
-		{"/api/equipment", "equipment-service", up("EQUIPMENT_URL", "http://equipment-service:8086"), true},
-		{"/api/telehealth", "telehealth-service", up("TELEHEALTH_URL", "http://telehealth-service:8087"), true},
-		{"/api/pharmacy", "pharmacy-service", up("PHARMACY_URL", "http://pharmacy-service:8088"), true},
-		{"/api/notify", "notification-service", up("NOTIFY_URL", "http://notification-service:8089"), true},
-		{"/api/sync", "sync-ingest", up("SYNC_URL", "http://sync-ingest:8443"), true},
+		{Prefix: "/api/claims", Service: "claims-orchestrator", Upstream: up("CLAIMS_URL", "http://claims-orchestrator:8080"), Strip: true},
+		{Prefix: "/api/preauth", Service: "claims-orchestrator", Upstream: up("CLAIMS_URL", "http://claims-orchestrator:8080"), Strip: true},
+		{Prefix: "/api/registry", Service: "registry-service", Upstream: up("REGISTRY_URL", "http://registry-service:8081"), Strip: true},
+		{Prefix: "/api/consents", Service: "consent-service", Upstream: up("CONSENT_URL", "http://consent-service:8082"), Strip: true},
+		{Prefix: "/api/ussd", Service: "ussd-gateway", Upstream: up("USSD_URL", "http://ussd-gateway:8083"), Strip: true},
+		{Prefix: "/api/wallet", Service: "wallet-service", Upstream: up("WALLET_URL", "http://wallet-service:8084"), Strip: true},
+		{Prefix: "/api/shr", Service: "shr-service", Upstream: up("SHR_URL", "http://shr-service:8085"), Strip: true},
+		// Medplum rest-hook intake: external FHIR servers POST resources
+		// here; must precede the /api/fhir catch-all (first match wins).
+		{Prefix: "/api/fhir/inbox", Service: "notification-service", Upstream: up("NOTIFY_URL", "http://notification-service:8089"), ToPrefix: "/fhir/inbox"},
+		{Prefix: "/api/fhir", Service: "shr-service", Upstream: up("SHR_URL", "http://shr-service:8085"), ToPrefix: "/fhir"},
+		{Prefix: "/api/equipment", Service: "equipment-service", Upstream: up("EQUIPMENT_URL", "http://equipment-service:8086"), Strip: true},
+		{Prefix: "/api/telehealth", Service: "telehealth-service", Upstream: up("TELEHEALTH_URL", "http://telehealth-service:8087"), Strip: true},
+		{Prefix: "/api/pharmacy", Service: "pharmacy-service", Upstream: up("PHARMACY_URL", "http://pharmacy-service:8088"), Strip: true},
+		{Prefix: "/api/notify", Service: "notification-service", Upstream: up("NOTIFY_URL", "http://notification-service:8089"), Strip: true},
+		{Prefix: "/api/sync", Service: "sync-ingest", Upstream: up("SYNC_URL", "http://sync-ingest:8443"), Strip: true},
 	}
 }
 
@@ -154,7 +158,10 @@ func (g *gateway) proxyFor(route Route) http.Handler {
 	original := proxy.Director
 	proxy.Director = func(req *http.Request) {
 		original(req)
-		if route.Strip {
+		switch {
+		case route.ToPrefix != "":
+			req.URL.Path = route.ToPrefix + strings.TrimPrefix(req.URL.Path, route.Prefix)
+		case route.Strip:
 			req.URL.Path = strings.TrimPrefix(req.URL.Path, route.Prefix)
 			if req.URL.Path == "" {
 				req.URL.Path = "/"
@@ -340,8 +347,12 @@ func main() {
 		log.Printf("serving client apps from %s (/app, /dash)", g.appsRoot)
 	}
 	var handler http.Handler = g
-	if v := authz.FromEnv(os.Getenv); v != nil {
-		handler = v.Middleware(handler)
+	authV, authErr := authz.RequireFromEnv(os.Getenv)
+	if authErr != nil {
+		log.Fatal(authErr)
+	}
+	if authV != nil {
+		handler = authV.Middleware(handler)
 		log.Print("oidc: enforcing bearer auth at the platform edge")
 	}
 	log.Printf("OpenHealth OS api-gateway on %s (%d routes)", addr, len(g.routes))

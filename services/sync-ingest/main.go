@@ -17,6 +17,8 @@ import (
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/munisp/openhealthOS/shared/eventschema"
 )
 
 // Event is one domain event line inside a sync batch.
@@ -84,9 +86,10 @@ func (m *MemoryStore) Events() []Event {
 
 // IngestResult is the ack returned to the sync agent.
 type IngestResult struct {
-	Received   int `json:"received"`
-	Applied    int `json:"applied"`
-	Duplicates int `json:"duplicates"`
+	Received   int      `json:"received"`
+	Applied    int      `json:"applied"`
+	Duplicates int      `json:"duplicates"`
+	Warnings   []string `json:"warnings,omitempty"`
 }
 
 // IngestBatch decodes one gzip batch of JSON-line events and applies each
@@ -123,6 +126,15 @@ func ingestLines(r io.Reader, store Store) (IngestResult, error) {
 		}
 		if ev.ID == "" || ev.Facility == "" || ev.Type == "" {
 			return res, fmt.Errorf("line %d: event missing id/facility/type", line)
+		}
+		// Contract registry (ADR-0013): malformed known types are rejected
+		// here, at the first state-plane tier — not 800 km downstream.
+		// Unregistered types pass with a warning counted in stats (rolling
+		// upgrades: edge may be newer than the plane).
+		if warn, verr := eventschema.Validate(ev.Type, ev.TS, ev.Payload); verr != nil {
+			return res, fmt.Errorf("line %d: %v", line, verr)
+		} else if warn != "" {
+			res.Warnings = append(res.Warnings, fmt.Sprintf("line %d: %s", line, warn))
 		}
 		res.Received++
 		if store.Apply(ev) {

@@ -182,6 +182,24 @@ mod tests {
     }
 
     #[test]
+    fn prepare_commit_is_idempotent_per_txid() {
+        // The wallet's exactly-once anchor (ADR-0013): the same txid can
+        // never move money twice, whether retried after a crash between
+        // prepare and commit or after full commit.
+        let mut l = Ledger::new();
+        l.open("POOL", 1_000_000);
+        l.open("WALLET-1", 0);
+        assert!(l.prepare("PAYOUT-CLM-1", "POOL", "WALLET-1", 100).starts_with("OK"));
+        // crash-window replay: same txid prepares nowhere
+        assert!(l.prepare("PAYOUT-CLM-1", "POOL", "WALLET-1", 100).contains("already prepared"));
+        assert!(l.commit("PAYOUT-CLM-1").starts_with("OK"));
+        // post-commit replay: nothing prepared, nothing double-posts
+        assert!(l.commit("PAYOUT-CLM-1").contains("no prepared tx"));
+        assert_eq!(l.accounts["WALLET-1"], 100);
+        assert_eq!(l.accounts["POOL"], 999_900);
+    }
+
+    #[test]
     fn conservation_of_minor_units() {
         // Total supply never changes: the zero-drift invariant (ADR-0003).
         let mut l = Ledger::new();

@@ -8,6 +8,8 @@ import (
 	"os"
 	"path/filepath"
 	"time"
+
+	"github.com/munisp/openhealthOS/shared/sealx"
 )
 
 // Sender uploads one packed batch. Returns nil on acknowledged delivery.
@@ -41,6 +43,11 @@ func (s HTTPSender) Send(payload []byte) error {
 // fails. Acknowledged events are removed from the outbox; anything unacked
 // stays for the next pass. At-least-once delivery, no silent loss.
 func FlushOnce(outbox string, sender Sender) (int, error) {
+	return FlushOnceS(outbox, sender, nil)
+}
+
+// FlushOnceS is FlushOnce with a sealer for at-rest-encrypted outboxes.
+func FlushOnceS(outbox string, sender Sender, sealer *sealx.Sealer) (int, error) {
 	sent := 0
 	for {
 		events, err := ScanOutbox(outbox)
@@ -50,7 +57,7 @@ func FlushOnce(outbox string, sender Sender) (int, error) {
 		if len(events) == 0 {
 			return sent, nil
 		}
-		payload, included, err := PackBatch(events, MaxBatchBytes)
+		payload, included, err := PackBatchS(events, MaxBatchBytes, sealer)
 		if err != nil {
 			return sent, err
 		}
@@ -85,9 +92,25 @@ func main() {
 		poster = HTTPReplicaPoster{URL: merge}
 		log.Printf("sync-agent: replica=%s merge=%s", replica, merge)
 	}
+	// At-rest encryption (ADR-0013): SEALX_KEY/SEALX_KEY_FILE seals the
+	// outbox on disk. Unset = plaintext dev mode, logged loudly.
+	sealer, serr := sealx.FromEnv(os.Getenv)
+	if serr != nil {
+		log.Fatalf("sealx: %v", serr)
+	}
+	if sealer == nil {
+		log.Print("sealx: no key provisioned — outbox is PLAINTEXT (set SEALX_KEY for production)")
+	} else {
+		log.Print("sealx: outbox encrypted at rest")
+	}
 	log.Printf("sync-agent: outbox=%s ingest=%s interval=%s cap=%d bytes", outbox, ingest, interval, MaxBatchBytes)
 	for {
-		n, err := FlushOnce(outbox, sender)
+		if n, err := SealOutbox(outbox, sealer); err != nil {
+			log.Printf("seal pass: sealed=%d err=%v", n, err)
+		} else if n > 0 {
+			log.Printf("seal pass: sealed=%d event files", n)
+		}
+		n, err := FlushOnceS(outbox, sender, sealer)
 		if err != nil {
 			log.Printf("sync pass: sent=%d err=%v (offline or ingest down — outbox retained)", n, err)
 		} else if n > 0 {

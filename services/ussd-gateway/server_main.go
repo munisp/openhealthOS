@@ -26,7 +26,14 @@ func main() {
 	if v := os.Getenv("LISTEN"); v != "" {
 		addr = v
 	}
-	s := server{g: NewGateway(staticChecker{})}
+	// Patient read channel: NOTIFY_URL binds the notification service;
+	// unset = empty-feed stub (enrolment/eligibility still work).
+	var reader FeedReader = EmptyFeedReader{}
+	if u := os.Getenv("NOTIFY_URL"); u != "" {
+		reader = HTTPFeedReader{BaseURL: u}
+		log.Print("ussd: patient updates via NOTIFY_URL")
+	}
+	s := server{g: NewGatewayWithFeed(staticChecker{}, reader)}
 	log.Printf("OpenHealth OS ussd-gateway on %s (fixture checker — bind the eligibility seam in production)", addr)
 	log.Fatal(servex.ListenAndServe(addr, s.routes(), servex.Options{}))
 }
