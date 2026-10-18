@@ -61,20 +61,28 @@ does, what was missing, and where it landed.
 | Staff rota / shift scheduling | 🗺️ | scheduling engine covers appointments; staff rota reuses the same slots+resources model — candidate for a small service when a state asks |
 | HR/payroll | 🗺️ | deliberately composed, not built: ERPNext HR module is the designated peer (ADR-0005) |
 
-### Remaining honest gaps (roadmap)
-- **Blood bank inventory** — unit-level tracking with cold-chain ties;
-  packages/coldchain covers temperature; blood-specific typing/expiry
-  ledger is a roadmap package.
-- **Equipment management (CMMS)** — oxygen plants, generators, cold-chain
-  fridges as maintained assets; ERPNext Assets composes here.
-- **Voice/IVR channel** — dispatch is WhatsApp/SMS/USSD/app; voice menus
-  need a telecom partner integration (adapter seam, not a build).
-- **Disaster/mass-casualty mode** — dispatch triage scales to one
-  caller; an MCI mode (multi-casualty tagging, hospital bed surge view
-  combining ipd-service + dispatch) is the next dispatch iteration.
-- **DHIS2 live sync** — the exporter produces standards-correct
-  payloads; the transport (direct API vs monthly spool) is per-state
-  deployment policy, not code.
+### Closed in the ADR-0022 wave
+- 🆕 **Blood bank** — packages/bloodbank: unit-level inventory, ABO/Rh
+  compatibility enforced at reservation AND bedside, FEFO, expiry sweeps.
+- 🆕 **CMMS** — packages/cmms: assets, preventive work orders, critical
+  downtime auto-repair, availability % per facility.
+- 🆕 **Staff rota** — packages/rota: coverage gaps visible, no
+  double-booking, weekly caps, fair deterministic autofill.
+- 🆕 **Voice/IVR** — dispatch /webhooks/voice seam: DTMF 1 = SOS, IVR
+  playback contract, repeat-call reassurance.
+- 🆕 **Mass-casualty mode** — dispatch mci.go: START-tagged casualty
+  lists, scene-shape counts, bed-surge view.
+- 🆕 **iOS shell** — apps/ios-shell (Swift WKWebView); Android already
+  shipped. Both are boring vessels for the same PWA.
+- 🆕 **Family grouping** — packages/households/families.py: kinship
+  layer, guardian-routed reminders, family-grouped CHW worklists.
+
+### Still roadmap (honest)
+- **DHIS2 live transport** — the exporter is code; direct-API vs
+  monthly-spool is per-state deployment policy.
+- **Full serology** (antibody screens, gel crossmatch) — lab-system
+  territory; adapter seam exists.
+- **Multi-week rota templates** — next increment when a state asks.
 
 ## Doctrine check
 

@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleDisplayName</key>
+	<string>OpenHealth OS</string>
+	<key>CFBundleIdentifier</key>
+	<string>org.openhealthos.shell</string>
+	<key>CFBundleShortVersionString</key>
+	<string>1.0</string>
+	<key>UILaunchScreen_Generation</key>
+	<true/>
+	<key>UISupportedInterfaceOrientations</key>
+	<array>
+		<string>UIInterfaceOrientationPortrait</string>
+	</array>
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>Used only while an ambulance unit is on duty, so the patient and facility can watch it approach. Never tracked otherwise.</string>
+	<key>NSAppTransportSecurity</key>
+	<dict>
+		<key>NSAllowsArbitraryLoadsInWebContent</key>
+		<false/>
+	</dict>
+</dict>
+</plist>

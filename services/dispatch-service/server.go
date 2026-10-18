@@ -111,6 +111,7 @@ type server struct {
 	store CaseStore
 	ix    Integrations
 	fleet *FleetStore
+	mci   *MCIStore
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -140,6 +141,7 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("POST /incidents/{id}/assign", s.assign)
 	mux.HandleFunc("POST /incidents/{id}/transition", s.transition)
 	s.fleetRoutes(mux)
+	s.mciRoutes(mux)
 	mux.HandleFunc("GET /contacts", s.listContacts)
 	mux.HandleFunc("GET /contacts/{phone}", s.getContact)
 	mux.HandleFunc("POST /contacts/{phone}/consent", s.setConsent)

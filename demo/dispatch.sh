@@ -245,5 +245,51 @@ assert unit["status"] == "available" and not unit.get("incident_id"), unit
 print(f"   {unit['callsign']} back to available after closure")
 PY
 
+echo "== 13. MCI mode: a bus crash is a casualty list, not one caller =="
+python3 - "$DIS" <<'PY'
+import json, sys, urllib.request
+DIS = sys.argv[1]
+def post(path, payload):
+    req = urllib.request.Request(DIS+path, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type":"application/json"})
+    return json.load(urllib.request.urlopen(req))
+m = post("/mci", {"name":"Expressway bus crash","lat":6.5244,"lng":3.3792})
+for c in [{"tag":"red","description":"adult, flail chest"},
+          {"tag":"red","age_group":"child","description":"child, head injury"},
+          {"tag":"yellow","description":"femur fracture"},
+          {"tag":"green","description":"walking wounded"}]:
+    post("/mci/"+m["id"]+"/casualties", c)
+view = json.load(urllib.request.urlopen(DIS+"/mci/"+m["id"]))
+c = view["counts"]
+assert (c["red"], c["yellow"], c["green"], c["total"], c["at_scene"]) == (2,1,1,4,4), c
+assert c["red_at_scene"] == 2, c
+cas = view["mci"]["casualties"][0]
+post(f"/mci/{m['id']}/casualties/{cas['id']}", {"status":"transported","facility_id":"HOSP-EMG"})
+view = json.load(urllib.request.urlopen(DIS+"/mci/"+m["id"]))
+assert view["counts"]["at_scene"] == 3, view
+surge = json.load(urllib.request.urlopen(DIS+"/mci/"+m["id"]+"/surge"))
+assert surge["facilities"] and surge["red_at_scene"] == 1, surge
+assert surge["facilities"][0]["id"] == "PHC-NEAR", surge  # nearest first, beds visible
+print(f"   {m['id']}: {view['counts']} — surge view lists {len(surge['facilities'])} facilities, nearest first")
+PY
+
+echo "== 14. voice/IVR: one key is all a caller needs =="
+python3 - "$DIS" <<'PY'
+import json, sys, urllib.request
+DIS = sys.argv[1]
+def post(path, payload):
+    req = urllib.request.Request(DIS+path, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type":"application/json"})
+    return json.load(urllib.request.urlopen(req))
+greet = post("/webhooks/voice", {"from":"+2348030007777","call_id":"c1"})
+assert greet["expect_dtmf"] and "Press 1" in greet["play"], greet
+sos = post("/webhooks/voice", {"from":"+2348030007777","dtmf":"1","call_id":"c1",
+                               "lat":6.52,"lng":3.38})
+assert sos["incident_id"].startswith("INC-"), sos
+again = post("/webhooks/voice", {"from":"+2348030007777","dtmf":"1","call_id":"c2"})
+assert "already have" in again["play"], again
+print(f"   DTMF 1 -> {sos['incident_id']} on the voice channel; repeat call reassures, no clone")
+PY
+
 echo
-echo "DISPATCH + CASE MANAGEMENT DEMO OK — one number, one caller history, owned follow-through, live map."
+echo "DISPATCH + CASE MANAGEMENT DEMO OK — one number, one caller history, owned follow-through, live map, MCI, voice."
