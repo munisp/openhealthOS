@@ -35,28 +35,35 @@ func fhirToEvent(resourceType string, res map[string]any) (DomainEvent, bool) {
 	payload := map[string]any{}
 	switch resourceType {
 	case "Observation":
-		// laboratory category only — a vital-sign Observation must not
-		// spam the patient
-		isLab := false
+		// Category decides the rail's answer:
+		//   laboratory  → "your result is ready" (lab_result)
+		//   vital-signs → silent inside the danger band, urgent come-in
+		//                 message outside it (RPM, ADR-0017)
+		category := ""
 		if cats, ok := res["category"].([]any); ok {
 			for _, c := range cats {
 				if cm, ok := c.(map[string]any); ok {
 					for _, coding := range asMapList(cm["coding"]) {
 						if str(coding, "code") == "laboratory" {
-							isLab = true
+							category = "laboratory"
+						} else if str(coding, "code") == "vital-signs" {
+							category = "vital-signs"
 						}
 					}
 				}
 			}
 		}
-		if !isLab {
-			return DomainEvent{}, false
+		switch category {
+		case "laboratory":
+			payload["patient_id"] = patientRefID(refOf(res, "subject"))
+			if code, ok := res["code"].(map[string]any); ok {
+				payload["test_name"] = str(code, "text")
+			}
+			return DomainEvent{Type: "lab_result", Payload: payload}, payload["patient_id"] != ""
+		case "vital-signs":
+			return vitalsToEvent(res, payload)
 		}
-		payload["patient_id"] = patientRefID(refOf(res, "subject"))
-		if code, ok := res["code"].(map[string]any); ok {
-			payload["test_name"] = str(code, "text")
-		}
-		return DomainEvent{Type: "lab_result", Payload: payload}, payload["patient_id"] != ""
+		return DomainEvent{}, false
 	case "MedicationRequest":
 		payload["patient_id"] = patientRefID(refOf(res, "subject"))
 		if med, ok := res["medicationCodeableConcept"].(map[string]any); ok {
@@ -79,6 +86,30 @@ func fhirToEvent(resourceType string, res map[string]any) (DomainEvent, bool) {
 		return DomainEvent{Type: "appointment", Payload: payload}, payload["patient_id"] != ""
 	}
 	return DomainEvent{}, false
+}
+
+// vitalsToEvent applies the RPM danger bands: a breach becomes an
+// urgent vitals_danger event carrying only a patient-safe label — the
+// raw number never goes over SMS (the channel is not private).
+func vitalsToEvent(res map[string]any, payload map[string]any) (DomainEvent, bool) {
+	code := ""
+	if c, ok := res["code"].(map[string]any); ok {
+		for _, coding := range asMapList(c["coding"]) {
+			if s, _ := coding["code"].(string); s != "" {
+				code = s
+				break
+			}
+		}
+	}
+	vq, _ := res["valueQuantity"].(map[string]any)
+	value, _ := vq["value"].(float64)
+	rule, breach := checkVital(code, value)
+	if !breach {
+		return DomainEvent{}, false // inside the band, or unconfigured code
+	}
+	payload["patient_id"] = patientRefID(refOf(res, "subject"))
+	payload["vital_label"] = rule.Label
+	return DomainEvent{Type: "vitals_danger", Payload: payload}, payload["patient_id"] != ""
 }
 
 func asMapList(v any) []map[string]any {

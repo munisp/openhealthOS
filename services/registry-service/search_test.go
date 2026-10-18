@@ -149,3 +149,33 @@ func TestPatientSearchHTTPEndpoint(t *testing.T) {
 		t.Fatalf("subtree get: %d", rec.Code)
 	}
 }
+
+func TestSearchProviders(t *testing.T) {
+	m := NewMemoryStore()
+	m.PutProvider(Provider{ID: "PRV-1", Name: "Ngozi Eze", Cadre: "midwife", License: "NMC-1001", Facility: "NG-KD-0014", Verified: true})
+	m.PutProvider(Provider{ID: "PRV-2", Name: "Ibrahim Danladi", Cadre: "physician", License: "MDCN-2002", Facility: "NG-KD-0001"})
+	m.PutProvider(Provider{ID: "PRV-3", Name: "Amina Sule", Cadre: "CHEW", License: "CHEW-3003", Facility: "NG-KD-0014"})
+
+	// Cadre search finds the midwife.
+	got := m.SearchProviders("midwife", 10)
+	if len(got) != 1 || got[0].ID != "PRV-1" {
+		t.Fatalf("midwife: %+v", got)
+	}
+	// Type-ahead prefix on name.
+	got = m.SearchProviders("ibra", 10)
+	if len(got) != 1 || got[0].ID != "PRV-2" {
+		t.Fatalf("prefix: %+v", got)
+	}
+	// AND semantics: name + cadre narrows to one.
+	got = m.SearchProviders("amina chew", 10)
+	if len(got) != 1 || got[0].ID != "PRV-3" {
+		t.Fatalf("AND: %+v", got)
+	}
+	// Empty query → nil; nonsense → nil.
+	if got := m.SearchProviders("   ", 10); got != nil {
+		t.Fatalf("empty query must be nil: %+v", got)
+	}
+	if got := m.SearchProviders("zzz-no-such", 10); len(got) != 0 {
+		t.Fatalf("no hits expected: %+v", got)
+	}
+}

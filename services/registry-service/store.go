@@ -59,6 +59,9 @@ type Store interface {
 	PutProvider(p Provider) error
 	GetProvider(id string) (Provider, error)
 	ListProviders() []Provider
+	// SearchProviders (ADR-0017): AND-prefix full-text over
+	// name/cadre/licence/facility/id, ranked. Empty query → nil.
+	SearchProviders(q string, limit int) []Provider
 	// SearchFacilities (ADR-0015): AND-prefix full-text over
 	// name/state/lga/id, ranked. Empty query → nil.
 	SearchFacilities(q string, limit int) []Facility

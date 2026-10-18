@@ -1,0 +1,23 @@
+{
+  "resourceType": "Questionnaire",
+  "id": "anc-screening",
+  "status": "active",
+  "title": "Pregnancy health check",
+  "description": "ANC danger-sign screening (WHO/Nigeria primary-care): answers become a QuestionnaireResponse in the shared record. Positive danger signs route the patient to come in today.",
+  "subjectType": ["Patient"],
+  "item": [
+    { "linkId": "weeks", "text": "How many weeks pregnant are you?", "type": "integer", "required": false },
+    { "linkId": "bleeding", "text": "Any vaginal bleeding now?", "type": "boolean", "required": true },
+    { "linkId": "headache", "text": "Severe headache or blurred vision?", "type": "boolean", "required": true },
+    { "linkId": "swelling", "text": "Swelling of face or hands?", "type": "boolean", "required": true },
+    { "linkId": "fever", "text": "Fever or chills?", "type": "boolean", "required": true },
+    { "linkId": "movements", "text": "Is the baby moving less than usual?", "type": "boolean", "required": false },
+    { "linkId": "notes", "text": "Anything else you want the clinic to know?", "type": "text", "required": false }
+  ],
+  "extension": [
+    {
+      "url": "http://openhealthos.org/fhir/StructureDefinition/danger-items",
+      "valueString": "bleeding,headache,swelling,fever,movements"
+    }
+  ]
+}

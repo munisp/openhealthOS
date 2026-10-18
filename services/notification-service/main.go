@@ -313,6 +313,19 @@ func renderMessage(ev DomainEvent) (kind, text string, ok bool) {
 		}
 		return "referral", fmt.Sprintf("OpenHealth: your referral to %s has been %s. Show this message at reception.",
 			to, status), true
+	case "admission":
+		return "general", fmt.Sprintf("OpenHealth: you have been admitted at %s. Your family can ask for your ward at reception.",
+			facility), true
+	case "discharge":
+		return "general", fmt.Sprintf("OpenHealth: you have been discharged from %s. Your discharge summary is in your record — follow the care instructions.",
+			facility), true
+	case "vitals_danger":
+		vital := str("vital_label")
+		if vital == "" {
+			vital = "vital sign"
+		}
+		return "referral", fmt.Sprintf("OpenHealth: your %s reading needs attention. Please go to %s today — do not wait for your appointment.",
+			vital, facility), true
 	case "immunization_due":
 		name := str("patient_name")
 		if name == "" {

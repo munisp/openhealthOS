@@ -18,6 +18,7 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("/facilities", s.facilities)
 	mux.HandleFunc("/facilities/near", s.facilitiesNear) // exact beats subtree
 	mux.HandleFunc("/facilities/search", s.facilitiesSearch)
+	mux.HandleFunc("/providers/search", s.providersSearch) // exact beats subtree
 	mux.HandleFunc("/facilities/", s.facility)
 	mux.HandleFunc("/providers", s.providers)
 	mux.HandleFunc("/providers/", s.provider)
@@ -172,4 +173,15 @@ func (s server) fhirPractitioner(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	writeJSON(w, 200, FHIRPractitioner(p))
+}
+
+// providersSearch (ADR-0017): GET /providers/search?q=&limit=
+func (s server) providersSearch(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	q := r.URL.Query().Get("q")
+	limit := 20
+	writeJSON(w, 200, map[string]any{"query": q, "results": s.store.SearchProviders(q, limit)})
 }

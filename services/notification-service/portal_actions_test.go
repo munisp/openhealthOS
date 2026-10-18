@@ -91,9 +91,9 @@ func TestPortalCoverageProxy(t *testing.T) {
 
 func TestPortalAppointmentsBookAndCancel(t *testing.T) {
 	var calls []capturedCall
-	srv := upstream(t, &calls, `{"id":"APT-0001","status":"booked"}`)
+	srv := upstream(t, &calls, `{"id":"APT-0001","patient_id":"P-1","status":"booked"}`)
 	t.Setenv("SCHEDULING_URL", srv.URL)
-	_, mux := portalActionsRig(t)
+	svc, mux := portalActionsRig(t)
 
 	rr := doReq(t, mux, "POST", "/portal/appointments",
 		`{"patient_id":"P-1","phone":"08031234567","slot_id":"SCH-1:2026-10-19:480"}`)
@@ -108,21 +108,47 @@ func TestPortalAppointmentsBookAndCancel(t *testing.T) {
 		!strings.Contains(calls[0].Body, `"slot_id":"SCH-1:2026-10-19:480"`) {
 		t.Fatalf("book body: %s", calls[0].Body)
 	}
-	// Cancel routes to the appointment-scoped path.
+	// Cancel first verifies ownership (GET), then routes to the
+	// appointment-scoped path.
 	rr = doReq(t, mux, "POST", "/portal/appointments/cancel",
 		`{"patient_id":"P-1","phone":"08031234567","appointment_id":"APT-0001"}`)
-	if rr.Code != 200 || calls[1].Path != "/appointments/APT-0001/cancel" {
-		t.Fatalf("cancel: %d %+v", rr.Code, calls[1])
+	if rr.Code != 200 || calls[1].Path != "/appointments/APT-0001" ||
+		calls[1].Method != "GET" || calls[2].Path != "/appointments/APT-0001/cancel" {
+		t.Fatalf("cancel: %d %+v", rr.Code, calls)
+	}
+	// Cross-patient cancel: P-2 is a legitimate portal user (gate passes)
+	// but the appointment belongs to P-1 — refused after the ownership
+	// GET, and the cancel itself never fires.
+	svc.store.PutSubscription(Subscription{
+		PatientID: "P-2", Phone: NormalizePhone("08031234567"), Language: "en", Facility: "F-1",
+	})
+	nCalls := len(calls)
+	rr = doReq(t, mux, "POST", "/portal/appointments/cancel",
+		`{"patient_id":"P-2","phone":"08031234567","appointment_id":"APT-0001"}`)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("cross-patient cancel must 404: %d %s", rr.Code, rr.Body)
+	}
+	ownershipChecked, cancelFired := false, false
+	for _, c := range calls[nCalls:] {
+		if c.Method == "GET" && c.Path == "/appointments/APT-0001" {
+			ownershipChecked = true
+		}
+		if strings.HasSuffix(c.Path, "/cancel") {
+			cancelFired = true
+		}
+	}
+	if !ownershipChecked || cancelFired {
+		t.Fatalf("ownership gate: checked=%v cancelFired=%v calls=%+v", ownershipChecked, cancelFired, calls[nCalls:])
 	}
 	// List mine.
 	rr = doReq(t, mux, "GET", "/portal/appointments?patient_id=P-1&phone=08031234567", "")
-	if rr.Code != 200 || calls[2].Path != "/appointments?patient_id=P-1" {
-		t.Fatalf("list: %d %+v", rr.Code, calls[2])
+	if rr.Code != 200 || calls[len(calls)-1].Path != "/appointments?patient_id=P-1" {
+		t.Fatalf("list: %d %+v", rr.Code, calls)
 	}
 	// Slots browse passes the facility/service/date triple through.
 	rr = doReq(t, mux, "GET", "/portal/slots?patient_id=P-1&phone=08031234567&facility_id=F-1&service=anc&date=2026-10-19", "")
-	if rr.Code != 200 || !strings.Contains(calls[3].Path, "/slots?facility_id=F-1&service=anc&date=2026-10-19") {
-		t.Fatalf("slots: %d %+v", rr.Code, calls[3])
+	if rr.Code != 200 || !strings.Contains(calls[len(calls)-1].Path, "/slots?facility_id=F-1&service=anc&date=2026-10-19") {
+		t.Fatalf("slots: %d %+v", rr.Code, calls)
 	}
 }
 
@@ -198,5 +224,35 @@ func TestPortalUpstreamDownIs502(t *testing.T) {
 	json.NewDecoder(rr.Body).Decode(&body)
 	if body["error"] == nil {
 		t.Fatalf("502 carries a plain error: %s", rr.Body)
+	}
+}
+
+func TestPortalQuestionnaireStampsIdentity(t *testing.T) {
+	var calls []capturedCall
+	srv := upstream(t, &calls, `{"resourceType":"QuestionnaireResponse"}`)
+	t.Setenv("SHR_URL", srv.URL)
+	_, mux := portalActionsRig(t)
+
+	rr := doReq(t, mux, "POST", "/portal/questionnaire", `{
+		"patient_id":"P-1","phone":"08031234567",
+		"response":{"resourceType":"QuestionnaireResponse","questionnaire":"Questionnaire/anc-screening",
+			"status":"completed","item":[{"linkId":"bleeding","answer":[{"valueBoolean":true}]}]}}`)
+	if rr.Code != 200 {
+		t.Fatalf("submit: %d %s", rr.Code, rr.Body)
+	}
+	if len(calls) != 1 || calls[0].Method != "PUT" {
+		t.Fatalf("upstream: %+v", calls)
+	}
+	if !strings.HasPrefix(calls[0].Path, "/fhir/QuestionnaireResponse/qr-P-1-") {
+		t.Fatalf("path: %s", calls[0].Path)
+	}
+	if !strings.Contains(calls[0].Body, `"Patient/P-1"`) {
+		t.Fatalf("subject stamped: %s", calls[0].Body)
+	}
+	// A non-QuestionnaireResponse is refused before touching the SHR.
+	rr = doReq(t, mux, "POST", "/portal/questionnaire",
+		`{"patient_id":"P-1","phone":"08031234567","response":{"resourceType":"Observation"}}`)
+	if rr.Code != http.StatusBadRequest {
+		t.Fatalf("wrong type: %d", rr.Code)
 	}
 }

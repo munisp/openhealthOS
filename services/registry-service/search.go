@@ -199,3 +199,67 @@ func (p *PostgresPatientStore) SearchPatients(q string, limit int) []Patient {
 	}
 	return out
 }
+
+// SearchProviders (memory) — name/cadre/licence/facility/id, same
+// AND-prefix contract as patients and facilities.
+func (m *MemoryStore) SearchProviders(q string, limit int) []Provider {
+	terms := searchTerms(q)
+	if len(terms) == 0 {
+		return nil
+	}
+	type scored struct {
+		p     Provider
+		score int
+	}
+	var hits []scored
+	for _, pr := range m.ListProviders() {
+		s := matchScore(terms, pr.Name, pr.Cadre, pr.License, pr.Facility, pr.ID)
+		if s > 0 {
+			hits = append(hits, scored{pr, s})
+		}
+	}
+	sort.Slice(hits, func(i, j int) bool {
+		if hits[i].score != hits[j].score {
+			return hits[i].score > hits[j].score
+		}
+		return hits[i].p.ID < hits[j].p.ID
+	})
+	out := make([]Provider, 0, len(hits))
+	for _, h := range hits {
+		out = append(out, h.p)
+	}
+	if limit > 0 && len(out) > limit {
+		out = out[:limit]
+	}
+	return out
+}
+
+// SearchProviders (postgres) — GIN-indexed tsvector (0014_provider_fts).
+func (p *PostgresStore) SearchProviders(q string, limit int) []Provider {
+	tq := tsQuery(q)
+	if tq == "" {
+		return nil
+	}
+	if limit <= 0 {
+		limit = 50
+	}
+	ctx, cancel := pgCtx()
+	defer cancel()
+	rows, err := p.pool.Query(ctx, `
+		SELECT id, name, license, cadre, facility, verified FROM providers
+		WHERE fts @@ to_tsquery('simple', $1)
+		ORDER BY ts_rank(fts, to_tsquery('simple', $1)) DESC, id
+		LIMIT $2`, tq, limit)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []Provider
+	for rows.Next() {
+		var pr Provider
+		if rows.Scan(&pr.ID, &pr.Name, &pr.License, &pr.Cadre, &pr.Facility, &pr.Verified) == nil {
+			out = append(out, pr)
+		}
+	}
+	return out
+}

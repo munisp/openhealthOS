@@ -212,6 +212,12 @@ func main() {
 		store = pg
 	}
 
+	// RPM danger bands (ADR-0017): VITALS_RULES_FILE overrides the
+	// embedded defaults; a bad file fails the boot, loudly.
+	if err := LoadVitalsRulesFromEnv(os.Getenv); err != nil {
+		panic("vitals rules: " + err.Error())
+	}
+
 	provider := providerFromEnv()
 
 	svc := NewService(store, provider)

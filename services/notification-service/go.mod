@@ -25,7 +25,11 @@ require github.com/munisp/openhealthOS/shared/otelx v0.0.0 // indirect
 
 replace github.com/munisp/openhealthOS/shared/otelx => ../../shared/otelx
 
-require github.com/munisp/openhealthOS/shared/cachex v0.0.0 // indirect
+require (
+	github.com/munisp/openhealthOS/shared/cachex v0.0.0 // indirect
+	golang.org/x/net v0.21.0 // indirect
+	golang.org/x/sys v0.25.0 // indirect
+)
 
 replace github.com/munisp/openhealthOS/shared/cachex => ../../shared/cachex
 

@@ -53,6 +53,12 @@ const STRINGS = {
     pk_title: "Fingerprint unlock", pk_sub: "Open the app with your fingerprint or face instead of typing your code.",
     pk_on: "Fingerprint unlock is on for this phone.", pk_off: "Not set up on this phone.",
     pk_setup: "Set up fingerprint unlock", pk_unlock: "Unlock with fingerprint", pk_failed: "Fingerprint did not work — try again or sign in with your code.",
+    hc_title: "Pregnancy health check", hc_sub: "Answer a few questions — your clinic sees the answers in your record.",
+    hc_start: "Start the health check", hc_submit: "Send my answers",
+    hc_yes: "Yes", hc_no: "No", hc_missing: "Please answer every question with Yes or No.",
+    hc_done: "Answers sent — your clinic can see them now.",
+    hc_danger: "Answers sent. Some of your answers need care TODAY — please go to your clinic now, do not wait.",
+    hc_failed: "Could not send — try again when online.",
 
   },
   pcm: {
@@ -98,6 +104,12 @@ const STRINGS = {
     pk_title: "Fingerprint unlock", pk_sub: "Open the app with your fingerprint or face instead of typing code.",
     pk_on: "Fingerprint dey on for this phone.", pk_off: "You never set am for this phone.",
     pk_setup: "Set fingerprint unlock", pk_unlock: "Open with fingerprint", pk_failed: "Fingerprint no work — try again or use your code.",
+    hc_title: "Pregnancy health check", hc_sub: "Answer small questions — your clinic go see the answers for your record.",
+    hc_start: "Start the health check", hc_submit: "Send my answers",
+    hc_yes: "Yes", hc_no: "No", hc_missing: "Abeg answer every question Yes or No.",
+    hc_done: "Answers don go — your clinic fit see dem now.",
+    hc_danger: "Answers don go. Some answers need care TODAY — go your clinic now, no wait.",
+    hc_failed: "E no send — try again when network dey.",
 
   },
   ha: {
@@ -143,6 +155,12 @@ const STRINGS = {
     pk_title: "Bude da yatsa", pk_sub: "Bude app ɗin da yatsar ka ko fuskar ka maimakon rubuta lamba.",
     pk_on: "Bude da yatsa yana aiki a wannan waya.", pk_off: "Ba a saita ba a wannan waya.",
     pk_setup: "Saita bude da yatsa", pk_unlock: "Bude da yatsa", pk_failed: "Yatsar ba ta aiki ba — sake gwadawa ko shiga da lambar ka.",
+    hc_title: "Binciken lafiyar ciki", hc_sub: "Amsa wasu tambayoyi — asibitin ka zai ga amsoshin a bayanan ka.",
+    hc_start: "Fara binciken", hc_submit: "Aika amsoshin",
+    hc_yes: "Eh", hc_no: "A'a", hc_missing: "Don Allah amsa kowace tambaya Eh ko A'a.",
+    hc_done: "An aika amsoshi — asibitin ka zai iya ganinsu yanzu.",
+    hc_danger: "An aika amsoshi. Wasu amsoshi suna bukatan kulawa YAU — je asibiti yanzu, kada ka jira.",
+    hc_failed: "Ba a iya aika ba — sake gwadawa idan akwai hanya.",
 
   },
   yo: {
@@ -188,6 +206,12 @@ const STRINGS = {
     pk_title: "Ṣíṣí ní ọwọ́", pk_sub: "Ṣí app náà pẹ̀lú ọwọ́ rẹ tàbí ojú rẹ dípò kíkọ kóòdù.",
     pk_on: "Ṣíṣí ní ọwọ́ ń ṣiṣẹ́ lórí fóònù yìí.", pk_off: "A kò tíì ṣètò lórí fóònù yìí.",
     pk_setup: "Ṣètò ṣíṣí ní ọwọ́", pk_unlock: "Ṣí pẹ̀lú ọwọ́", pk_failed: "Ọwọ́ kò ṣiṣẹ́ — gbìyànjú lẹ́ẹ̀kansi tàbí wọlé pẹ̀lú kóòdù rẹ.",
+    hc_title: "Àyẹ̀wò ọ̀yún", hc_sub: "Dáhùn ìbéèrè díẹ̀ — ilé ìwòsàn rẹ á rí ìdáhùn nínú àkọsílẹ̀ rẹ.",
+    hc_start: "Bẹ̀rẹ̀ àyẹ̀wò", hc_submit: "Fi ìdáhùn ránṣẹ́",
+    hc_yes: "Bẹ́ẹ̀ ni", hc_no: "Rárá", hc_missing: "Jọ̀wọ́ dáhùn gbogbo ìbéèrè Bẹ́ẹ̀ ni tàbí Rárá.",
+    hc_done: "A ti fi ìdáhùn ránṣẹ́ — ilé ìwòsàn rẹ lè rí wọn báyìí.",
+    hc_danger: "A ti fi ìdáhùn ránṣẹ́. Àwọn ìdáhùn kan nílò ìtọ́jú LÓNÍÍ — lọ sí ilé ìwòsàn báyìí, má dúró.",
+    hc_failed: "A kò lè rán — gbìyànjú lẹ́ẹ̀kansi tí nẹ́tìwọ̀ọ̀kì bá wà.",
 
   },
   ig: {
@@ -233,6 +257,12 @@ const STRINGS = {
     pk_title: "Mepee na mkpịsị aka", pk_sub: "Mepee app ahụ na mkpịsị aka gị ma ọ bụ ihu gị kama ịdẹ koodu.",
     pk_on: "Mmepe na mkpịsị aka na-arụ ọrụ na ekwentị a.", pk_off: "Etobeghị na ekwentị a.",
     pk_setup: "Tobe mmepe na mkpịsị aka", pk_unlock: "Mepee na mkpịsị aka", pk_failed: "Mkpịsị aka arụghị ọrụ — nwaa ọzọ ma ọ bụ jiri koodu gị.",
+    hc_title: "Nyocha ahụ ike dị ime", hc_sub: "Zaa ajụjụ ole na ole — ụlọ ọgwụ gị ga-ahụ azịza ndị ahụ na ndekọ gị.",
+    hc_start: "Malite nyocha", hc_submit: "Ziga azịza m",
+    hc_yes: "Ee", hc_no: "Mba", hc_missing: "Biko zaa ajụjụ ọ bụla Ee ma ọ bụ Mba.",
+    hc_done: "E zigala azịza — ụlọ ọgwụ gị nwere ike ịhụ ha ugbu a.",
+    hc_danger: "E zigala azịza. Ụfọdụ azịza chọrọ nlekọta TAA — gaa ụlọ ọgwụ ugbu a, achọla iche.",
+    hc_failed: "Enweghị ike iziga — nwaa ọzọ mgbe netwọk dị.",
 
   },
 };

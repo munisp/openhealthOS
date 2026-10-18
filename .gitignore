@@ -28,3 +28,6 @@ go.work.sum
 
 # Local env
 .env
+services/scheduling-service/scheduling-service
+services/ipd-service/ipd-service
+services/gateway/gateway

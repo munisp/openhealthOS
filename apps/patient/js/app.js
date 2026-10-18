@@ -7,7 +7,7 @@
 import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
 import {
   kindMeta, groupFeed, relTime, stateLabel, groupRecord, groupConsults,
-  upcomingAppointments, coverageSummary, bookableSlots, nextDue,
+  upcomingAppointments, coverageSummary, bookableSlots, nextDue, buildQuestionnaireResponse,
 } from "./logic.js";
 import { nearest, facilityRow } from "./geo.js";
 
@@ -761,6 +761,84 @@ function PasskeyUnlock() {
   }, `☝ ${t("pk_unlock")}`);
 }
 
+
+/* --- health check (screening questionnaire, ADR-0017): bundled FHIR
+ * Questionnaire rendered on-device, answers become a
+ * QuestionnaireResponse in the shared record. Danger signs say
+ * "come in today" plainly. */
+function HealthCheckCard() {
+  const st = { q: null, answers: {}, started: false };
+  const box = el("div", { class: "book-box" });
+
+  async function start() {
+    box.innerHTML = "";
+    box.append(el("div", { class: "muted" }, t("loading")));
+    if (!st.q) {
+      try {
+        st.q = await fetch("questionnaires/anc-screening.json", { cache: "no-store" }).then((r) => r.json());
+      } catch {
+        box.innerHTML = "";
+        box.append(el("div", { class: "empty" }, t("hc_failed")));
+        return;
+      }
+    }
+    box.innerHTML = "";
+    for (const item of st.q.item || []) {
+      if (item.type === "boolean") {
+        const row = el("div", { class: "hc-row" },
+          el("div", { class: "hc-q" }, item.text || item.linkId),
+          el("div", { class: "chip-row" },
+            el("button", {
+              class: "chip" + (st.answers[item.linkId] === true ? " chip-on" : ""),
+              onclick: (e) => { st.answers[item.linkId] = true; mark(e.target); },
+            }, t("hc_yes")),
+            el("button", {
+              class: "chip" + (st.answers[item.linkId] === false ? " chip-on" : ""),
+              onclick: (e) => { st.answers[item.linkId] = false; mark(e.target); },
+            }, t("hc_no"))));
+        box.append(row);
+      } else {
+        box.append(el("label", { class: "field" },
+          el("span", { class: "field-label" }, item.text || item.linkId),
+          el("input", {
+            class: "input", type: item.type === "text" ? "text" : "number",
+            oninput: (e) => { st.answers[item.linkId] = e.target.value; },
+          })));
+      }
+    }
+    const status = el("div", { class: "notif-meta" });
+    box.append(status, el("button", {
+      class: "btn btn-primary btn-block",
+      onclick: async (ev) => {
+        const { response, missing, danger } = buildQuestionnaireResponse(st.q, st.answers);
+        if (missing.length) { status.textContent = t("hc_missing"); return; }
+        ev.target.disabled = true;
+        try {
+          await portalPost("/portal/questionnaire", { response });
+          box.innerHTML = "";
+          if (danger) {
+            box.append(el("div", { class: "banner banner-show banner-inline" }, t("hc_danger")));
+          } else {
+            box.append(el("div", { class: "banner banner-show banner-inline" }, t("hc_done")));
+          }
+        } catch { status.textContent = t("hc_failed"); }
+        ev.target.disabled = false;
+      },
+    }, t("hc_submit")));
+  }
+
+  function mark(btn) {
+    btn.parentElement.querySelectorAll(".chip").forEach((c) => c.classList.remove("chip-on"));
+    btn.classList.add("chip-on");
+  }
+
+  return el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("hc_title"))),
+    el("div", { class: "notif-meta" }, t("hc_sub")),
+    box,
+    el("button", { class: "btn btn-outline btn-block", onclick: start }, t("hc_start")));
+}
+
 function CareView() {
   const wrap = el("div", { class: "view" },
     Tabs(),
@@ -779,6 +857,7 @@ function CareView() {
     BookVisitCard(),
     MyAppointmentsCard(),
     AskClinicCard(),
+    HealthCheckCard(),
     SharingCard(),
     PasskeyCard());
   return wrap;

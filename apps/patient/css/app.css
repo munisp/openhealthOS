@@ -244,3 +244,7 @@ body {
   min-height: 84px;
 }
 .ask-input:focus { outline: 2px solid var(--indigo); outline-offset: 1px; }
+
+/* health check questionnaire */
+.hc-row { padding: 8px 0; border-top: 1px solid var(--line); }
+.hc-q { font-weight: 600; margin-bottom: 8px; }

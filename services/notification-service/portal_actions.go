@@ -148,6 +148,13 @@ func registerPortalActions(mux *http.ServeMux, svc *Service) {
 		if !portalGate(svc, w, req.PatientID, req.Phone) {
 			return
 		}
+		// Ownership check: the gate proves identity, not ownership of
+		// this appointment — cancelling someone else's booking by id
+		// must be impossible through this rail.
+		if !appointmentOwnedBy(r.Context(), req.AppointmentID, req.PatientID) {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
 		proxyJSON(r.Context(), w, http.MethodPost,
 			schedulingBase()+"/appointments/"+req.AppointmentID+"/cancel", map[string]string{})
 	})
@@ -173,6 +180,34 @@ func registerPortalActions(mux *http.ServeMux, svc *Service) {
 			"patient_id": req.PatientID, "facility_id": req.FacilityID,
 			"nurse_id": "portal-triage", "complaint": req.Complaint,
 		})
+	})
+
+	// ---- screening questionnaire: QuestionnaireResponse into the record ----
+	mux.HandleFunc("POST /portal/questionnaire", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			PatientID string          `json:"patient_id"`
+			Phone     string          `json:"phone"`
+			Response  json.RawMessage `json:"response"` // FHIR QuestionnaireResponse
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || len(req.Response) == 0 {
+			http.Error(w, `{"error":"response required"}`, http.StatusBadRequest)
+			return
+		}
+		if !portalGate(svc, w, req.PatientID, req.Phone) {
+			return
+		}
+		// The portal stamps the id and the subject — a patient submits
+		// only their own answers, under their own identity.
+		var res map[string]any
+		if err := json.Unmarshal(req.Response, &res); err != nil ||
+			res["resourceType"] != "QuestionnaireResponse" {
+			http.Error(w, `{"error":"must be a QuestionnaireResponse"}`, http.StatusBadRequest)
+			return
+		}
+		id := "qr-" + req.PatientID + "-" + time.Now().UTC().Format("20060102T150405")
+		res["id"] = id
+		res["subject"] = map[string]string{"reference": "Patient/" + req.PatientID}
+		proxyJSON(r.Context(), w, http.MethodPut, shrBase()+"/fhir/QuestionnaireResponse/"+id, res)
 	})
 
 	// ---- consents: "who can see my record" + revoke ----
@@ -235,4 +270,30 @@ func consentOwnedBy(ctx context.Context, consentID, patientID string) bool {
 		}
 	}
 	return false
+}
+
+// appointmentOwnedBy fetches the appointment and answers whether it
+// belongs to the gated patient — same anti-cross-patient rule as
+// consentOwnedBy.
+func appointmentOwnedBy(ctx context.Context, appointmentID, patientID string) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		schedulingBase()+"/appointments/"+appointmentID, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := portalClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != 200 {
+		return false
+	}
+	var appt struct {
+		PatientID string `json:"patient_id"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&appt); err != nil {
+		return false
+	}
+	return appt.PatientID == patientID
 }

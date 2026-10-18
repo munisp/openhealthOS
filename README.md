@@ -29,6 +29,7 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 | 13 | Geospatial + ML/DL/GNN ([ADR-0014](docs/architecture/adr-0014-geospatial-and-ml.md)) | facility capacity profile (beds/doctors/nurses/amenities, migration 0007) · haversine [`/facilities/near`](services/registry-service/geo.go) · offline canvas facility map (bundled Nigeria boundary — no tiles, no CDN, no WebGL) + near-me in the [patient app](apps/patient) (5 languages) with `geo:` navigation handoff · [`ml/`](ml) — real PyTorch: fraud MLP + claim GCN with shipped champion weights, CPU-only inference, file registry, PSI drift monitoring, champion/challenger A/B, continuous retraining on lakehouse data, optional Ray scale-out |
 | 14 | Production hardening ([ADR-0015](docs/architecture/adr-0015-production-hardening.md)) | [`shared/sealx`](shared/sealx) keyring rotation · Postgres FTS search (migration 0008) · SMS failover chain with circuit breakers · tariff bundles · [`tools/facility-import`](tools/facility-import) · [`tools/ledger-mirror`](tools/ledger-mirror) + [DR runbook](docs/runbooks/ledger-dr.md) · [`shared/cachex`](shared/cachex) (RESP2 + LRU failover) with authz JWKS warm standby · [`shared/wafx`](shared/wafx) edge screening · gateway per-upstream circuit breakers + request-id · [`shared/eventbus`](shared/eventbus) dead-letter queues with replay · [`shared/rebac`](shared/rebac) (migration 0009) enforced on patient reads · [`tools/nimc-sandbox`](tools/nimc-sandbox) wire-contract conformance · [COA bundles](packages/erpnext-bridge/bundles) with remote validation · [`packages/analytics`](packages/analytics) LGA/state rollups |
 | 15 | Patient record portal ([ADR-0016](docs/architecture/adr-0016-patient-record-portal.md)) | the patient's own record on their own phone: SHR self-access basis (`patient-self-access`, audited, needs no consent artefact) · telehealth consult thread endpoint · portal record proxy (`/portal/record`: subscription-gated fan-out, per-leg timeout, 404 = honest empty, dark leg = explicit null + `complete=false`) · patient app **My record** tab (visits · results · medicines · immunisations · conditions · allergies · consults, 5 languages, offline-cached) · [MyChart comparison](docs/patient-portal.md) · e2e: `demo/patient-record.sh` |
+| 16 | Self-service & hospital ops ([ADR-0017](docs/architecture/adr-0017-self-service-and-hospital-ops.md)) | patient self-booking over the [scheduling engine](services/scheduling-service) (slots · waitlist promotion · theatre via `resource_type`) · [eligibility enrolment](services/claims-orchestrator) — coverage answers are honest: eligible / suspended / not-enrolled, never silent · [registry biometrics](services/registry-service/biometric.go) anti-gaming (1:N duplicate-refusal, 1:1 verify upgrades KYC, ladder never downgrades, sealed templates, NIMC-sandbox wire conformance) · [passkeys](shared/webauthn) unlock (stdlib WebAuthn — CBOR/COSE written clean-room; clone detection) · portal self-service rail (`/portal/coverage|appointments|messages|consents|questionnaire`, subscription-gated) · patient app **Care** tab (booking stepper, coverage card, ask-clinic, sharing, health-check, 5 languages, Medplum-inspired cards) · [RPM vitals](services/notification-service/vitals_rules.go) with data-driven danger bands · [`services/ipd-service`](services/ipd-service) — wards/beds/ADT (one open admission per patient, atomic transfers, SHR write-back) · practitioner FTS · e2e: `demo/scheduling.sh`, `demo/eligibility.sh` · [Medplum top-10 mapping](docs/medplum-mapping.md) · [hospital-ops gap doc](docs/hospital-ops.md) |
 
 Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) → [`services/lga-hub`](services/lga-hub) (LGA store-and-forward: priority queues — critical referrals overtake bulk telemetry — JSONL spill fsynced before ack, power-cut-proof, idempotent) → [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent). See [ADR-0011](docs/architecture/adr-0011-national-scale.md).
 
@@ -197,11 +198,16 @@ One PWA core, three vessels ([ADR-0009](docs/architecture/adr-0009-client-apps-o
   (dark ops theme: live facility map, pilot gates, alerts, platform health).
   Both render last-known data offline and never fake liveness.
 - **`apps/patient`** — the patient's own app: sign-in with patient code + phone
-  (mismatches are 404 — no enumeration). Two tabs: **Updates** (offline feed
-  with action-needed grouping) and **My record**
+  (mismatches are 404 — no enumeration). Three tabs: **Updates** (offline feed
+  with action-needed grouping), **My record**
   ([ADR-0016](docs/architecture/adr-0016-patient-record-portal.md)) — the
   patient's own FHIR record on their own authority (visits, test results,
-  medicines, immunisations, conditions, allergies, telehealth thread), cached
+  medicines, immunisations, conditions, allergies, telehealth thread,
+  documents), and **Care**
+  ([ADR-0017](docs/architecture/adr-0017-self-service-and-hospital-ops.md)) —
+  self-book visits (facility → service → day → slot), check coverage before
+  travelling, ask the clinic a question, manage sharing, take a screening
+  questionnaire, and set up passkey unlock — all cached
   offline with an honest last-updated stamp, five languages, calm daylight
   theme. SMS notifications (notification-service) reach feature phones too;
   USSD stays a peer channel. See [docs/patient-portal.md](docs/patient-portal.md)

@@ -2,12 +2,13 @@ package main
 
 import (
 	"encoding/json"
-	"github.com/munisp/openhealthOS/shared/servex"
 	"log"
 	"net/http"
 	"os"
+	"path/filepath"
 
 	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/servex"
 )
 
 func env(k, d string) string {
@@ -17,10 +18,27 @@ func env(k, d string) string {
 	return d
 }
 
+// resolveToolPath makes the default adjudicator path robust to the
+// process cwd: as-given first, then relative to the executable (a
+// service binary run from the repo root or a deploy dir finds the
+// sibling packages/ tree the same way).
+func resolveToolPath(p string) string {
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	if exe, err := os.Executable(); err == nil {
+		cand := filepath.Join(filepath.Dir(exe), p)
+		if _, err := os.Stat(cand); err == nil {
+			return cand
+		}
+	}
+	return p
+}
+
 func main() {
 	adj := SubprocessAdjudicator{
 		Python: env("PYTHON", "python3"),
-		Script: env("ADJUDICATOR", "../../packages/adjudicator/adjudicate.py"),
+		Script: resolveToolPath(env("ADJUDICATOR", "../../packages/adjudicator/adjudicate.py")),
 	}
 	tally := NewPayerTally()
 	h := claimsHandler{

@@ -237,3 +237,42 @@ export function nextDue(appts, now = Date.now()) {
   const up = upcomingAppointments(appts, now)[0];
   return up ? { when: up.start, where: up.facility_id || "", service: up.service || "" } : null;
 }
+
+/* Build a FHIR QuestionnaireResponse from rendered answers (ADR-0017).
+ * answers: { linkId: value } — booleans, integers, strings. Required
+ * items with no answer are listed in missing[] so the UI can refuse
+ * honestly instead of submitting a half-form. */
+export function buildQuestionnaireResponse(questionnaire, answers) {
+  const missing = [];
+  const items = [];
+  for (const item of (questionnaire && questionnaire.item) || []) {
+    const v = answers ? answers[item.linkId] : undefined;
+    if (v === undefined || v === null || v === "") {
+      if (item.required) missing.push(item.linkId);
+      continue;
+    }
+    let answer;
+    switch (item.type) {
+      case "boolean": answer = [{ valueBoolean: !!v }]; break;
+      case "integer": answer = [{ valueInteger: Number(v) }]; break;
+      case "decimal": answer = [{ valueDecimal: Number(v) }]; break;
+      default: answer = [{ valueString: String(v) }];
+    }
+    items.push({ linkId: item.linkId, text: item.text || "", answer });
+  }
+  const dangerItems = (((questionnaire && questionnaire.extension) || [])
+    .filter((e) => e.url && e.url.endsWith("danger-items"))
+    .map((e) => String(e.valueString || "").split(","))[0]) || [];
+  const danger = dangerItems.some((id) => answers && answers[id] === true);
+  return {
+    response: {
+      resourceType: "QuestionnaireResponse",
+      questionnaire: "Questionnaire/" + ((questionnaire && questionnaire.id) || "unknown"),
+      status: missing.length ? "in-progress" : "completed",
+      authored: new Date().toISOString(),
+      item: items,
+    },
+    missing,
+    danger,
+  };
+}
