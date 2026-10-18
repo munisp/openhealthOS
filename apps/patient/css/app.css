@@ -76,7 +76,7 @@ body {
 .card {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 16px;
+  border-radius: var(--oh-radius-lg);
   padding: 16px;
 }
 
@@ -193,8 +193,8 @@ body {
 .care-card {
   background: var(--paper);
   border: 1px solid var(--line);
-  border-radius: 16px;
-  box-shadow: 0 1px 3px rgba(16, 24, 40, 0.06);
+  border-radius: var(--oh-radius-lg);
+  box-shadow: var(--oh-shadow-sm);
   display: flex; flex-direction: column; gap: 8px;
   margin-top: 12px;
 }

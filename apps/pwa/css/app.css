@@ -18,7 +18,7 @@
   --warn: #8a5a00;
   --warn-bg: #fff4d6;
   --ok-bg: #e6f3ea;
-  --radius: 14px;
+  --radius: var(--oh-radius-lg, 16px);
   --tabbar-h: 64px;
 }
 
@@ -95,7 +95,7 @@ body {
   border: 1px solid var(--hairline);
   border-radius: var(--radius);
   padding: 16px;
-  box-shadow: 0 1px 2px rgba(9, 53, 46, 0.04);
+  box-shadow: var(--oh-shadow-sm);
 }
 
 .task-card, .patient-card {

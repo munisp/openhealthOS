@@ -1,0 +1,29 @@
+{
+  "resourceType": "Measure",
+  "url": "https://openhealthos.org/fhir/Measure/emergency-arrival-confirmed",
+  "name": "emergency_arrival_confirmed",
+  "title": "Emergency dispatch — arrival confirmed within SLA",
+  "description": "Emergency (EMER class) encounters dispatched in the period whose arrival was confirmed within the triage SLA (ADR-0019 arrival_check tasks done on time). Red-triaged emergencies where nobody confirmed help arrived are the system failing at its most important job.",
+  "scoring": {"coding": [{"system": "http://hl7.org/fhir/measure-scoring", "code": "proportion"}]},
+  "group": [{
+    "population": [
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "denominator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Encounter",
+                    "criteria": [{"path": "class.code", "op": "eq", "value": "EMER"}]}
+        }]
+      },
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "numerator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Encounter",
+                    "criteria": [{"path": "class.code", "op": "eq", "value": "EMER"},
+                                 {"path": "arrivalConfirmedWithinSla", "op": "eq", "value": true}]}
+        }]
+      }
+    ]
+  }]
+}

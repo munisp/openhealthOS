@@ -1,0 +1,29 @@
+{
+  "resourceType": "Measure",
+  "url": "https://openhealthos.org/fhir/Measure/immunization-penta1",
+  "name": "immunization_penta1",
+  "title": "Pentavalent-1 coverage (under-1)",
+  "description": "Children registered at the facility under 1 year who received Penta-1 in the period (Nigeria NPI schedule proxy for RI coverage).",
+  "scoring": {"coding": [{"system": "http://hl7.org/fhir/measure-scoring", "code": "proportion"}]},
+  "group": [{
+    "population": [
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "denominator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Encounter", "subject_basis": true,
+                    "criteria": [{"path": "type.coding", "op": "eq", "value": "child-registration"}]}
+        }]
+      },
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "numerator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Immunization", "subject_basis": true,
+                    "criteria": [{"path": "vaccineCode.coding", "op": "eq", "value": "penta-1"},
+                                 {"path": "status", "op": "eq", "value": "completed"}]}
+        }]
+      }
+    ]
+  }]
+}

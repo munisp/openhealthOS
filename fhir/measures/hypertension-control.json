@@ -1,0 +1,29 @@
+{
+  "resourceType": "Measure",
+  "url": "https://openhealthos.org/fhir/Measure/hypertension-control",
+  "name": "hypertension_control",
+  "title": "Hypertension — blood pressure controlled",
+  "description": "Patients with a hypertension condition whose latest BP observation in the period is <140/90 (WHO HEARTS standard).",
+  "scoring": {"coding": [{"system": "http://hl7.org/fhir/measure-scoring", "code": "proportion"}]},
+  "group": [{
+    "population": [
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "denominator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Condition", "subject_basis": true,
+                    "criteria": [{"path": "code.coding", "op": "in", "value": ["I10", "hypertension"]}]}
+        }]
+      },
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "numerator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Observation", "subject_basis": true,
+                    "criteria": [{"path": "code.coding", "op": "eq", "value": "blood-pressure"},
+                                 {"path": "valueQuantity.value", "op": "lt", "value": 140}]}
+        }]
+      }
+    ]
+  }]
+}

@@ -35,7 +35,7 @@ func main() {
 	} else {
 		log.Print("registry storage: in-memory (set DATABASE_URL for postgres)")
 	}
-	s := server{store: store}
+	s := server{store: store, onboarding: newOnboardingStore()}
 	mux := s.routes()
 	registerPatientRoutes(mux, patients)
 	// KYC seams (ADR-0012): NIN_VERIFY_URL binds a NIMC-compatible

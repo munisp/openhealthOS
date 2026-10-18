@@ -10,7 +10,8 @@ import (
 
 // server exposes the registry over HTTP (OpenHIE-style REST surface).
 type server struct {
-	store Store
+	store      Store
+	onboarding *onboardingStore
 }
 
 func (s server) routes() *http.ServeMux {
@@ -24,6 +25,9 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("/providers/", s.provider)
 	mux.HandleFunc("/fhir/Location/", s.fhirLocation)
 	mux.HandleFunc("/fhir/Practitioner/", s.fhirPractitioner)
+	if s.onboarding != nil {
+		s.onboardingRoutes(mux)
+	}
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }

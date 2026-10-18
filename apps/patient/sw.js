@@ -6,6 +6,7 @@ const CACHE = "openhealth-patient-v2";
 const SHELL = [
   "./",
   "./index.html",
+  "../design-tokens.css",
   "./css/app.css",
   "./js/app.js",
   "./js/i18n.js",

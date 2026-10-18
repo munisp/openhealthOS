@@ -1,0 +1,29 @@
+{
+  "resourceType": "Measure",
+  "url": "https://openhealthos.org/fhir/Measure/anc-four-visits",
+  "name": "anc_four_visits",
+  "title": "Antenatal care — four or more visits",
+  "description": "Pregnant women with an ANC registration encounter in the period who completed 4+ ANC visits (Nigeria RMNCH standard, WHO ANC model).",
+  "scoring": {"coding": [{"system": "http://hl7.org/fhir/measure-scoring", "code": "proportion"}]},
+  "group": [{
+    "population": [
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "denominator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Encounter", "subject_basis": true,
+                    "criteria": [{"path": "type.coding", "op": "eq", "value": "anc-registration"}]}
+        }]
+      },
+      {
+        "code": {"coding": [{"system": "http://terminology.hl7.org/CodeSystem/measure-population", "code": "numerator"}]},
+        "extension": [{
+          "url": "https://openhealthos.org/fhir/StructureDefinition/openhealth-population-criteria",
+          "value": {"resourceType": "Encounter", "subject_basis": true,
+                    "criteria": [{"path": "type.coding", "op": "eq", "value": "anc-visit"},
+                                 {"path": "sequence", "op": "gte", "value": 4}]}
+        }]
+      }
+    ]
+  }]
+}

@@ -7,16 +7,73 @@
   "title": "OpenHealth OS FHIR R4 Implementation Guide (Nigeria)",
   "status": "draft",
   "publisher": "OpenHealth OS",
-  "description": "Nigerian FHIR R4 profiles for the OpenHealth OS platform: Patient, Encounter, Claim, Coverage, Consent. ABDM-pattern registry+gateway alignment, OpenHIE-compatible.",
-  "fhirVersion": ["4.0.1"],
+  "description": "Nigerian FHIR R4 profiles for the OpenHealth OS platform: Patient, Encounter, Claim, Coverage, Consent. ABDM-pattern registry+gateway alignment, OpenHIE-compatible. Adds executable quality measures (Measure/MeasureReport) so care standards are uniform across locations, and the emergency (EMER) Encounter usage that ADR-0019 dispatch rides on.",
+  "fhirVersion": [
+    "4.0.1"
+  ],
   "packageId": "org.openhealthos.fhir",
   "license": "Apache-2.0",
   "definition": {
     "resource": [
-      {"reference": {"reference": "StructureDefinition/openhealth-patient"}, "name": "OpenHealth Patient"},
-      {"reference": {"reference": "StructureDefinition/openhealth-encounter"}, "name": "OpenHealth Encounter"},
-      {"reference": {"reference": "StructureDefinition/openhealth-claim"}, "name": "OpenHealth Claim"},
-      {"reference": {"reference": "StructureDefinition/openhealth-consent"}, "name": "OpenHealth Consent"}
+      {
+        "reference": {
+          "reference": "StructureDefinition/openhealth-patient"
+        },
+        "name": "OpenHealth Patient"
+      },
+      {
+        "reference": {
+          "reference": "StructureDefinition/openhealth-encounter"
+        },
+        "name": "OpenHealth Encounter"
+      },
+      {
+        "reference": {
+          "reference": "StructureDefinition/openhealth-claim"
+        },
+        "name": "OpenHealth Claim"
+      },
+      {
+        "reference": {
+          "reference": "StructureDefinition/openhealth-consent"
+        },
+        "name": "OpenHealth Consent"
+      },
+      {
+        "reference": {
+          "reference": "Measure/anc-four-visits"
+        },
+        "name": "ANC 4+ visits quality measure",
+        "description": "Executable quality definition (packages/quality evaluates these into MeasureReports per facility per period)."
+      },
+      {
+        "reference": {
+          "reference": "Measure/immunization-penta1"
+        },
+        "name": "Penta-1 coverage quality measure",
+        "description": "Executable quality definition (packages/quality evaluates these into MeasureReports per facility per period)."
+      },
+      {
+        "reference": {
+          "reference": "Measure/hypertension-control"
+        },
+        "name": "Hypertension BP control measure",
+        "description": "Executable quality definition (packages/quality evaluates these into MeasureReports per facility per period)."
+      },
+      {
+        "reference": {
+          "reference": "Measure/appointment-show-rate"
+        },
+        "name": "Appointment show-rate measure",
+        "description": "Executable quality definition (packages/quality evaluates these into MeasureReports per facility per period)."
+      },
+      {
+        "reference": {
+          "reference": "Measure/emergency-arrival-confirmed"
+        },
+        "name": "Emergency dispatch SLA measure",
+        "description": "Executable quality definition (packages/quality evaluates these into MeasureReports per facility per period)."
+      }
     ]
   }
 }

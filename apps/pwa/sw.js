@@ -12,6 +12,7 @@ const CACHE = "openhealth-shell-v3";
 const SHELL = [
   "./",
   "./index.html",
+  "../design-tokens.css",
   "./css/app.css",
   "./js/app.js",
   "./js/clinical.js",
