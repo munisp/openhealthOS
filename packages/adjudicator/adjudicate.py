@@ -25,6 +25,7 @@ from datetime import datetime
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from tariffs import active_bundle, tariff_map, freq_caps
 from enrolment import load_members, enrol as enrol_member, suspend as suspend_member
+from linkage import check_linkage
 
 # Fallback fixture for dev and tests. Production sets MEMBERS_FILE and
 # the registry below is ignored — see get_member (ADR-0017).
@@ -106,6 +107,13 @@ def adjudicate(claim: dict) -> dict:
         return {"claim_id": claim.get("claim_id"), "decision": "DENY",
                 "reasons": ["ELIGIBILITY: coverage inactive or expired"], "flags": [], "allowed_ngn": 0}
     scheme = member["scheme"]
+    # Linkage gate (ADR-0018): money follows encounters. A claim with no
+    # verifiable encounter evidence is the ghost-claim shape — pended for
+    # human review, never silently paid, never hard-denied (edge syncs
+    # late). Biometric presence on the encounter is the strongest
+    # anti-collusion signal the platform has.
+    linkage = check_linkage(claim)
+    flags.extend(linkage["flags"])
     allowed_codes = BENEFIT.get(scheme, [])
     total = 0
     for item in claim.get("items", []):
@@ -148,7 +156,8 @@ def adjudicate(claim: dict) -> dict:
             "decision": decision, "reasons": reasons, "flags": flags,
             "allowed_ngn": total, "copay_ngn": copay, "payable_ngn": total - copay,
             "currency": "NGN", "tariff_bundle": stamp,
-            "adjudicated_by": "openhealth-adjudicator@0.2.1"}
+            "linkage": {"linked": linkage["linked"], "presence": linkage["presence"]},
+            "adjudicated_by": "openhealth-adjudicator@0.3.0"}
 
 
 def check_eligibility(member_id: str, service_date: str) -> dict:

@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os/exec"
 )
@@ -45,6 +46,18 @@ func (s SubprocessAdjudicator) Suspend(memberID, reason string) (map[string]any,
 
 type enrolmentHandler struct {
 	Enroller Enroller
+	Audit    *AuditChain // ADR-0018: every enrolment state change names its actor
+}
+
+// auditEnrolment logs the state change; a chain failure never blocks
+// the enrolment itself but is shouted to the log.
+func (h enrolmentHandler) auditEnrolment(actor, action, memberID string, detail map[string]any) {
+	if h.Audit == nil {
+		return
+	}
+	if err := h.Audit.Append(actor, action, memberID, detail); err != nil {
+		log.Printf("audit append (%s %s): %v", action, memberID, err)
+	}
 }
 
 func (h enrolmentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -62,11 +75,18 @@ func (h enrolmentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	// change this sensitive is always verb-first, never implicit.
 	var probe struct {
 		Action   string `json:"action"`
+		Actor    string `json:"actor"`
 		MemberID string `json:"member_id"`
 		Reason   string `json:"reason"`
 	}
 	if err := json.Unmarshal(body, &probe); err != nil {
 		http.Error(w, "bad json: "+err.Error(), http.StatusBadRequest)
+		return
+	}
+	// ADR-0018: phantom patients start here. An enrolment without a named
+	// actor is how insiders enrol ghosts — refuse it.
+	if probe.Actor == "" {
+		http.Error(w, "actor required — enrolment state changes must name who made them", http.StatusBadRequest)
 		return
 	}
 	if probe.Action == "suspend" {
@@ -77,6 +97,12 @@ func (h enrolmentHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest) // validation errors are 4xx — the caller fixes the record
 		return
+	}
+	if probe.Action == "suspend" {
+		h.auditEnrolment(probe.Actor, "suspend_member", probe.MemberID, map[string]any{"reason": probe.Reason})
+	} else {
+		mid, _ := res["member_id"].(string)
+		h.auditEnrolment(probe.Actor, "enrol_member", mid, map[string]any{"programme": res["programme"]})
 	}
 	w.Header().Set("Content-Type", "application/json")
 	json.NewEncoder(w).Encode(res)

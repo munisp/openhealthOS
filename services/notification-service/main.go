@@ -337,8 +337,48 @@ func renderMessage(ev DomainEvent) (kind, text string, ok bool) {
 		}
 		return "immunization", fmt.Sprintf("OpenHealth: %s is due for %s. Visit %s this week.",
 			name, vaccine, facility), true
+	case "claim_submitted":
+		// ADR-0018 patient-as-auditor: every claim in the patient's name
+		// is receipted back to them with amount, facility, date — and a
+		// way to say "that never happened". Ghost claims die here.
+		amount := naira(p["amount_ngn"])
+		date := str("service_date")
+		if date == "" {
+			date = "a recent date"
+		}
+		return "claim_receipt", fmt.Sprintf("OpenHealth: a claim of %s was submitted in your name by %s for care on %s. If you did not receive this care, report it free in the app (Claims) or at any PHC.",
+			amount, facility, date), true
+	case "claim_disputed":
+		claimID := str("claim_id")
+		if claimID == "" {
+			claimID = "your claim"
+		}
+		return "claim_dispute", fmt.Sprintf("OpenHealth: we received your report about %s at %s. Our integrity team will review it — you will hear from us. Keep this message as your reference.",
+			claimID, facility), true
 	}
 	return "", "", false
+}
+
+// naira formats a claim amount for an SMS — whole naira, thousands
+// grouped, no decimals (a receipt, not an invoice).
+func naira(v any) string {
+	f, ok := v.(float64)
+	if !ok {
+		return "an amount"
+	}
+	n := int64(f + 0.5)
+	s := fmt.Sprintf("%d", n)
+	if n < 0 {
+		return fmt.Sprintf("NGN %d", n)
+	}
+	out := ""
+	for i, c := range s {
+		if i > 0 && (len(s)-i)%3 == 0 {
+			out += ","
+		}
+		out += string(c)
+	}
+	return "NGN " + out
 }
 
 // Service wires store + provider + rendering.
@@ -370,6 +410,11 @@ func (s *Service) HandleEvent(ev DomainEvent) (Notification, error) {
 		return Notification{}, nil
 	}
 	patientID, _ := ev.Payload["patient_id"].(string)
+	if patientID == "" {
+		// Coverage events (claim receipts, disputes) address the patient
+		// by member id — enrolment ids track patient ids by default.
+		patientID, _ = ev.Payload["member_id"].(string)
+	}
 	if patientID == "" {
 		return Notification{}, ErrNotFound
 	}

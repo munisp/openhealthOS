@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/munisp/openhealthOS/shared/authz"
 	"github.com/munisp/openhealthOS/shared/servex"
@@ -41,11 +42,30 @@ func main() {
 		Script: resolveToolPath(env("ADJUDICATOR", "../../packages/adjudicator/adjudicate.py")),
 	}
 	tally := NewPayerTally()
+
+	// ADR-0018 integrity plane: money follows encounters, patients audit
+	// their own claims, every decision is hash-chained to an audit file.
+	store := NewDecisionStore()
+	audit, auditErr := NewAuditChain(env("AUDIT_FILE", ""))
+	if auditErr != nil {
+		log.Fatal("audit chain: ", auditErr)
+	}
+	eventsURL := env("NOTIFY_EVENTS", "")
+	if eventsURL == "" {
+		if base := strings.TrimRight(env("NOTIFY_URL", ""), "/"); base != "" {
+			eventsURL = base + "/events"
+		}
+	}
+	poster := eventPoster{url: eventsURL}
+
 	h := claimsHandler{
 		Adjudicator: adj,
 		Ledger:      SubprocessLedger{Binary: env("LEDGER", "../ledger/target/release/oh_ledger")},
 		Switch:      HTTPSwitch{BaseURL: env("SWITCH", "http://127.0.0.1:9090")},
 		Tally:       tally,
+		Store:       store,
+		Audit:       audit,
+		Poster:      poster,
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/claims", h)
@@ -58,8 +78,9 @@ func main() {
 		json.NewEncoder(w).Encode(map[string]any{"payers": tally.Stats()})
 	})
 	mux.Handle("/eligibility", eligibilityHandler{Checker: adj})
-	mux.Handle("/enrolments", enrolmentHandler{Enroller: adj})
+	mux.Handle("/enrolments", enrolmentHandler{Enroller: adj, Audit: audit})
 	mux.Handle("/preauth", preauthHandler{Authorizer: adj})
+	registerIntegrityRoutes(mux, store, audit, poster)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	addr := env("LISTEN", ":8080")
 	log.Printf("OpenHealth OS claims orchestrator on %s (switch=%s)", addr, env("SWITCH", "http://127.0.0.1:9090"))

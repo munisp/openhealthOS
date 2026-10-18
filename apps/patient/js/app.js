@@ -8,6 +8,7 @@ import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
 import {
   kindMeta, groupFeed, relTime, stateLabel, groupRecord, groupConsults,
   upcomingAppointments, coverageSummary, bookableSlots, nextDue, buildQuestionnaireResponse,
+  claimRows, nairaText,
 } from "./logic.js";
 import { nearest, facilityRow } from "./geo.js";
 
@@ -28,6 +29,7 @@ const state = {
   coverage: null,    // last good eligibility payload
   appts: null,       // last good appointment list
   consents: null,    // last good consent list
+  claims: null,      // last good claims-in-my-name list (ADR-0018)
   careLoading: false,
 };
 
@@ -240,7 +242,7 @@ function FeedView() {
         onclick: () => {
           state.patientId = state.phone = state.feed = state.updatedAt = null;
           state.record = state.recordAt = null;
-          state.coverage = state.appts = state.consents = null;
+          state.coverage = state.appts = state.consents = state.claims = null;
           state.tab = "updates";
           try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
           try { localStorage.removeItem(REC_CACHE_KEY); } catch { /* ignore */ }
@@ -436,14 +438,16 @@ async function loadCare() {
   state.careLoading = true;
   if (state.tab === "care") render();
   const settle = (p) => p.catch(() => null);
-  const [coverage, appts, consents] = await Promise.all([
+  const [coverage, appts, consents, claims] = await Promise.all([
     settle(portalFetch("/portal/coverage")),
     settle(portalFetch("/portal/appointments")),
     settle(portalFetch("/portal/consents")),
+    settle(portalFetch("/portal/claims")),
   ]);
   if (coverage) state.coverage = coverage;
   if (appts) state.appts = appts.appointments || appts || [];
   if (consents) state.consents = consents.consents || [];
+  if (claims) state.claims = claims.claims || [];
   state.careLoading = false;
   if (state.tab === "care") render();
 }
@@ -662,6 +666,57 @@ function SharingCard() {
   return card;
 }
 
+/* --- claims in my name (ADR-0018): the patient as auditor --------------
+ * Every claim a facility submits against the patient's coverage is
+ * listed here, with amount and date — and a dispute button that asks
+ * one question: "did this care happen?" A disputed claim is flagged on
+ * the facility's integrity scorecard and lands in the audit chain. */
+function ClaimsCard() {
+  const card = el("div", { class: "card care-card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("cl_title"))),
+    el("div", { class: "notif-meta" }, t("cl_sub")));
+  const rows = claimRows(state.claims || []);
+  if (!rows.length) {
+    card.append(el("div", { class: "notif-meta" },
+      state.claims === null && state.careLoading ? t("loading") : t("cl_none")));
+    return card;
+  }
+  for (const r of rows) {
+    const main = el("div", { class: "notif-main" },
+      el("div", { class: "notif-kind" }, `${nairaText(r.amount) || t("cl_amount_unknown")} · ${r.facility}`),
+      el("div", { class: "notif-meta" },
+        `${r.date} · ${r.decision}${r.disputed ? " · " + t("cl_disputed") : ""}`));
+    if (r.disputed) {
+      card.append(el("div", { class: "appt-row" }, main, null));
+      continue;
+    }
+    const box = el("div", { class: "cl-dispute-box" });
+    const btn = el("button", {
+      class: "btn btn-outline appt-cancel",
+      onclick: () => {
+        box.innerHTML = "";
+        const ta = el("textarea", { class: "ask-input", rows: 2, placeholder: t("cl_reason_placeholder") });
+        box.append(ta, el("button", {
+          class: "btn btn-primary btn-block",
+          onclick: async (ev) => {
+            const reason = ta.value.trim();
+            if (!reason) { ta.focus(); return; }
+            ev.target.disabled = true;
+            try {
+              await portalPost("/portal/claims/dispute", { claim_id: r.id, reason });
+              state.claims = null;
+              loadCare();
+              toast(t("cl_disputed"));
+            } catch { ev.target.disabled = false; toast(t("cl_failed")); }
+          },
+        }, t("cl_send")));
+      },
+    }, t("cl_dispute"));
+    card.append(el("div", { class: "appt-row" }, main, btn), box);
+  }
+  return card;
+}
+
 /* --- passkey unlock (ADR-0017): device-bound, server-verified --- */
 const PASSKEY_KEY = "openhealth-passkey";
 
@@ -858,6 +913,7 @@ function CareView() {
     MyAppointmentsCard(),
     AskClinicCard(),
     HealthCheckCard(),
+    ClaimsCard(),
     SharingCard(),
     PasskeyCard());
   return wrap;

@@ -15,11 +15,17 @@ const (
 
 // claimsHandler wires adjudication → ledger → settlement for one claim.
 // Tally, when set, folds every adjudication into the payer stats view.
+// Store/Audit/Poster are the anti-collusion plane (ADR-0018): every
+// decision is remembered (portal + scorecard), chained (tamper-evident
+// audit), and told to the patient (claim_submitted SMS).
 type claimsHandler struct {
 	Adjudicator Adjudicator
 	Ledger      Ledger
 	Switch      Switch
 	Tally       *PayerTally
+	Store       *DecisionStore
+	Audit       *AuditChain
+	Poster      eventPoster
 }
 
 func (h claimsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -40,10 +46,31 @@ func (h claimsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h.Tally != nil {
 		h.Tally.Record(dec)
 	}
+	// Anti-collusion plane (ADR-0018): remember, chain, and tell the
+	// patient. A claim the patient never hears about is the ghost-claim
+	// vector; a claim the patient sees is a distributed audit.
+	if h.Store != nil {
+		h.Store.Put(c, dec)
+	}
+	if h.Audit != nil {
+		auditErr("claim_decision", h.Audit.Append("claims-orchestrator", "claim_decision", c.ClaimID, map[string]any{
+			"decision": dec.Decision, "member_id": c.MemberID, "facility_id": c.ProviderID,
+			"payable_ngn": dec.PayableNGN, "linked": dec.Linkage.Linked,
+		}))
+	}
+	if dec.Decision != "DENY" {
+		go h.Poster.fire("claim_submitted", map[string]any{
+			"event_id": "claim-" + c.ClaimID, "facility_id": c.ProviderID,
+			"member_id": c.MemberID, "claim_id": c.ClaimID,
+			"amount_ngn": dec.PayableNGN, "service_date": c.ServiceDate,
+			"decision": dec.Decision,
+		})
+	}
 	resp := ClaimResponse{
 		ClaimID: dec.ClaimID, Decision: dec.Decision,
 		Reasons: dec.Reasons, Flags: dec.Flags,
 		AllowedNGN: dec.AllowedNGN, CopayNGN: dec.CopayNGN, PayableNGN: dec.PayableNGN,
+		Linkage: dec.Linkage,
 	}
 	// Only APPROVE with a payable amount moves money. PEND queues for human
 	// review; DENY is an auditable terminal state. Zero unaccounted outcomes.

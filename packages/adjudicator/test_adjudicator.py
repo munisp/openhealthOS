@@ -7,7 +7,7 @@ from adjudicate import adjudicate, preauth
 def claim(**kw):
     base = {"claim_id": "C-1", "member_id": "NG-0001", "provider_id": "PHC-007",
             "service_date": "2026-10-01", "items": [{"code": "MAL-RDT", "qty": 1}],
-            "claimed_ngn": 1500}
+            "claimed_ngn": 1500, "encounter_id": "ENC-0003"}
     base.update(kw)
     return base
 

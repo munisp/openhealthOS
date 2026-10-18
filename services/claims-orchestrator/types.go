@@ -19,6 +19,10 @@ type Claim struct {
 	ServiceDate string `json:"service_date"` // YYYY-MM-DD
 	Items       []Item `json:"items"`
 	ClaimedNGN  int    `json:"claimed_ngn"`
+	// EncounterID is the linkage evidence (ADR-0018): the platform
+	// encounter this claim bills against. Missing or unmatched → the
+	// adjudicator pends for human review. Money follows encounters.
+	EncounterID string `json:"encounter_id,omitempty"`
 	// History carries recent prior claims for duplicate detection (14-day window).
 	History []Claim `json:"history,omitempty"`
 }
@@ -41,17 +45,30 @@ type Decision struct {
 	AllowedNGN int      `json:"allowed_ngn"`
 	CopayNGN   int      `json:"copay_ngn"`
 	PayableNGN int      `json:"payable_ngn"`
+	// Linkage reports the encounter-evidence verdict (ADR-0018) —
+	// the integrity scorecard counts on it.
+	Linkage Linkage `json:"linkage"`
+}
+
+// Linkage is the encounter-evidence verdict: was the claim tied to a
+// matching platform encounter, and how strongly was presence proven.
+type Linkage struct {
+	Linked   bool   `json:"linked"`
+	Presence string `json:"presence,omitempty"` // biometric | card | self
 }
 
 // ClaimResponse is what the orchestrator returns to the caller.
 type ClaimResponse struct {
-	ClaimID         string   `json:"claim_id"`
-	Decision        string   `json:"decision"`
-	Reasons         []string `json:"reasons"`
-	Flags           []string `json:"flags"`
-	AllowedNGN      int      `json:"allowed_ngn"`
-	CopayNGN        int      `json:"copay_ngn"`
-	PayableNGN      int      `json:"payable_ngn"`
+	ClaimID    string   `json:"claim_id"`
+	Decision   string   `json:"decision"`
+	Reasons    []string `json:"reasons"`
+	Flags      []string `json:"flags"`
+	AllowedNGN int      `json:"allowed_ngn"`
+	CopayNGN   int      `json:"copay_ngn"`
+	PayableNGN int      `json:"payable_ngn"`
+	// Linkage is the encounter-evidence verdict (ADR-0018) — the caller
+	// sees WHY a claim pended, not just that it did.
+	Linkage         Linkage  `json:"linkage"`
 	Ledger          []string `json:"ledger,omitempty"`
 	LedgerError     string   `json:"ledger_error,omitempty"`
 	Settlement      any      `json:"settlement,omitempty"`

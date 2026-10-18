@@ -55,7 +55,7 @@ print(f\"   eligible: scheme={d['scheme']} benefits={d['benefit_services']} biom
 
 echo "== 2. suspension says WHY — and never deletes the record =="
 curl -sf -X POST "$CLAIMS/enrolments" -H 'Content-Type: application/json' \
-  -d '{"action":"suspend","member_id":"MBR-001","reason":"duplicate card reported at PHC"}' >/dev/null
+  -d '{"action":"suspend","actor":"enrolment-officer-7","member_id":"MBR-001","reason":"duplicate card reported at PHC"}' >/dev/null
 curl -sf -X POST "$CLAIMS/eligibility" -H 'Content-Type: application/json' \
   -d '{"member_id":"MBR-001","service_date":"2026-10-18"}' | python3 -c "
 import json,sys

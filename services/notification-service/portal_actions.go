@@ -210,6 +210,44 @@ func registerPortalActions(mux *http.ServeMux, svc *Service) {
 		proxyJSON(r.Context(), w, http.MethodPut, shrBase()+"/fhir/QuestionnaireResponse/"+id, res)
 	})
 
+	// ---- claims: "what was claimed in my name" + dispute (ADR-0018) ----
+	// The patient is the cheapest fraud detector ever built — they were
+	// either there or they weren't. This rail is their megaphone.
+	mux.HandleFunc("GET /portal/claims", func(w http.ResponseWriter, r *http.Request) {
+		pid := r.URL.Query().Get("patient_id")
+		if !portalGate(svc, w, pid, r.URL.Query().Get("phone")) {
+			return
+		}
+		proxyJSON(r.Context(), w, http.MethodGet,
+			eligibilityBase()+"/claims/for-member?member_id="+pid, nil)
+	})
+
+	mux.HandleFunc("POST /portal/claims/dispute", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			PatientID string `json:"patient_id"`
+			Phone     string `json:"phone"`
+			ClaimID   string `json:"claim_id"`
+			Reason    string `json:"reason"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil || req.ClaimID == "" || req.Reason == "" {
+			http.Error(w, `{"error":"claim_id and reason required"}`, http.StatusBadRequest)
+			return
+		}
+		if !portalGate(svc, w, req.PatientID, req.Phone) {
+			return
+		}
+		// Ownership check: a patient disputes only claims in their own
+		// name — disputing a neighbour's claim by id must be impossible.
+		if !claimOwnedBy(r.Context(), req.ClaimID, req.PatientID) {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
+		proxyJSON(r.Context(), w, http.MethodPost,
+			eligibilityBase()+"/claims/"+req.ClaimID+"/dispute", map[string]string{
+				"actor": req.PatientID, "reason": req.Reason,
+			})
+	})
+
 	// ---- consents: "who can see my record" + revoke ----
 	mux.HandleFunc("GET /portal/consents", func(w http.ResponseWriter, r *http.Request) {
 		pid := r.URL.Query().Get("patient_id")
@@ -266,6 +304,37 @@ func consentOwnedBy(ctx context.Context, consentID, patientID string) bool {
 	}
 	for _, c := range body.Consents {
 		if c.ID == consentID {
+			return true
+		}
+	}
+	return false
+}
+
+// claimOwnedBy fetches the member's claims and answers whether id is
+// among them — same anti-cross-patient rule as consentOwnedBy.
+func claimOwnedBy(ctx context.Context, claimID, patientID string) bool {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet,
+		eligibilityBase()+"/claims/for-member?member_id="+patientID, nil)
+	if err != nil {
+		return false
+	}
+	resp, err := portalClient.Do(req)
+	if err != nil {
+		return false
+	}
+	defer resp.Body.Close()
+	var body struct {
+		Claims []struct {
+			Claim struct {
+				ClaimID string `json:"claim_id"`
+			} `json:"claim"`
+		} `json:"claims"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&body); err != nil {
+		return false
+	}
+	for _, c := range body.Claims {
+		if c.Claim.ClaimID == claimID {
 			return true
 		}
 	}

@@ -79,3 +79,35 @@ test("groupRecord surfaces DocumentReference in the documents section", () => {
   assert.equal(sections.documents[0].value, "application/pdf");
   assert.equal(sections.documents[1].title, "ANC card");
 });
+
+/* ADR-0018: the patient as auditor — claims-in-my-name rows. */
+import { claimRows, nairaText } from "../js/logic.js";
+
+test("claimRows shapes stored claims, newest first, dispute state visible", () => {
+  const rows = claimRows([
+    { claim: { claim_id: "C-1", provider_id: "PHC-007", service_date: "2026-10-10" },
+      decision: { decision: "APPROVE", payable_ngn: 500 }, at: "2026-10-10T09:00:00Z", disputed: false },
+    { claim: { claim_id: "C-2", provider_id: "NG-KD-0014", service_date: "2026-10-18" },
+      decision: { decision: "PEND", payable_ngn: 12500 }, at: "2026-10-18T09:00:00Z",
+      disputed: true, dispute_reason: "never there" },
+    null,
+    { decision: {} }, // malformed row — skipped, never sinks the list
+  ]);
+  assert.deepEqual(rows.map((r) => r.id), ["C-2", "C-1"]);
+  assert.equal(rows[0].disputed, true);
+  assert.equal(rows[0].amount, 12500);
+  assert.equal(rows[1].facility, "PHC-007");
+});
+
+test("claimRows tolerates empty and junk input", () => {
+  assert.deepEqual(claimRows(null), []);
+  assert.deepEqual(claimRows("junk"), []);
+  assert.deepEqual(claimRows([]), []);
+});
+
+test("nairaText formats for humans and stays honest on unknowns", () => {
+  assert.equal(nairaText(12500), "₦12,500");
+  assert.equal(nairaText(500), "₦500");
+  assert.equal(nairaText(null), "");
+  assert.equal(nairaText("many"), "");
+});

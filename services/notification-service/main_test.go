@@ -164,3 +164,46 @@ func TestHTTPSurface(t *testing.T) {
 		t.Fatalf("patient notifications: %+v", nots)
 	}
 }
+
+// ADR-0018: claim receipts — the patient learns a claim exists in their
+// name, with the amount and a report channel; disputes are acknowledged.
+func TestRenderClaimReceiptAndDispute(t *testing.T) {
+	kind, text, ok := renderMessage(DomainEvent{Type: "claim_submitted", Payload: map[string]any{
+		"facility_name": "PHC Kofar Gayan", "amount_ngn": float64(12500), "service_date": "2026-10-18",
+	}})
+	if !ok || kind != "claim_receipt" {
+		t.Fatalf("claim_submitted render: %q %v", kind, ok)
+	}
+	for _, want := range []string{"NGN 12,500", "PHC Kofar Gayan", "2026-10-18", "report"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("receipt missing %q: %s", want, text)
+		}
+	}
+	if len(text) > 320 {
+		t.Fatalf("SMS too long: %d", len(text))
+	}
+	kind, text, ok = renderMessage(DomainEvent{Type: "claim_disputed", Payload: map[string]any{
+		"facility_name": "PHC Kofar Gayan", "claim_id": "C-1",
+	}})
+	if !ok || kind != "claim_dispute" || !strings.Contains(text, "C-1") {
+		t.Fatalf("claim_disputed render: %q %q", kind, text)
+	}
+}
+
+// Claim events address the patient by member_id — HandleEvent must
+// fall back when patient_id is absent.
+func TestClaimEventReachesMemberByMemberID(t *testing.T) {
+	store := NewMemoryStore()
+	if err := store.PutSubscription(Subscription{
+		PatientID: "NG-0001", Phone: NormalizePhone("08031234567"), Language: "en", Facility: "F-1",
+	}); err != nil {
+		t.Fatal(err)
+	}
+	svc := NewService(store, &LogProvider{})
+	n, err := svc.HandleEvent(DomainEvent{Type: "claim_submitted", Payload: map[string]any{
+		"member_id": "NG-0001", "facility_name": "PHC Test", "amount_ngn": float64(500),
+	}})
+	if err != nil || n.PatientID != "NG-0001" {
+		t.Fatalf("member-addressed claim event: %v %+v", err, n)
+	}
+}

@@ -9,8 +9,11 @@ ADJ = os.path.join(os.path.dirname(__file__), "..", "adjudicator", "adjudicate.p
 
 
 def make_claim(cid="C-1", code="ANC-001", qty=1, price=None, member="NG-0001"):
-    claim = {"claim_id": cid, "member_id": member, "provider_id": "PHC-001",
-             "service_date": "2026-01-15",
+    # Linked to the adjudicator's fixture encounter ENC-0003 (ADR-0018
+    # linkage gate): same member, facility, and date — replayed claims
+    # approve exactly as recorded.
+    claim = {"claim_id": cid, "member_id": member, "provider_id": "PHC-007",
+             "service_date": "2026-10-01", "encounter_id": "ENC-0003",
              "items": [{"code": code, "qty": qty}]}
     if price is not None:
         claim["items"][0]["unit_price"] = price

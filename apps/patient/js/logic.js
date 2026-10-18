@@ -276,3 +276,32 @@ export function buildQuestionnaireResponse(questionnaire, answers) {
     danger,
   };
 }
+
+/* Claims in the patient's name (ADR-0018): shape the portal's stored
+ * claims into display rows, newest first. The patient is the auditor —
+ * each row must answer "who claimed, how much, when, and did I dispute
+ * it" at a glance. */
+export function claimRows(stored) {
+  if (!Array.isArray(stored)) return [];
+  return stored
+    .filter((sc) => sc && sc.claim)
+    .map((sc) => ({
+      id: sc.claim.claim_id || "",
+      facility: sc.claim.provider_id || "",
+      date: sc.claim.service_date || (sc.at || "").slice(0, 10),
+      amount: (sc.decision && typeof sc.decision.payable_ngn === "number")
+        ? sc.decision.payable_ngn : null,
+      decision: (sc.decision && sc.decision.decision) || "",
+      disputed: !!sc.disputed,
+      at: sc.at || "",
+    }))
+    .sort((a, b) => (a.at < b.at ? 1 : a.at > b.at ? -1 : 0));
+}
+
+/* Naira for humans: 12500 → "₦12,500"; unknown amounts stay unknown. */
+export function nairaText(amount) {
+  if (typeof amount !== "number" || !Number.isFinite(amount)) return "";
+  const n = Math.round(amount);
+  const s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
+  return (n < 0 ? "-₦" : "₦") + s;
+}

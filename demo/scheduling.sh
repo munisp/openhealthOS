@@ -68,7 +68,7 @@ SLOT1=$(tail -1 "$TMP/slots.out")
 
 echo "== 1.5 patient is enrolled in BHCPF (coverage snapshot must be real) =="
 curl -sf -X POST "http://127.0.0.1:18080/enrolments" -H 'Content-Type: application/json' -d '{
-  "member_id":"PT-SCH-1","name":"Demo Patient","scheme":"BHCPF-VUL",
+  "actor":"enrolment-officer-7","member_id":"PT-SCH-1","name":"Demo Patient","scheme":"BHCPF-VUL",
   "valid_until":"2027-12-31"}' | python3 -c "
 import json,sys
 m = json.load(sys.stdin)

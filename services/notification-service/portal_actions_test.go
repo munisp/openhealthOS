@@ -256,3 +256,55 @@ func TestPortalQuestionnaireStampsIdentity(t *testing.T) {
 		t.Fatalf("wrong type: %d", rr.Code)
 	}
 }
+
+// ADR-0018: the patient-as-auditor rail — list claims in my name,
+// dispute the one that never happened, never touch a neighbour's.
+func TestPortalClaimsListAndDispute(t *testing.T) {
+	var calls []capturedCall
+	// One upstream serving both the for-member list and the dispute.
+	listReply := `{"claims":[{"claim":{"claim_id":"C-1","member_id":"P-1"},"decision":{"decision":"APPROVE","payable_ngn":5000},"at":"2026-10-18T10:00:00Z","disputed":false}]}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		calls = append(calls, capturedCall{r.Method, r.URL.RequestURI(), ""})
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/dispute") {
+			w.Write([]byte(`{"claim_id":"C-1","disputed":true}`))
+			return
+		}
+		w.Write([]byte(listReply))
+	}))
+	t.Cleanup(srv.Close)
+	t.Setenv("ELIGIBILITY_URL", srv.URL)
+	_, mux := portalActionsRig(t)
+
+	// List: gated, proxied.
+	rr := doReq(t, mux, "GET", "/portal/claims?patient_id=P-1&phone=08031234567", "")
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), "C-1") {
+		t.Fatalf("claims list: %d %s", rr.Code, rr.Body)
+	}
+	if len(calls) != 1 || calls[0].Path != "/claims/for-member?member_id=P-1" {
+		t.Fatalf("upstream list call: %+v", calls)
+	}
+
+	// Dispute own claim → ownership check (a for-member GET) then POST.
+	rr = doReq(t, mux, "POST", "/portal/claims/dispute",
+		`{"patient_id":"P-1","phone":"08031234567","claim_id":"C-1","reason":"I was never at this facility"}`)
+	if rr.Code != 200 || !strings.Contains(rr.Body.String(), `"disputed":true`) {
+		t.Fatalf("dispute: %d %s", rr.Code, rr.Body)
+	}
+	if calls[len(calls)-1].Path != "/claims/C-1/dispute" {
+		t.Fatalf("upstream dispute call: %+v", calls[len(calls)-1])
+	}
+
+	// Dispute someone else's claim id → 404, no dispute POST upstream.
+	before := len(calls)
+	rr = doReq(t, mux, "POST", "/portal/claims/dispute",
+		`{"patient_id":"P-1","phone":"08031234567","claim_id":"C-999","reason":"not mine either"}`)
+	if rr.Code != http.StatusNotFound {
+		t.Fatalf("cross-member dispute must 404: %d", rr.Code)
+	}
+	for _, c := range calls[before:] {
+		if strings.Contains(c.Path, "/dispute") {
+			t.Fatalf("ownership check bypassed: %+v", c)
+		}
+	}
+}
