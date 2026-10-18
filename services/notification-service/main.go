@@ -355,6 +355,27 @@ func renderMessage(ev DomainEvent) (kind, text string, ok bool) {
 		}
 		return "claim_dispute", fmt.Sprintf("OpenHealth: we received your report about %s at %s. Our integrity team will review it — you will hear from us. Keep this message as your reference.",
 			claimID, facility), true
+	case "emergency_dispatch":
+		// ADR-0019: the caller knows help has been routed, and where to.
+		triage := str("triage")
+		if triage == "" {
+			triage = "emergency"
+		}
+		return "emergency", fmt.Sprintf("OpenHealth: SOS — your %s alert has been dispatched to %s. Keep this phone close — help is on the way. If your location changes, send it again.",
+			triage, facility), true
+	case "dispatch_update":
+		status := str("status")
+		switch status {
+		case "acknowledged":
+			return "emergency", fmt.Sprintf("OpenHealth: SOS — %s has acknowledged your emergency and is responding.", facility), true
+		case "on_scene":
+			return "emergency", fmt.Sprintf("OpenHealth: SOS — responders from %s have arrived on scene.", facility), true
+		case "transported":
+			return "emergency", fmt.Sprintf("OpenHealth: SOS — the patient is being transported to %s.", facility), true
+		case "closed":
+			return "emergency", fmt.Sprintf("OpenHealth: SOS — your emergency case at %s is now closed. We will check on you within 48 hours — reply STOP to opt out.", facility), true
+		}
+		return "emergency", fmt.Sprintf("OpenHealth: SOS — update on your emergency at %s — status: %s.", facility, status), true
 	}
 	return "", "", false
 }

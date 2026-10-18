@@ -109,11 +109,13 @@ func TestRetriesExhaustToFailed(t *testing.T) {
 
 func TestRenderAllKinds(t *testing.T) {
 	cases := map[string]map[string]any{
-		"appointment":      {"facility_name": "F", "when_text": "Mon 8am"},
-		"lab_result":       {"test_name": "Hb", "facility_name": "F"},
-		"prescription":     {"drug_name": "ORS", "facility_name": "F"},
-		"referral":         {"to_facility": "Gen. Hospital", "status": "accepted"},
-		"immunization_due": {"patient_name": "Baby Ada", "vaccine": "Penta2", "facility_name": "F"},
+		"appointment":        {"facility_name": "F", "when_text": "Mon 8am"},
+		"lab_result":         {"test_name": "Hb", "facility_name": "F"},
+		"prescription":       {"drug_name": "ORS", "facility_name": "F"},
+		"referral":           {"to_facility": "Gen. Hospital", "status": "accepted"},
+		"immunization_due":   {"patient_name": "Baby Ada", "vaccine": "Penta2", "facility_name": "F"},
+		"emergency_dispatch": {"triage": "red", "facility_name": "F"},
+		"dispatch_update":    {"status": "acknowledged", "facility_name": "F"},
 	}
 	for typ, payload := range cases {
 		kind, text, ok := renderMessage(DomainEvent{Type: typ, Payload: payload})
@@ -162,6 +164,29 @@ func TestHTTPSurface(t *testing.T) {
 	resp.Body.Close()
 	if len(nots) != 1 || nots[0].State != StateSent {
 		t.Fatalf("patient notifications: %+v", nots)
+	}
+}
+
+// ADR-0019: dispatch rail — the caller hears that help is routed, and
+// every closed case promises the 48-hour welfare check with an opt-out.
+func TestRenderDispatch(t *testing.T) {
+	kind, text, ok := renderMessage(DomainEvent{Type: "emergency_dispatch", Payload: map[string]any{
+		"triage": "red", "facility_name": "Gwarzo PHC",
+	}})
+	if !ok || kind != "emergency" {
+		t.Fatalf("dispatch render: %q %v", kind, ok)
+	}
+	if !strings.Contains(text, "red") || !strings.Contains(text, "Gwarzo PHC") {
+		t.Fatalf("dispatch text missing triage/facility: %s", text)
+	}
+	kind, text, ok = renderMessage(DomainEvent{Type: "dispatch_update", Payload: map[string]any{
+		"status": "closed", "facility_name": "Gwarzo PHC",
+	}})
+	if !ok || !strings.Contains(text, "48 hours") || !strings.Contains(text, "STOP") {
+		t.Fatalf("closed update must promise follow-up with opt-out: %s", text)
+	}
+	if len(text) > 320 {
+		t.Fatalf("SMS too long: %d", len(text))
 	}
 }
 

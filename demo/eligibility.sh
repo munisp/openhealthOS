@@ -42,7 +42,7 @@ from payers import DEFAULT_PAYERS
 print(sorted(sch for p in DEFAULT_PAYERS for sch in p.schemes)[0])")
 VALID=$(python3 -c "import datetime;print((datetime.date.today()+datetime.timedelta(days=365)).isoformat())")
 curl -sf -X POST "$CLAIMS/enrolments" -H 'Content-Type: application/json' -d "{
-  \"member_id\":\"MBR-001\",\"name\":\"Amina Bello\",\"scheme\":\"$SCHEME\",
+  \"actor\":\"enrolment-officer-7\",\"member_id\":\"MBR-001\",\"name\":\"Amina Bello\",\"scheme\":\"$SCHEME\",
   \"valid_until\":\"$VALID\",\"copay_waiver\":true,\"biometric_required\":true}" >/dev/null
 curl -sf -X POST "$CLAIMS/eligibility" -H 'Content-Type: application/json' \
   -d '{"member_id":"MBR-001","service_date":"2026-10-18"}' | python3 -c "

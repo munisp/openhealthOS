@@ -31,3 +31,4 @@ go.work.sum
 services/scheduling-service/scheduling-service
 services/ipd-service/ipd-service
 services/gateway/gateway
+services/dispatch-service/dispatch-service
