@@ -6,6 +6,7 @@
 
 import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
 import { kindMeta, groupFeed, relTime, stateLabel } from "./logic.js";
+import { nearest, facilityRow } from "./geo.js";
 
 const LS_KEY = "openhealth-patient";
 const $ = (sel) => document.querySelector(sel);
@@ -52,6 +53,12 @@ function loadLocal() {
 function apiBase() {
   if (location.pathname.startsWith("/patient")) return `${location.origin}/api/notify`;
   return location.origin.startsWith("http") ? `${location.origin}/api/notify` : "http://127.0.0.1:18089";
+}
+
+/* Registry rail (ADR-0014): facilities near the patient. */
+function registryBase() {
+  if (location.pathname.startsWith("/patient")) return `${location.origin}/api/registry`;
+  return location.origin.startsWith("http") ? `${location.origin}/api/registry` : "http://127.0.0.1:18082";
 }
 
 async function fetchFeed() {
@@ -150,6 +157,7 @@ function FeedView() {
     wrap.append(el("h3", { class: "section-label" }, t("earlier")));
     for (const n of info) wrap.append(Card(n));
   }
+  wrap.append(NearMeCard());
   wrap.append(
     el("div", { class: "card settings-card" },
       langRow(),
@@ -162,6 +170,83 @@ function FeedView() {
         },
       }, t("sign_out"))));
   return wrap;
+}
+
+/* ---------- facilities near me (ADR-0014) -------------------------------
+ * Server-first (registry haversine), offline-honest: when the network is
+ * gone we compute distance ourselves over the last cached facility list —
+ * the answer may be stale but it is never fabricated. Navigation hands off
+ * to the phone's maps app (geo: link), which does turn-by-turn better than
+ * any in-app map could on these devices. */
+
+const FAC_CACHE_KEY = "openhealth-patient-facilities";
+
+function FacilityCard(f) {
+  const cap = [
+    f.beds ? `${f.beds} ${t("near_beds")}` : null,
+    f.doctors ? `${f.doctors} ${t("near_doctors")}` : null,
+    f.nurses ? `${f.nurses} ${t("near_nurses")}` : null,
+  ].filter(Boolean).join(" · ");
+  return el("div", { class: "card near-fac" },
+    el("div", { class: "notif-main" },
+      el("div", { class: "notif-kind" }, f.name),
+      el("div", { class: "notif-meta" },
+        [f.level, f.distance_km != null ? `${f.distance_km} km` : null, f.hours || null]
+          .filter(Boolean).join(" · ")),
+      cap ? el("div", { class: "notif-text" }, cap) : null,
+      f.amenities.length
+        ? el("div", { class: "notif-meta" }, f.amenities.join(" · ")) : null,
+      f.nav ? el("a", { class: "btn btn-outline btn-block near-nav", href: f.nav }, t("near_navigate")) : null));
+}
+
+function NearMeCard() {
+  const box = el("div", { class: "near-results" });
+
+  async function serverNear(lat, lng) {
+    const r = await fetch(`${registryBase()}/facilities/near?lat=${lat}&lng=${lng}&radius=25&limit=8`, { cache: "no-store" });
+    if (!r.ok) throw new Error(String(r.status));
+    const d = await r.json();
+    return (d.results || []).map((x) => facilityRow(x));
+  }
+
+  async function cachedListNear(lat, lng) {
+    let all = null;
+    try { all = JSON.parse(localStorage.getItem(FAC_CACHE_KEY) || "null"); } catch { /* ignore */ }
+    if (!all) {
+      const r = await fetch(`${registryBase()}/facilities`, { cache: "no-store" });
+      if (r.ok) {
+        all = await r.json();
+        try { localStorage.setItem(FAC_CACHE_KEY, JSON.stringify(all)); } catch { /* full — fine */ }
+      }
+    }
+    return all ? nearest(all, lat, lng, 8).map(facilityRow) : null;
+  }
+
+  function locate() {
+    if (!navigator.geolocation) { box.textContent = t("near_fail"); return; }
+    box.textContent = t("near_locating");
+    navigator.geolocation.getCurrentPosition(async (pos) => {
+      const { latitude, longitude } = pos.coords;
+      let rows = null;
+      try { rows = await serverNear(latitude, longitude); } catch { /* offline */ }
+      if (!rows) {
+        try { rows = await cachedListNear(latitude, longitude); } catch { /* offline */ }
+      }
+      box.innerHTML = "";
+      if (!rows || !rows.length) {
+        box.append(el("div", { class: "empty" }, t("near_none")));
+        return;
+      }
+      for (const f of rows) box.append(FacilityCard(f));
+    }, () => { box.textContent = t("near_fail"); }, { timeout: 10000, maximumAge: 300000 });
+  }
+
+  return el("div", { class: "card near-card" },
+    el("div", { class: "notif-main" },
+      el("div", { class: "notif-kind" }, t("near_title")),
+      el("div", { class: "notif-meta" }, t("near_sub"))),
+    el("button", { class: "btn btn-primary btn-block", onclick: locate }, t("near_btn")),
+    box);
 }
 
 function Card(n) {

@@ -157,3 +157,9 @@ body {
   z-index: 30; max-width: 90vw;
 }
 .toast-show { opacity: 1; }
+
+/* Facilities near me (ADR-0014) */
+.near-card { margin-top: 14px; }
+.near-results { margin-top: 10px; display: grid; gap: 10px; }
+.near-fac { padding: 12px; }
+.near-nav { margin-top: 8px; text-decoration: none; text-align: center; display: block; }

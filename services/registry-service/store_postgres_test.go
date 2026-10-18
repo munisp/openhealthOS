@@ -32,7 +32,7 @@ func pgTestStore(t *testing.T) (*PostgresStore, *PostgresPatientStore) {
 	// the test does not depend on CI having applied the latest schema.
 	_, file, _, _ := runtime.Caller(0)
 	mig := filepath.Join(filepath.Dir(file), "..", "..", "db", "migrations")
-	for _, name := range []string{"0001_init.sql", "0005_registry_kyc.sql"} {
+	for _, name := range []string{"0001_init.sql", "0005_registry_kyc.sql", "0007_facility_capacity_geo.sql"} {
 		sql, rerr := os.ReadFile(filepath.Join(mig, name))
 		if rerr != nil {
 			t.Fatalf("read migration %s: %v", name, rerr)
@@ -77,7 +77,15 @@ func TestPostgresFacilitiesProviders(t *testing.T) {
 	if err := store.PutFacility(Facility{}); !errors.Is(err, ErrInvalid) {
 		t.Fatalf("want ErrInvalid, got %v", err)
 	}
-	store.PutFacility(Facility{ID: "NG-KD-0001", Name: "A", State: "Kaduna", LGA: "X"})
+	store.PutFacility(Facility{ID: "NG-KD-0001", Name: "A", State: "Kaduna", LGA: "X",
+		Beds: 40, Doctors: 3, Nurses: 12, Amenities: []string{"pharmacy", "lab"},
+		Latitude: 10.52, Longitude: 7.43, Phone: "+234800", Hours: "24/7"})
+	// Capacity profile round-trips through Postgres (ADR-0014).
+	capGot, _ := store.GetFacility("NG-KD-0001")
+	if capGot.Beds != 40 || capGot.Doctors != 3 || capGot.Nurses != 12 ||
+		len(capGot.Amenities) != 2 || capGot.Phone != "+234800" || capGot.Hours != "24/7" {
+		t.Fatalf("capacity profile round-trip: %+v", capGot)
+	}
 	if list := store.ListFacilities(); len(list) != 2 || list[0].ID != "NG-KD-0001" {
 		t.Fatalf("list not sorted/complete: %+v", list)
 	}

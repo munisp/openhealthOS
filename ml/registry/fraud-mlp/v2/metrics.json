@@ -1,0 +1,7 @@
+{
+  "epochs_ran": 40,
+  "holdout_auc_roc": 0.823,
+  "holdout_n": 1600,
+  "holdout_pr_auc": 0.4855,
+  "train_n": 6400
+}

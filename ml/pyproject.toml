@@ -1,0 +1,16 @@
+[project]
+name = "openhealth-ml"
+version = "0.1.0"
+description = "OpenHealth OS ML/DL/GNN stack — fraud MLP, claim GCN, registry, continuous training (ADR-0014)"
+requires-python = ">=3.10"
+# torch is deliberately NOT a hard dependency of the platform: only the
+# training/inference nodes install it. Everything else in openhealth_ml
+# that can run stdlib-only (monitor, ab, registry) does.
+dependencies = []
+
+[project.optional-dependencies]
+torch = ["torch>=2.2"]
+ray = ["ray>=2.9"]
+
+[tool.setuptools.packages.find]
+include = ["openhealth_ml*"]

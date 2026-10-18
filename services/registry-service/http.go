@@ -15,6 +15,7 @@ type server struct {
 func (s server) routes() *http.ServeMux {
 	mux := http.NewServeMux()
 	mux.HandleFunc("/facilities", s.facilities)
+	mux.HandleFunc("/facilities/near", s.facilitiesNear) // exact beats subtree
 	mux.HandleFunc("/facilities/", s.facility)
 	mux.HandleFunc("/providers", s.providers)
 	mux.HandleFunc("/providers/", s.provider)
@@ -22,6 +23,24 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("/fhir/Practitioner/", s.fhirPractitioner)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
+}
+
+// facilitiesNear answers "what's around me" (ADR-0014):
+// GET /facilities/near?lat=&lng=&radius_km=&level=&amenity=&limit=
+func (s server) facilitiesNear(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+		return
+	}
+	lat, lng, radius, limit, ok := parseGeoParams(r.URL.Query())
+	if !ok {
+		http.Error(w, `{"error":"valid lat and lng are required (radius_km<=500, limit<=500)"}`, http.StatusBadRequest)
+		return
+	}
+	writeJSON(w, 200, map[string]any{
+		"query":   map[string]any{"lat": lat, "lng": lng, "radius_km": radius},
+		"results": NearbyFacilities(s.store.ListFacilities(), lat, lng, radius, r.URL.Query().Get("level"), r.URL.Query().Get("amenity"), limit),
+	})
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {

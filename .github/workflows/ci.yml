@@ -101,6 +101,32 @@ jobs:
           python3 -m unittest discover -s tools -p "test_a11y*.py"
           python3 -m unittest discover -s benchmark
           python3 benchmark/million_claims.py --claims 50000 > /dev/null  # invariant-checked benchmark run
+      - name: ml contract tests (stdlib lane — torch tests skip)
+        run: python3 -m unittest discover -s ml/tests
+
+  ml-torch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - name: install torch (CPU wheel)
+        run: pip install torch --index-url https://download.pytorch.org/whl/cpu
+      - name: ml tests with torch (models, training smoke, champion round-trip)
+        run: PYTHONPATH=ml python3 -m unittest discover -s ml/tests
+      - name: registry integrity — shipped champions load on CPU
+        run: |
+          PYTHONPATH=ml python3 - <<'EOF'
+          from openhealth_ml import data as D
+          from openhealth_ml.infer import ChampionScorer, FacilityGNNScorer
+          claims = D.generate_claims(300, seed=13)
+          out = ChampionScorer().score_claims(claims)
+          assert out[0]["model_version"] != "heuristic-fallback", "no champion shipped"
+          assert all(0 <= o["score"] <= 1 for o in out)
+          fac = FacilityGNNScorer().score_facilities(D.generate_claims(1500, seed=13, facilities=40))
+          assert fac and all(0 <= f["score"] <= 1 for f in fac)
+          print("registry integrity OK:", out[0]["model_version"], fac[0]["model_version"])
+          EOF
 
   fhir-conformance:
     runs-on: ubuntu-latest

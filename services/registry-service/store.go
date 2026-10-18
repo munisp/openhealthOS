@@ -31,6 +31,14 @@ type Facility struct {
 	Water     string   `json:"water"`     // piped | borehole | well | none
 	Latitude  float64  `json:"latitude,omitempty"`
 	Longitude float64  `json:"longitude,omitempty"`
+	// Capacity profile (ADR-0014) — what the map renders and referrals
+	// route on: beds, clinical staffing, amenities, contact, hours.
+	Beds      int      `json:"beds"`
+	Doctors   int      `json:"doctors"`
+	Nurses    int      `json:"nurses"`
+	Amenities []string `json:"amenities"` // pharmacy | lab | maternity | xray | ambulance | oxygen | cold-chain
+	Phone     string   `json:"phone,omitempty"`
+	Hours     string   `json:"hours,omitempty"` // e.g. "24/7" | "Mon-Fri 08:00-16:00"
 }
 
 // Provider is the registry record for one health worker.

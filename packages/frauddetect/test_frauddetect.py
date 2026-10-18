@@ -59,6 +59,37 @@ class TestDetectors(unittest.TestCase):
         rec = self.fd.analyze(claim("C-9", amount=99999), baseline_tariff())
         self.assertIn(rec.action, ("CLEAR", "PEND"))
 
+    # ------------------------------------------------ ML advisory seam (ADR-0014)
+    def test_ml_advisory_pends_high_score(self):
+        fd = FraudDetector(ml_scorer=lambda c, h: {"score": 0.93,
+                                                   "model_version": "v9"})
+        rec = fd.analyze(claim("ML-1"), [])
+        self.assertEqual(rec.action, "PEND")
+        self.assertTrue(any(r.startswith("ML_FRAUD_SCORE") for r in rec.reasons))
+        self.assertEqual(rec.detail["ml"]["model_version"], "v9")
+        self.assertEqual(rec.score, 0.93)
+
+    def test_ml_low_score_does_not_pend(self):
+        fd = FraudDetector(ml_scorer=lambda c, h: {"score": 0.2,
+                                                   "model_version": "v9"})
+        rec = fd.analyze(claim("ML-2"), [])
+        self.assertEqual(rec.action, "CLEAR")
+
+    def test_ml_failure_never_breaks_rules(self):
+        def boom(c, h):
+            raise RuntimeError("torch exploded")
+        fd = FraudDetector(ml_scorer=boom)
+        rec = fd.analyze(claim("ML-3", amount=700, tariff="MALARIA-RDT", day=10, hour=9),
+                         [claim("ML-4", amount=700, tariff="MALARIA-RDT", day=10, hour=8)])
+        self.assertEqual(rec.action, "PEND")  # duplicate rule still fires
+        self.assertNotIn("ml", rec.detail)
+
+    def test_ml_none_scorer_is_silent(self):
+        fd = FraudDetector(ml_scorer=lambda c, h: None)
+        rec = fd.analyze(claim("ML-5"), [])
+        self.assertEqual(rec.action, "CLEAR")
+        self.assertNotIn("ml", rec.detail)
+
 
 if __name__ == "__main__":
     unittest.main()

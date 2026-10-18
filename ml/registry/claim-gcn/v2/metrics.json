@@ -1,0 +1,5 @@
+{
+  "epochs_ran": 200,
+  "facilities": 121,
+  "holdout_auc_roc": 0.9944
+}

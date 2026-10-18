@@ -5,7 +5,7 @@
 
 import { el } from "./dom.js";
 import { DataSource } from "./data.js";
-import { FacilityView, StateView, PayerView, renderTicker } from "./views.js";
+import { FacilityView, StateView, PayerView, MapView, renderTicker } from "./views.js";
 
 const REFRESH_MS = 30000;
 const ds = new DataSource();
@@ -20,6 +20,9 @@ function currentView() {
   }
   if (h.startsWith("#/payers")) {
     return { name: "payers" };
+  }
+  if (h.startsWith("#/map")) {
+    return { name: "map", id: h.split("/")[2] || null };
   }
   return { name: "state" };
 }
@@ -38,7 +41,8 @@ async function render() {
     a.classList.toggle("active",
       (view.name === "state" && a.dataset.view === "state") ||
       (view.name === "facility" && a.dataset.view === "facility") ||
-      (view.name === "payers" && a.dataset.view === "payers"));
+      (view.name === "payers" && a.dataset.view === "payers") ||
+      (view.name === "map" && a.dataset.view === "map"));
   }
   const root = $("#board");
   root.innerHTML = "";
@@ -57,6 +61,7 @@ async function render() {
   root.innerHTML = "";
   root.append(view.name === "facility" ? FacilityView(last, view.id)
     : view.name === "payers" ? PayerView(last)
+    : view.name === "map" ? MapView(last, view.id)
     : StateView(last));
   renderTicker($("#ticker-track"), last);
 

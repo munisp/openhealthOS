@@ -223,14 +223,30 @@ export function payerSummary(rows) {
 export function demoData() {
   const now = Date.now();
   const facilities = [
-    { id: "PHC-001", name: "Kawo PHC", lga: "Kaduna North", kind: "phc", x: 31, y: 26 },
-    { id: "PHC-002", name: "Umuahia PHC", lga: "Umuahia North", kind: "phc", x: 66, y: 71 },
-    { id: "PHC-003", name: "Ado-Ekiti PHC", lga: "Ado", kind: "phc", x: 24, y: 62 },
-    { id: "PHC-004", name: "Nsukka PHC", lga: "Nsukka", kind: "phc", x: 58, y: 55 },
-    { id: "PHC-005", name: "Sabon Gari PHC", lga: "Zaria", kind: "phc", x: 38, y: 18 },
-    { id: "PHC-006", name: "Ondo Town PHC", lga: "Ondo West", kind: "phc", x: 20, y: 74 },
-    { id: "HOS-001", name: "General Hospital Ikeja", lga: "Ikeja", kind: "hospital", x: 12, y: 86 },
-    { id: "HOS-002", name: "State Specialist Owerri", lga: "Owerri", kind: "hospital", x: 61, y: 82 },
+    { id: "PHC-001", name: "Kawo PHC", lga: "Kaduna North", state: "Kaduna", kind: "phc", level: "PHC", x: 31, y: 26,
+      latitude: 10.599, longitude: 7.434, beds: 12, doctors: 1, nurses: 6,
+      amenities: ["pharmacy", "maternity"], phone: "+234 700 000 001", hours: "Mon-Fri 08:00-16:00" },
+    { id: "PHC-002", name: "Umuahia PHC", lga: "Umuahia North", state: "Abia", kind: "phc", level: "PHC", x: 66, y: 71,
+      latitude: 5.532, longitude: 7.486, beds: 10, doctors: 1, nurses: 5,
+      amenities: ["pharmacy", "lab"], phone: "+234 700 000 002", hours: "Mon-Fri 08:00-16:00" },
+    { id: "PHC-003", name: "Ado-Ekiti PHC", lga: "Ado", state: "Ekiti", kind: "phc", level: "PHC", x: 24, y: 62,
+      latitude: 7.621, longitude: 5.221, beds: 8, doctors: 1, nurses: 4,
+      amenities: ["maternity"], phone: "+234 700 000 003", hours: "Mon-Fri 08:00-16:00" },
+    { id: "PHC-004", name: "Nsukka PHC", lga: "Nsukka", state: "Enugu", kind: "phc", level: "PHC", x: 58, y: 55,
+      latitude: 6.857, longitude: 7.395, beds: 14, doctors: 2, nurses: 7,
+      amenities: ["pharmacy", "lab", "cold-chain"], phone: "+234 700 000 004", hours: "24/7" },
+    { id: "PHC-005", name: "Sabon Gari PHC", lga: "Zaria", state: "Kaduna", kind: "phc", level: "PHC", x: 38, y: 18,
+      latitude: 11.111, longitude: 7.722, beds: 10, doctors: 1, nurses: 5,
+      amenities: ["pharmacy", "oxygen"], phone: "+234 700 000 005", hours: "Mon-Fri 08:00-16:00" },
+    { id: "PHC-006", name: "Ondo Town PHC", lga: "Ondo West", state: "Ondo", kind: "phc", level: "PHC", x: 20, y: 74,
+      latitude: 7.093, longitude: 4.835, beds: 12, doctors: 1, nurses: 6,
+      amenities: ["maternity", "pharmacy"], phone: "+234 700 000 006", hours: "Mon-Fri 08:00-16:00" },
+    { id: "HOS-001", name: "General Hospital Ikeja", lga: "Ikeja", state: "Lagos", kind: "hospital", level: "hospital", x: 12, y: 86,
+      latitude: 6.602, longitude: 3.351, beds: 120, doctors: 18, nurses: 60,
+      amenities: ["pharmacy", "lab", "maternity", "xray", "ambulance", "oxygen"], phone: "+234 700 000 101", hours: "24/7" },
+    { id: "HOS-002", name: "State Specialist Owerri", lga: "Owerri", state: "Imo", kind: "hospital", level: "hospital", x: 61, y: 82,
+      latitude: 5.485, longitude: 7.036, beds: 90, doctors: 12, nurses: 45,
+      amenities: ["pharmacy", "lab", "xray", "ambulance", "oxygen", "cold-chain"], phone: "+234 700 000 102", hours: "24/7" },
   ];
   const types = ["encounter", "encounter", "encounter", "dispensing", "claim_submitted", "stock_report"];
   const events = [];

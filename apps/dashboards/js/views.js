@@ -6,6 +6,7 @@ import { el } from "./dom.js";
 import { dial, sparkline, facilityMap, hbar } from "./charts.js";
 import { eventsByType, encountersToday, perFacilityCounts, pilotGates,
          overviewRows, platformHealth, payerRows, payerSummary } from "./data.js";
+import { nearest, navLink, renderMap, hitTest } from "./map.js";
 
 /* ---------- shared bits ---------- */
 
@@ -232,6 +233,168 @@ export function StateView(data) {
   page.append(
     el("div", { class: "grid-3" }, watch, mapPanel, alerts),
     el("div", { class: "grid-2" }, gatePanel, matrix));
+  return page;
+}
+
+/* ---------- facility map (ADR-0014) — offline geographic view ----------
+ * Canvas render over the bundled Nigeria boundary; capacity profile
+ * (beds, doctors, nurses, amenities) on every marker; near-me uses the
+ * client-side haversine over the cached facility list so it works with
+ * zero connectivity. */
+
+let boundaryPromise = null;
+function loadBoundary() {
+  if (!boundaryPromise) {
+    boundaryPromise = fetch("assets/nigeria-boundary.json")
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`http ${r.status}`))))
+      .then((g) => g.geometry.coordinates[0])
+      .catch(() => []);
+  }
+  return boundaryPromise;
+}
+
+const mapFilters = { level: "", amenity: "" };
+const AMENITIES = ["pharmacy", "lab", "maternity", "xray", "ambulance", "oxygen", "cold-chain"];
+
+function mapFacilities(data) {
+  return (data.facilities || []).filter((f) =>
+    (!mapFilters.level || f.level === mapFilters.level) &&
+    (!mapFilters.amenity || (f.amenities || []).includes(mapFilters.amenity)));
+}
+
+function capacityLine(f) {
+  const bits = [];
+  if (f.beds) bits.push(`${f.beds} beds`);
+  if (f.doctors) bits.push(`${f.doctors} doctors`);
+  if (f.nurses) bits.push(`${f.nurses} nurses`);
+  return bits.join(" · ") || "capacity not reported";
+}
+
+function facilityDetailCard(f, data) {
+  const card = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, f.name),
+    el("div", { class: "kpi-sub mono" }, `${f.id} · ${f.level || f.kind || ""} · ${f.lga || ""}${f.state ? ", " + f.state : ""}`),
+    el("div", { class: "kpi-strip" },
+      kpi(String(f.beds || 0), "beds"),
+      kpi(String(f.doctors || 0), "doctors"),
+      kpi(String(f.nurses || 0), "nurses")));
+  const chips = el("div", { class: "chip-row" });
+  for (const a of f.amenities || []) chips.append(el("span", { class: "chip" }, a));
+  if (!(f.amenities || []).length) chips.append(el("span", { class: "kpi-sub" }, "no amenities reported"));
+  card.append(chips);
+  const meta = [];
+  if (f.phone) meta.push(`☎ ${f.phone}`);
+  if (f.hours) meta.push(`Hours: ${f.hours}`);
+  if (meta.length) card.append(el("div", { class: "kpi-sub mono" }, meta.join(" · ")));
+  if (f.latitude || f.longitude) {
+    card.append(el("a", { class: "themebtn", href: navLink(f), style: "display:inline-block;margin-top:8px;text-decoration:none" },
+      "⟶ Navigate (opens maps app)"));
+    const near = nearest((data.facilities || []).filter((x) => x.id !== f.id), f.latitude, f.longitude, 4);
+    if (near.length) {
+      card.append(el("div", { class: "section-label" }, "Nearest alternatives"));
+      for (const n of near) {
+        card.append(el("div", { class: "watch-row", onclick: () => { location.hash = `#/map/${n.id}`; } },
+          el("div", {},
+            el("div", { class: "watch-name" }, n.name),
+            el("div", { class: "watch-sub" }, `${n.level || n.kind || ""} · ${capacityLine(n)}`)),
+          el("div", { class: "watch-metric" }, `${n.distance_km}`, el("small", {}, "km"))));
+      }
+    }
+  }
+  return card;
+}
+
+export function MapView(data, selectedId) {
+  const all = data.facilities || [];
+  const facilities = mapFacilities(data);
+  const selected = all.find((f) => f.id === selectedId) || null;
+  const page = el("div", { class: "page" });
+
+  const nearBox = el("div", {});
+  const nearBtn = el("button", { class: "themebtn", onclick: () => {
+    if (!navigator.geolocation) { nearBox.textContent = "Geolocation is not available on this device."; return; }
+    nearBox.textContent = "Locating…";
+    navigator.geolocation.getCurrentPosition((pos) => {
+      const near = nearest(facilities, pos.coords.latitude, pos.coords.longitude, 5);
+      nearBox.innerHTML = "";
+      if (!near.length) { nearBox.append(el("div", { class: "empty" }, "No placed facilities in view.")); return; }
+      nearBox.append(el("div", { class: "section-label" }, `Closest to you (${pos.coords.latitude.toFixed(3)}, ${pos.coords.longitude.toFixed(3)})`));
+      for (const n of near) {
+        const row = el("div", { class: "watch-row", onclick: () => { location.hash = `#/map/${n.id}`; } },
+          el("div", {},
+            el("div", { class: "watch-name" }, n.name),
+            el("div", { class: "watch-sub" }, capacityLine(n))));
+        row.append(el("div", { class: "watch-metric" }, `${n.distance_km}`, el("small", {}, "km")));
+        nearBox.append(row);
+      }
+    }, () => { nearBox.textContent = "Location unavailable — allow location access and try again."; },
+       { timeout: 8000, maximumAge: 300000 });
+  } }, "◎ Facilities near me");
+
+  const rerender = () => window.dispatchEvent(new Event("hashchange"));
+  const levelSel = el("select", { class: "themebtn", onchange: (e) => { mapFilters.level = e.target.value; rerender(); } },
+    el("option", { value: "" }, "all levels"),
+    ...["PHC", "clinic", "hospital"].map((l) => {
+      const o = el("option", { value: l }, l);
+      if (mapFilters.level === l) o.selected = true;
+      return o;
+    }));
+  const amenitySel = el("select", { class: "themebtn", onchange: (e) => { mapFilters.amenity = e.target.value; rerender(); } },
+    el("option", { value: "" }, "any amenity"),
+    ...AMENITIES.map((a) => {
+      const o = el("option", { value: a }, a);
+      if (mapFilters.amenity === a) o.selected = true;
+      return o;
+    }));
+
+  page.append(
+    el("div", { style: "display:flex;align-items:center;gap:12px;flex-wrap:wrap" },
+      el("h1", { style: "font-size:20px;font-weight:700" }, "Facility map"),
+      el("span", { class: "kpi-sub mono" },
+        `${facilities.length}/${all.length} shown · ${all.filter((f) => f.latitude || f.longitude).length} geo-placed`),
+      nearBtn, levelSel, amenitySel));
+
+  const canvas = el("canvas", { width: 900, height: 620, class: "geomap" });
+  const placed = facilities.filter((f) => f.latitude || f.longitude);
+  loadBoundary().then((boundary) => {
+    const res = boundary.length ? renderMap(canvas, boundary, placed, selectedId) : null;
+    if (res) {
+      canvas.addEventListener("click", (ev) => {
+        const rect = canvas.getBoundingClientRect();
+        const x = (ev.clientX - rect.left) * (canvas.width / rect.width);
+        const y = (ev.clientY - rect.top) * (canvas.height / rect.height);
+        const id = hitTest(res.hits, x, y);
+        if (id) location.hash = `#/map/${id}`;
+      });
+    }
+  });
+
+  const mapPanel = el("div", { class: "panel mapwrap" },
+    el("div", { class: "panel-title" }, "Nigeria — tap a marker for beds, staffing, amenities, navigation"),
+    canvas,
+    el("div", { class: "map-legend" },
+      el("span", {}, el("span", { class: "status-dot", style: "background:#3f9d63;display:inline-block" }), " PHC"),
+      el("span", {}, el("span", { class: "status-dot", style: "background:#e2a44f;display:inline-block" }), " clinic"),
+      el("span", {}, el("span", { class: "status-dot", style: "background:#e2554f;display:inline-block" }), " hospital"),
+      el("span", { class: "kpi-sub" }, "marker size = beds")));
+
+  const side = el("div", {});
+  if (selected) side.append(facilityDetailCard(selected, data));
+  else {
+    const summary = el("div", { class: "panel" },
+      el("div", { class: "panel-title" }, "Capacity in view"));
+    const beds = placed.reduce((a, f) => a + (f.beds || 0), 0);
+    const docs = placed.reduce((a, f) => a + (f.doctors || 0), 0);
+    const nurses = placed.reduce((a, f) => a + (f.nurses || 0), 0);
+    summary.append(el("div", { class: "kpi-strip" },
+      kpi(String(beds), "beds"), kpi(String(docs), "doctors"), kpi(String(nurses), "nurses")));
+    summary.append(el("div", { class: "empty" },
+      placed.length ? "Select a marker on the map for its full profile." : "No facilities with coordinates yet — registry entries need latitude/longitude."));
+    side.append(summary);
+  }
+  side.append(nearBox);
+
+  page.append(el("div", { class: "grid-2" }, mapPanel, side));
   return page;
 }
 

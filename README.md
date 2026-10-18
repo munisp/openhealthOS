@@ -26,6 +26,7 @@ OpenHealth OS is digital public infrastructure: a free, open-source, offline-fir
 | 11 | Patient engagement & notification rails | [`services/notification-service`](services/notification-service) — subscriptions, SMS provider seam (webhook, never a proprietary SDK), persisted-attempt delivery states, five-language rendering, no clinical detail over SMS, **event-driven FHIR intake** (`/fhir/inbox`: Medplum rest-hook Subscriptions fire notifications off the clinical record itself — CI-gated against a real Medplum server) |
 | 10 | Analytics & developer platform | [`packages/analytics`](packages/analytics) (pilot-gate metrics) + [`packages/dhis2-bridge`](packages/dhis2-bridge) + public FHIR APIs + the **payer dashboard** (`/payers/stats` → approval mix & payable share per payer — the number an agency negotiates with) |
 | 12 | Innovation layer ([ADR-0013](docs/architecture/adr-0013-hardening-and-innovation.md)) | [`packages/ips`](packages/ips) + [`tools/ipsqr`](tools/ipsqr) (IPS QR patient summary) · [`packages/surveillance`](packages/surveillance) (syndromic surveillance) · [`packages/edgeai`](packages/edgeai) (offline AI copilot, approval-gated) · [`tools/provcred`](tools/provcred) (provider verifiable credentials) · [`packages/frauddetect`](packages/frauddetect) (advisory fraud scoring) · [`packages/households`](packages/households) (CHW catchment maps) · [`packages/payrails`](packages/payrails) (PSP-agnostic rails) · [`packages/coldchain`](packages/coldchain) (predictive cold chain) |
+| 13 | Geospatial + ML/DL/GNN ([ADR-0014](docs/architecture/adr-0014-geospatial-and-ml.md)) | facility capacity profile (beds/doctors/nurses/amenities, migration 0007) · haversine [`/facilities/near`](services/registry-service/geo.go) · offline canvas facility map (bundled Nigeria boundary — no tiles, no CDN, no WebGL) + near-me in the [patient app](apps/patient) (5 languages) with `geo:` navigation handoff · [`ml/`](ml) — real PyTorch: fraud MLP + claim GCN with shipped champion weights, CPU-only inference, file registry, PSI drift monitoring, champion/challenger A/B, continuous retraining on lakehouse data, optional Ray scale-out |
 
 Edge-to-core sync: [`services/sync-agent`](services/sync-agent) (edge) → [`services/lga-hub`](services/lga-hub) (LGA store-and-forward: priority queues — critical referrals overtake bulk telemetry — JSONL spill fsynced before ack, power-cut-proof, idempotent) → [`services/sync-ingest`](services/sync-ingest) (state plane, idempotent). See [ADR-0011](docs/architecture/adr-0011-national-scale.md).
 
@@ -102,6 +103,9 @@ apps/        Client apps — offline-first PWA (nurse/CHW EMR), patient app,
              operations dashboards (facility + state), Android shell (WebView/TWA) [ADR-0009]
 services/    Go + Rust deployable services (the runtime plane)
 packages/    Python domain packages (rules, analytics, ML seams)
+ml/          The ML/DL/GNN stack [ADR-0014] — PyTorch models, training loops,
+             file registry with shipped champion weights, CPU inference,
+             drift monitoring, A/B, continuous retraining (torch required here only)
 db/          State-plane Postgres migrations (idempotent, applied at boot)
 shared/      Shared Go modules — authz (OIDC, fail-closed), servex (timeouts/metrics),
              crdt (edge replication), eventbus, otelx (tracing),
@@ -167,6 +171,11 @@ needs from day one:
 - **Operability** — every service exposes `/healthz` and `/metrics`,
   serves with bounded timeouts, and drains connections on SIGTERM
   (`shared/servex`).
+
+The honest, per-feature scorecard — business rules, logic completeness,
+and what we actually do with Postgres/TigerBeetle/Redis/Mojaloop/Kafka/
+APISIX/Keycloak/OpenAppSec/Permify/OpenSearch/Fluvio/Neo4j — lives in
+[docs/production-readiness.md](docs/production-readiness.md).
 
 ## Client apps
 

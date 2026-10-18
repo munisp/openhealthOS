@@ -35,7 +35,7 @@ func post(t *testing.T, mux *http.ServeMux, path, body string) *httptest.Respons
 func register(t *testing.T, mux *http.ServeMux, name, dob, phone string) Patient {
 	t.Helper()
 	rec := post(t, mux, "/patients",
-		`{"name":`+strconv(name)+`,"dob":`+strconv(dob)+`,"phone":`+strconv(phone)+`,"facility_id":"PHC-1"}`)
+		`{"name":`+jq(name)+`,"dob":`+jq(dob)+`,"phone":`+jq(phone)+`,"facility_id":"PHC-1"}`)
 	if rec.Code != 201 {
 		t.Fatalf("register %s: %d %s", name, rec.Code, rec.Body)
 	}
@@ -44,8 +44,8 @@ func register(t *testing.T, mux *http.ServeMux, name, dob, phone string) Patient
 	return p
 }
 
-// strconv quotes a string for JSON embedding in test payloads.
-func strconv(s string) string {
+// jq quotes a string for JSON embedding in test payloads.
+func jq(s string) string {
 	b, _ := json.Marshal(s)
 	return string(b)
 }

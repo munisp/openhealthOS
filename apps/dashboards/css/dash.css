@@ -195,6 +195,11 @@ body {
 .map-legend { display: flex; gap: var(--grid); font-family: var(--font-data); font-size: var(--fs-9); text-transform: uppercase; letter-spacing: .12em; color: var(--muted); margin-top: 8px; }
 .map-legend span { display: inline-flex; align-items: center; gap: 5px; }
 
+/* Geographic facility map (ADR-0014) */
+.geomap { display: block; width: 100%; height: auto; background: var(--panel); border-radius: 8px; cursor: crosshair; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+.chip { font-family: var(--font-data); font-size: var(--fs-9); text-transform: uppercase; letter-spacing: .08em; padding: 3px 8px; border: 1px solid var(--line); border-radius: 999px; color: var(--muted); }
+
 /* ---------- gates ---------- */
 
 .gate-row { display: flex; align-items: center; gap: 10px; padding: 8px 4px; border-bottom: 1px solid var(--line); }

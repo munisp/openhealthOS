@@ -60,8 +60,14 @@ def _z(value: float, values: list[float]) -> float | None:
 
 
 class FraudDetector:
-    def __init__(self, config: dict | None = None):
+    def __init__(self, config: dict | None = None, ml_scorer=None):
+        """ml_scorer: optional callable (claim, history) -> {"score": float,
+        "model_version": str} | None. This is the ML advisory seam
+        (ADR-0014): openhealth_ml.bridge provides the production callable,
+        but this package never imports torch — rules stay authoritative and
+        the detector works unchanged when no model is attached."""
         self.cfg = dict(DEFAULTS, **(config or {}))
+        self.ml_scorer = ml_scorer
 
     def analyze(self, claim: dict, history: list[dict]) -> Recommendation:
         """claim: the claim under review; history: prior claims (same payer feed)."""
@@ -95,8 +101,29 @@ class FraudDetector:
             detail["facility_volume_z"] = round(spike, 2)
             score = max(score, min(1.0, spike / (self.cfg["z_threshold"] * 2)))
 
+        ml = self._ml_advisory(claim, history)
+        if ml is not None:
+            detail["ml"] = ml
+            if ml["score"] >= 0.5:
+                reasons.append(f"ML_FRAUD_SCORE {ml['score']:.2f} ({ml['model_version']})")
+            # The ML score raises triage priority; it never clears what the
+            # rules pended, and it never denies on its own.
+            score = max(score, ml["score"])
+
         return Recommendation(cid, "PEND" if reasons else "CLEAR", reasons,
                               round(score, 2), detail)
+
+    def _ml_advisory(self, claim: dict, history: list[dict]) -> dict | None:
+        if self.ml_scorer is None:
+            return None
+        try:
+            r = self.ml_scorer(claim, history)
+        except Exception:
+            return None  # advisory must never break adjudication
+        if not r or not isinstance(r.get("score"), (int, float)):
+            return None
+        return {"score": round(float(r["score"]), 4),
+                "model_version": str(r.get("model_version", "unknown"))}
 
     # ------------------------------------------------------------- detectors
     def _upcoding(self, claim: dict, history: list[dict]) -> float | None:

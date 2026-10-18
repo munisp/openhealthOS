@@ -51,31 +51,40 @@ func (p *PostgresStore) PutFacility(f Facility) error {
 	if err != nil {
 		return fmt.Errorf("services marshal: %w", err)
 	}
+	amenities, err := json.Marshal(f.Amenities)
+	if err != nil {
+		return fmt.Errorf("amenities marshal: %w", err)
+	}
 	ctx, cancel := pgCtx()
 	defer cancel()
 	_, err = p.pool.Exec(ctx, `
-		INSERT INTO facilities (id, name, state, lga, ownership, level, services, bhcpf, power, water, latitude, longitude)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+		INSERT INTO facilities (id, name, state, lga, ownership, level, services, bhcpf, power, water, latitude, longitude, beds, doctors, nurses, amenities, phone, hours)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
 		ON CONFLICT (id) DO UPDATE SET
 			name=EXCLUDED.name, state=EXCLUDED.state, lga=EXCLUDED.lga,
 			ownership=EXCLUDED.ownership, level=EXCLUDED.level, services=EXCLUDED.services,
 			bhcpf=EXCLUDED.bhcpf, power=EXCLUDED.power, water=EXCLUDED.water,
-			latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude`,
+			latitude=EXCLUDED.latitude, longitude=EXCLUDED.longitude,
+			beds=EXCLUDED.beds, doctors=EXCLUDED.doctors, nurses=EXCLUDED.nurses,
+			amenities=EXCLUDED.amenities, phone=EXCLUDED.phone, hours=EXCLUDED.hours`,
 		f.ID, f.Name, f.State, f.LGA, f.Ownership, f.Level, services,
-		f.BHCPF, f.Power, f.Water, nullFloat(f.Latitude), nullFloat(f.Longitude))
+		f.BHCPF, f.Power, f.Water, nullFloat(f.Latitude), nullFloat(f.Longitude),
+		f.Beds, f.Doctors, f.Nurses, amenities, f.Phone, f.Hours)
 	return err
 }
 
 func scanFacility(row pgx.Row) (Facility, error) {
 	var f Facility
-	var services []byte
+	var services, amenities []byte
 	var lat, lon *float64
 	err := row.Scan(&f.ID, &f.Name, &f.State, &f.LGA, &f.Ownership, &f.Level,
-		&services, &f.BHCPF, &f.Power, &f.Water, &lat, &lon)
+		&services, &f.BHCPF, &f.Power, &f.Water, &lat, &lon,
+		&f.Beds, &f.Doctors, &f.Nurses, &amenities, &f.Phone, &f.Hours)
 	if err != nil {
 		return Facility{}, err
 	}
 	json.Unmarshal(services, &f.Services)
+	json.Unmarshal(amenities, &f.Amenities)
 	if lat != nil {
 		f.Latitude = *lat
 	}
@@ -85,7 +94,7 @@ func scanFacility(row pgx.Row) (Facility, error) {
 	return f, nil
 }
 
-const facilityCols = "id, name, state, lga, ownership, level, services, bhcpf, power, water, latitude, longitude"
+const facilityCols = "id, name, state, lga, ownership, level, services, bhcpf, power, water, latitude, longitude, beds, doctors, nurses, amenities, phone, hours"
 
 func (p *PostgresStore) GetFacility(id string) (Facility, error) {
 	ctx, cancel := pgCtx()
