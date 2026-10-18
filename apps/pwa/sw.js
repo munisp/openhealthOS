@@ -8,11 +8,13 @@
  * and the OTA story (tools/ota) ships new shells through staged rollouts.
  */
 
-const CACHE = "openhealth-shell-v3";
+const CACHE = "openhealth-shell-v4";
 const SHELL = [
   "./",
   "./index.html",
   "../design-tokens.css",
+  "../ambulance-map.js",
+  "./dispatch.html",
   "./css/app.css",
   "./js/app.js",
   "./js/clinical.js",

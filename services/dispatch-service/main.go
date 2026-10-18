@@ -98,6 +98,7 @@ type Incident struct {
 	FacilityID   string          `json:"facility_id,omitempty"`
 	FacilityName string          `json:"facility_name,omitempty"`
 	FacilityKm   float64         `json:"facility_km,omitempty"`
+	UnitID       string          `json:"unit_id,omitempty"` // responding ambulance (ADR-0021)
 	Timeline     []TimelineEntry `json:"timeline"`
 	CreatedAt    string          `json:"created_at"`
 	UpdatedAt    string          `json:"updated_at"`

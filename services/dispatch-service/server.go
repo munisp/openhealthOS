@@ -110,6 +110,7 @@ func (ix Integrations) nearestFacility(ctx context.Context, lat, lng float64) (F
 type server struct {
 	store CaseStore
 	ix    Integrations
+	fleet *FleetStore
 }
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
@@ -138,6 +139,7 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /incidents/{id}", s.getIncident)
 	mux.HandleFunc("POST /incidents/{id}/assign", s.assign)
 	mux.HandleFunc("POST /incidents/{id}/transition", s.transition)
+	s.fleetRoutes(mux)
 	mux.HandleFunc("GET /contacts", s.listContacts)
 	mux.HandleFunc("GET /contacts/{phone}", s.getContact)
 	mux.HandleFunc("POST /contacts/{phone}/consent", s.setConsent)
@@ -224,6 +226,18 @@ func (s server) intake(channel, phone, patientID string, lat, lng float64, locSo
 			TS: inc.UpdatedAt, Actor: "service", Action: "awaiting-location",
 			Detail: "no coordinates — dispatcher must call back or assign manually",
 		})
+	}
+	// A dispatched incident with coordinates gets the nearest available
+	// unit automatically — the uber-like default; dispatchers override.
+	if inc.Status == StDispatched && s.fleet != nil {
+		if u, km, err := s.fleet.NearestAvailable(inc.Lat, inc.Lng); err == nil {
+			_, _ = s.fleet.SetStatus(u.ID, UnitEnRoute, inc.ID, now)
+			inc.UnitID = u.ID
+			inc.Timeline = append(inc.Timeline, TimelineEntry{
+				TS: inc.UpdatedAt, Actor: "service", Action: "unit-dispatched",
+				Detail: fmt.Sprintf("%s (%s, %.1fkm)", u.Callsign, u.ID, km),
+			})
+		}
 	}
 	if err := s.store.Put(inc); err != nil {
 		return Incident{}, false, err
@@ -433,6 +447,16 @@ func (s server) transition(w http.ResponseWriter, r *http.Request) {
 		TS: inc.UpdatedAt, Actor: req.Actor, Action: req.To, Detail: req.Note,
 	})
 	_ = s.store.Put(inc)
+	if inc.UnitID != "" && s.fleet != nil {
+		switch req.To {
+		case StOnScene:
+			_, _ = s.fleet.SetStatus(inc.UnitID, UnitOnScene, inc.ID, s.ix.now())
+		case StTransported:
+			_, _ = s.fleet.SetStatus(inc.UnitID, UnitTransporting, inc.ID, s.ix.now())
+		case StClosed, StCancelled:
+			_, _ = s.fleet.SetStatus(inc.UnitID, UnitAvailable, "", s.ix.now())
+		}
+	}
 	if req.To == StClosed {
 		s.scheduleFollowUp(inc)
 	}

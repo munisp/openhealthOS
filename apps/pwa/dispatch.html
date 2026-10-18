@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dispatch board — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f7f7f7; color:#09352e; }
+  header { background:#fff; border-bottom:1px solid rgba(0,0,0,.1); padding:12px 18px;
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:1.05rem; margin:0; flex:1; }
+  main { display:grid; grid-template-columns: 340px 1fr; gap:14px; padding:14px; max-width:1200px; margin:0 auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .card { background:#fff; border-radius:var(--oh-radius-lg); padding:14px;
+          box-shadow:var(--oh-shadow-sm); border:1px solid var(--oh-card-border); }
+  .inc { border-bottom:1px solid #eee; padding:10px 4px; cursor:pointer; }
+  .inc:hover { background:#f4f8f5; }
+  .inc.active { background:#eef2ff; border-radius:8px; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:var(--oh-radius-pill);
+          font-size:.75rem; font-weight:700; }
+  .red { background:#fdeceb; color:#b3261e; } .orange { background:#fff4d6; color:#8a5a00; }
+  .green { background:#e6f3ea; color:#007f24; }
+  .muted { color:#54655f; font-size:.85rem; }
+  #map { width:100%; border-radius:var(--oh-radius-md); background:#eef2ee; display:block; }
+  button { background:#007f24; color:#fff; border:none; border-radius:10px;
+           padding:10px 14px; font-weight:700; cursor:pointer; }
+  button.ghost { background:#eef2ff; color:#4f46e5; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  input { padding:9px 10px; border:1px solid #ddd; border-radius:10px; font-size:.95rem; }
+  .eta { font-size:1.4rem; font-weight:800; color:#2b5c9e; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Emergency dispatch board</h1>
+  <span class="muted" id="clock"></span>
+</header>
+<main>
+  <section class="card">
+    <h3 style="margin-top:0">Open incidents</h3>
+    <div id="incidents"></div>
+    <h3>Fleet</h3>
+    <div class="row">
+      <input id="cs" placeholder="callsign (AMB-12)" style="flex:1">
+      <button class="ghost" id="addUnit">Add unit</button>
+    </div>
+    <div id="units" class="muted" style="margin-top:8px"></div>
+  </section>
+  <section class="card">
+    <div id="none" class="muted">Select an incident to watch it live.</div>
+    <div id="live" hidden>
+      <div class="row" style="justify-content:space-between">
+        <span class="pill red" id="triage"></span>
+        <span class="eta" id="eta"></span>
+      </div>
+      <canvas id="map" width="720" height="440"></canvas>
+      <div class="row">
+        <button id="dispatchUnit">Dispatch nearest unit</button>
+        <button class="ghost" data-to="acknowledged">Acknowledge</button>
+        <button class="ghost" data-to="on_scene">On scene</button>
+        <button class="ghost" data-to="transported">Transported</button>
+        <button class="ghost" data-to="closed">Close</button>
+      </div>
+      <p class="muted" id="how"></p>
+    </div>
+  </section>
+</main>
+
+<script src="../ambulance-map.js"></script>
+<script>
+const DISPATCH = localStorage.getItem("dispatch_url") || "http://localhost:8093";
+const ACTOR = localStorage.getItem("dispatcher") || "dispatcher-1";
+let current = null, stopFollow = null;
+
+async function api(path, opts) {
+  const r = await fetch(DISPATCH + path, opts);
+  return r.ok ? r.json() : Promise.reject(await r.text());
+}
+async function post(path, body) {
+  return api(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+}
+
+async function refreshLists() {
+  const [inc, units] = await Promise.all([
+    api("/incidents"), api("/units"),
+  ]);
+  const box = document.getElementById("incidents");
+  box.innerHTML = "";
+  (inc.incidents || []).filter(i => i.status !== "closed" && i.status !== "cancelled")
+    .forEach(i => {
+      const div = document.createElement("div");
+      div.className = "inc" + (current === i.id ? " active" : "");
+      div.innerHTML = `<span class="pill ${i.triage}">${i.triage}</span>
+        <strong>${i.id}</strong> <span class="muted">${i.status.replaceAll("_"," ")} · ${i.complaint.slice(0,40)}</span>`;
+      div.onclick = () => select(i.id);
+      box.appendChild(div);
+    });
+  document.getElementById("units").textContent =
+    (units.units || []).map(u => `${u.callsign} (${u.status.replaceAll("_"," ")})`).join(" · ") || "no units registered";
+}
+
+function select(id) {
+  current = id;
+  if (stopFollow) stopFollow();
+  document.getElementById("none").hidden = true;
+  document.getElementById("live").hidden = false;
+  stopFollow = AmbulanceMap.follow(document.getElementById("map"), DISPATCH, id, {
+    intervalMs: 5000,
+    onUpdate(track) {
+      const t = document.getElementById("triage");
+      t.textContent = track.triage; t.className = "pill " + track.triage;
+      document.getElementById("eta").textContent = track.unit ? AmbulanceMap.etaText(track.eta) : "—";
+      document.getElementById("how").textContent = track.eta ? "ETA estimate: " + track.eta.assumptions : "";
+    },
+  });
+  refreshLists();
+}
+
+document.getElementById("dispatchUnit").onclick = async () => {
+  if (!current) return;
+  try { await post(`/incidents/${current}/dispatch-unit`, { actor: ACTOR }); }
+  catch (e) { alert("No available unit with a position fix"); }
+};
+document.querySelectorAll("button[data-to]").forEach(b => b.onclick = async () => {
+  if (!current) return;
+  try { await post(`/incidents/${current}/transition`, { to: b.dataset.to, actor: ACTOR }); refreshLists(); }
+  catch (e) { alert("Illegal transition from the current status"); }
+});
+document.getElementById("addUnit").onclick = async () => {
+  const callsign = document.getElementById("cs").value.trim();
+  if (!callsign) return;
+  const u = await post("/units", { callsign, facility_id: localStorage.getItem("facility") || "FAC-1" });
+  // start this device's GPS heartbeat as the unit's position source
+  AmbulanceMap.startPinging(DISPATCH, u.id);
+  document.getElementById("cs").value = "";
+  refreshLists();
+};
+
+setInterval(() => { document.getElementById("clock").textContent = new Date().toLocaleTimeString(); }, 1000);
+refreshLists();
+setInterval(refreshLists, 15000);
+</script>
+</body>
+</html>

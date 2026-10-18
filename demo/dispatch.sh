@@ -184,5 +184,66 @@ assert not any(t["kind"] == "followup_48h" for t in tasks), tasks
 print(f"   {case['id']} closed with consent revoked — no 48h task queued (NDPA respected)")
 PY
 
+echo "== 10. fleet: a registered unit is auto-dispatched to a located SOS =="
+python3 - "$DIS" <<'PY'
+import json, sys, urllib.request
+DIS = sys.argv[1]
+def post(path, payload):
+    req = urllib.request.Request(DIS+path, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type":"application/json"})
+    return json.load(urllib.request.urlopen(req))
+u = post("/units", {"callsign":"AMB-42","facility_id":"HOSP-EMG","kind":"ambulance"})
+post("/units/"+u["id"]+"/position", {"lat":6.5270,"lng":3.3790})
+inc = post("/sos", {"phone":"+2348030003333","channel":"app",
+                    "complaint":"road accident, leg trauma, bleeding",
+                    "lat":6.5244,"lng":3.3792})
+# registry is up, so the incident is dispatched and a unit auto-assigned
+assert inc["status"] == "dispatched", inc
+assert inc.get("unit_id") == u["id"], inc
+unit = json.load(urllib.request.urlopen(DIS+"/units/"+u["id"]))
+assert unit["status"] == "en_route" and unit["incident_id"] == inc["id"], unit
+print(f"   {u['callsign']} auto-dispatched to {inc['id']} (en_route)")
+PY
+
+echo "== 11. uber-like tracking: patient and facility watch the unit approach =="
+python3 - "$DIS" <<'PY'
+import json, sys, urllib.request
+DIS = sys.argv[1]
+def post(path, payload):
+    req = urllib.request.Request(DIS+path, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type":"application/json"})
+    return json.load(urllib.request.urlopen(req))
+inc = [i for i in json.load(urllib.request.urlopen(DIS+"/incidents"))["incidents"]
+       if i["caller_phone"] == "+2348030003333"][0]
+# the unit's device pings as it drives closer
+for lat in (6.5268, 6.5260, 6.5252):
+    post("/units/"+inc["unit_id"]+"/position", {"lat":lat,"lng":3.3791})
+track = json.load(urllib.request.urlopen(DIS+"/incidents/"+inc["id"]+"/track"))
+assert track["unit"]["lat"] == 6.5252, track
+assert len(track["unit"]["trail"]) >= 4, track   # registration ping + 3 en route
+assert track["eta"]["minutes"] >= 1, track
+assert "road factor" in track["eta"]["assumptions"], track
+assert track["patient"]["lat"] == 6.5244, track
+print(f"   track: {track['unit']['callsign']} {track['unit']['lat']}, "
+      f"ETA ~{track['eta']['minutes']}min ({track['eta']['assumptions']})")
+PY
+
+echo "== 12. closure returns the unit to available =="
+python3 - "$DIS" <<'PY'
+import json, sys, urllib.request
+DIS = sys.argv[1]
+def post(path, payload):
+    req = urllib.request.Request(DIS+path, data=json.dumps(payload).encode(),
+                                 headers={"Content-Type":"application/json"})
+    return json.load(urllib.request.urlopen(req))
+inc = [i for i in json.load(urllib.request.urlopen(DIS+"/incidents"))["incidents"]
+       if i["caller_phone"] == "+2348030003333"][0]
+for to in ["acknowledged","on_scene","transported","closed"]:
+    post(f"/incidents/{inc['id']}/transition", {"to":to,"actor":"dispatcher-1"})
+unit = json.load(urllib.request.urlopen(DIS+"/units/"+inc["unit_id"]))
+assert unit["status"] == "available" and not unit.get("incident_id"), unit
+print(f"   {unit['callsign']} back to available after closure")
+PY
+
 echo
-echo "DISPATCH + CASE MANAGEMENT DEMO OK — one number, one caller history, owned follow-through."
+echo "DISPATCH + CASE MANAGEMENT DEMO OK — one number, one caller history, owned follow-through, live map."

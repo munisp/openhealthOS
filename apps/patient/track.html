@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Help is coming — OpenHealth SOS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: -apple-system,"Segoe UI",Roboto,"Noto Sans",sans-serif;
+         background:#f4f6f4; color:#1c2b23; }
+  .wrap { max-width:560px; margin:0 auto; padding:16px 14px 48px; display:flex; flex-direction:column; gap:14px; }
+  .card { background:#fff; border-radius:var(--oh-radius-lg); padding:16px;
+          box-shadow:var(--oh-shadow-sm); border:1px solid var(--oh-card-border); }
+  h1 { font-size:1.2rem; margin:0 0 4px; }
+  .muted { color:#5f7268; font-size:.92rem; }
+  #map { width:100%; border-radius:var(--oh-radius-md); background:#eef2ee; display:block; }
+  .eta { font-size:1.6rem; font-weight:800; color:#2b5c9e; margin:4px 0; }
+  .status { display:inline-block; padding:3px 12px; border-radius:var(--oh-radius-pill);
+            font-size:.82rem; font-weight:700; background:#e8f0fb; color:#2b5c9e; }
+  .sos { background:#b3261e; color:#fff; border:none; border-radius:var(--oh-radius-md);
+         padding:16px; font-size:1.1rem; font-weight:800; width:100%; }
+  .sos:active { transform:scale(.98); }
+  input { width:100%; padding:12px; border:1px solid #dfe7e1; border-radius:var(--oh-radius-md);
+          font-size:1rem; box-sizing:border-box; }
+  button.link { background:none; border:none; color:#2b5c9e; font-size:.95rem; padding:8px 0; }
+  .row { display:flex; gap:10px; align-items:center; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <div class="card">
+    <h1>Emergency help</h1>
+    <p class="muted">Send an SOS with your location, then watch help approach — like watching a ride arrive.</p>
+    <button id="sosBtn" class="sos">SEND SOS — I need help now</button>
+    <p class="muted" id="sosMsg"></p>
+  </div>
+
+  <div class="card" id="trackCard" hidden>
+    <div class="row">
+      <span class="status" id="statusPill">received</span>
+      <span class="eta" id="etaText"></span>
+    </div>
+    <canvas id="map" width="520" height="360"></canvas>
+    <p class="muted" id="unitLine"></p>
+    <p class="muted" id="etaHow"></p>
+  </div>
+
+  <div class="card">
+    <p class="muted">Already have an incident code? Follow it here:</p>
+    <div class="row">
+      <input id="incInput" placeholder="INC-00001" aria-label="incident code">
+      <button class="link" id="followBtn">Follow</button>
+    </div>
+  </div>
+</div>
+
+<script src="../ambulance-map.js"></script>
+<script>
+const DISPATCH = localStorage.getItem("dispatch_url") || "http://localhost:8093";
+let stopFollow = null;
+
+function setStatus(s) {
+  const pill = document.getElementById("statusPill");
+  pill.textContent = s.replaceAll("_", " ");
+}
+
+function follow(id) {
+  if (stopFollow) stopFollow();
+  document.getElementById("trackCard").hidden = false;
+  stopFollow = AmbulanceMap.follow(
+    document.getElementById("map"), DISPATCH, id, {
+      intervalMs: 8000,
+      onUpdate(track) {
+        setStatus(track.status || "");
+        document.getElementById("etaText").textContent =
+          track.unit ? AmbulanceMap.etaText(track.eta) : "";
+        document.getElementById("unitLine").textContent = track.unit
+          ? track.unit.callsign + " is on the way (" + (track.unit.status||"").replaceAll("_"," ") + ")"
+          : "Finding the nearest responder…";
+        document.getElementById("etaHow").textContent =
+          track.eta ? "ETA estimate: " + track.eta.assumptions : "";
+      },
+    });
+}
+
+document.getElementById("followBtn").onclick = () => {
+  const id = document.getElementById("incInput").value.trim();
+  if (id) { localStorage.setItem("sos_incident", id); follow(id); }
+};
+
+document.getElementById("sosBtn").onclick = () => {
+  const msg = document.getElementById("sosMsg");
+  msg.textContent = "Getting your location…";
+  const send = (lat, lng) => fetch(DISPATCH + "/sos", {
+    method: "POST", headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ channel: "app", phone: localStorage.getItem("phone") || "",
+      complaint: "SOS from the patient app", lat, lng }),
+  }).then(r => r.json()).then(inc => {
+    msg.textContent = "SOS sent — incident " + inc.id + ". Stay where you are if it is safe.";
+    localStorage.setItem("sos_incident", inc.id);
+    follow(inc.id);
+  }).catch(() => { msg.textContent = "Could not reach dispatch — please call or WhatsApp the state emergency number."; });
+  if (navigator.geolocation) {
+    navigator.geolocation.getCurrentPosition(
+      p => send(p.coords.latitude, p.coords.longitude),
+      () => send(0, 0), { timeout: 8000 });
+  } else send(0, 0);
+};
+
+const saved = localStorage.getItem("sos_incident");
+if (saved) { document.getElementById("incInput").value = saved; follow(saved); }
+</script>
+</body>
+</html>

@@ -23,7 +23,7 @@ func main() {
 	if addr == "" {
 		addr = ":8093"
 	}
-	s := server{store: store, ix: newIntegrations(os.Getenv)}
+	s := server{store: store, ix: newIntegrations(os.Getenv), fleet: NewFleetStore()}
 	log.Printf("dispatch-service listening on %s", addr)
 	log.Fatal(http.ListenAndServe(addr, s.routes()))
 }
