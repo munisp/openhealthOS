@@ -51,6 +51,15 @@ spec:
             - { name: SHR_URL, value: "http://shr-service:8085" }
             - { name: EQUIPMENT_URL, value: "http://equipment-service:8086" }
             - { name: TELEHEALTH_URL, value: "http://telehealth-service:8087" }
+            # Extended plane (ADR-0036, services-plane-extended.yaml)
+            - { name: SCHEDULING_URL, value: "http://scheduling-service:8092" }
+            - { name: DISPATCH_URL, value: "http://dispatch-service:8093" }
+            - { name: TELEMED_URL, value: "http://telemed-service:8094" }
+            - { name: MEDIA_URL, value: "http://media-service:8095" }
+            - { name: IMAGING_URL, value: "http://imaging-service:8096" }
+            - { name: TRAINING_URL, value: "http://training-service:8097" }
+            - { name: IPD_URL, value: "http://ipd-service:8098" }
+            - { name: WELLNESS_URL, value: "http://wellness-service:8090" }
           readinessProbe:
             httpGet: { path: /healthz, port: 8000 }
           resources:

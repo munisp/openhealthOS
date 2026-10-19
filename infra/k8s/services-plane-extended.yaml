@@ -1,0 +1,453 @@
+# Extended services plane (ADR-0036): the services added after the
+# original nine. Same hardening contract: non-root, read-only root fs,
+# dropped capabilities, fail-closed auth, seccomp RuntimeDefault.
+# claims-orchestrator, registry-service and sync-ingest live in
+# state-plane.yaml. emptyDir journals are demo-grade - mount PVCs in production.
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: scheduling-service
+  namespace: oh-state-example
+  labels: { app: scheduling-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: scheduling-service }
+  template:
+    metadata:
+      labels: { app: scheduling-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: scheduling-service
+          image: ghcr.io/munisp/openhealthos/scheduling-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8092 }]
+          env:
+            - { name: LISTEN, value: ":8092" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
+            - { name: NOTIFY_URL, value: "http://notification-service:8089" }
+            - { name: ELIGIBILITY_URL, value: "http://claims-orchestrator:8080" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8092 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: dispatch-service
+  namespace: oh-state-example
+  labels: { app: dispatch-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: dispatch-service }
+  template:
+    metadata:
+      labels: { app: dispatch-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: dispatch-service
+          image: ghcr.io/munisp/openhealthos/dispatch-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8093 }]
+          env:
+            - { name: LISTEN, value: ":8093" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
+            - { name: REGISTRY_URL, value: "http://registry-service:8081" }
+            - { name: NOTIFY_URL, value: "http://notification-service:8089" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8093 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: telemed-service
+  namespace: oh-state-example
+  labels: { app: telemed-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: telemed-service }
+  template:
+    metadata:
+      labels: { app: telemed-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: telemed-service
+          image: ghcr.io/munisp/openhealthos/telemed-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8094 }]
+          env:
+            - { name: LISTEN, value: ":8094" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8094 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: media-service
+  namespace: oh-state-example
+  labels: { app: media-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: media-service }
+  template:
+    metadata:
+      labels: { app: media-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        # demo-grade; use a PVC in production
+        - { name: media-data, emptyDir: {} }
+      containers:
+        - name: media-service
+          image: ghcr.io/munisp/openhealthos/media-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: media-data, mountPath: /var/lib/openhealth/media }
+          ports: [{ containerPort: 8095 }]
+          env:
+            - { name: LISTEN, value: ":8095" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+            - { name: MEDIA_DIR, value: "/var/lib/openhealth/media" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8095 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: imaging-service
+  namespace: oh-state-example
+  labels: { app: imaging-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: imaging-service }
+  template:
+    metadata:
+      labels: { app: imaging-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: imaging-service
+          image: ghcr.io/munisp/openhealthos/imaging-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8096 }]
+          env:
+            - { name: LISTEN, value: ":8096" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8096 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: training-service
+  namespace: oh-state-example
+  labels: { app: training-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: training-service }
+  template:
+    metadata:
+      labels: { app: training-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: training-service
+          image: ghcr.io/munisp/openhealthos/training-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8097 }]
+          env:
+            - { name: LISTEN, value: ":8097" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8097 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ipd-service
+  namespace: oh-state-example
+  labels: { app: ipd-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: ipd-service }
+  template:
+    metadata:
+      labels: { app: ipd-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: ipd-service
+          image: ghcr.io/munisp/openhealthos/ipd-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8098 }]
+          env:
+            - { name: LISTEN, value: ":8098" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+            - name: DATABASE_URL
+              valueFrom:
+                secretKeyRef: { name: openhealth-db, key: url }
+            - { name: SHR_URL, value: "http://shr-service:8085" }
+            - { name: NOTIFY_URL, value: "http://notification-service:8089" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8098 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: wellness-service
+  namespace: oh-state-example
+  labels: { app: wellness-service }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: wellness-service }
+  template:
+    metadata:
+      labels: { app: wellness-service }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+        # demo-grade; use a PVC in production
+        - { name: wellness-data, emptyDir: {} }
+      containers:
+        - name: wellness-service
+          image: ghcr.io/munisp/openhealthos/wellness-service:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            - { name: wellness-data, mountPath: /var/lib/openhealth/wellness }
+          ports: [{ containerPort: 8090 }]
+          env:
+            - { name: LISTEN, value: ":8090" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+            - { name: SHR_URL, value: "http://shr-service:8085" }
+            - { name: WELLNESS_DATA_DIR, value: "/var/lib/openhealth/wellness" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8090 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: scheduling-service
+  namespace: oh-state-example
+spec:
+  selector: { app: scheduling-service }
+  ports: [{ port: 8092, targetPort: 8092 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: dispatch-service
+  namespace: oh-state-example
+spec:
+  selector: { app: dispatch-service }
+  ports: [{ port: 8093, targetPort: 8093 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: telemed-service
+  namespace: oh-state-example
+spec:
+  selector: { app: telemed-service }
+  ports: [{ port: 8094, targetPort: 8094 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: media-service
+  namespace: oh-state-example
+spec:
+  selector: { app: media-service }
+  ports: [{ port: 8095, targetPort: 8095 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: imaging-service
+  namespace: oh-state-example
+spec:
+  selector: { app: imaging-service }
+  ports: [{ port: 8096, targetPort: 8096 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: training-service
+  namespace: oh-state-example
+spec:
+  selector: { app: training-service }
+  ports: [{ port: 8097, targetPort: 8097 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: ipd-service
+  namespace: oh-state-example
+spec:
+  selector: { app: ipd-service }
+  ports: [{ port: 8098, targetPort: 8098 }]
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: wellness-service
+  namespace: oh-state-example
+spec:
+  selector: { app: wellness-service }
+  ports: [{ port: 8090, targetPort: 8090 }]

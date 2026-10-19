@@ -95,7 +95,7 @@ management (list/revoke in the app, ownership-checked), provider
 directory (practitioner FTS), workflow automation (the event rail
 itself: booking → SMS, discharge → record write-back).
 
-### 6. Hospital operations: `ipd-service` (port 8093)
+### 6. Hospital operations: `ipd-service` (port 8098)
 
 Wards, beds (`free → occupied → cleaning → free` — infection control is
 a state, not a hope), and ADT. Invariants in one lock/transaction: one

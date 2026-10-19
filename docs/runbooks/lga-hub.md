@@ -12,7 +12,7 @@ lga-hub   # binary, stdlib-only + shared modules
 
 | Env | Default | Purpose |
 | --- | --- | --- |
-| `LISTEN` | `:8090` | HTTP listen address |
+| `LISTEN` | `:8091` | HTTP listen address |
 | `SPILL_PATH` | _(unset = memory)_ | JSONL spill file — **set this in production** |
 | `UPSTREAM_URL` | _(unset = buffer only)_ | state-plane sync-ingest base URL |
 | `FORWARD_INTERVAL_SECONDS` | `15` | forwarding tick |

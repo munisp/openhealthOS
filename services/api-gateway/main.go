@@ -64,6 +64,16 @@ func DefaultRoutes(env func(string) string) []Route {
 		{Prefix: "/api/pharmacy", Service: "pharmacy-service", Upstream: up("PHARMACY_URL", "http://pharmacy-service:8088"), Strip: true},
 		{Prefix: "/api/notify", Service: "notification-service", Upstream: up("NOTIFY_URL", "http://notification-service:8089"), Strip: true},
 		{Prefix: "/api/wellness", Service: "wellness-service", Upstream: up("WELLNESS_URL", "http://wellness-service:8090"), Strip: true},
+		// Single public entry (ADR-0036): every platform service is
+		// reachable through the gateway; per-service ports are a
+		// development convenience, never the public contract.
+		{Prefix: "/api/scheduling", Service: "scheduling-service", Upstream: up("SCHEDULING_URL", "http://scheduling-service:8092"), Strip: true},
+		{Prefix: "/api/dispatch", Service: "dispatch-service", Upstream: up("DISPATCH_URL", "http://dispatch-service:8093"), Strip: true},
+		{Prefix: "/api/telemed", Service: "telemed-service", Upstream: up("TELEMED_URL", "http://telemed-service:8094"), Strip: true},
+		{Prefix: "/api/media", Service: "media-service", Upstream: up("MEDIA_URL", "http://media-service:8095"), Strip: true},
+		{Prefix: "/api/imaging", Service: "imaging-service", Upstream: up("IMAGING_URL", "http://imaging-service:8096"), Strip: true},
+		{Prefix: "/api/training", Service: "training-service", Upstream: up("TRAINING_URL", "http://training-service:8097"), Strip: true},
+		{Prefix: "/api/ipd", Service: "ipd-service", Upstream: up("IPD_URL", "http://ipd-service:8098"), Strip: true},
 		{Prefix: "/api/sync", Service: "sync-ingest", Upstream: up("SYNC_URL", "http://sync-ingest:8443"), Strip: true},
 	}
 }

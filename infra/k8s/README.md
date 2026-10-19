@@ -9,6 +9,10 @@ starting skeleton for a state plane; environments are GitOps-managed
 namespace.yaml            state-plane namespace (e.g. oh-state-kaduna)
 state-plane.yaml          core workloads: postgres (HA in prod), fhir-server,
                           claims-orchestrator, registry-service, sync-ingest
+services-plane.yaml       gateway + consent, SHR, telehealth, wallet, equipment,
+                          ussd, pharmacy, notification
+services-plane-extended.yaml  ADR-0036 completion: scheduling, dispatch, telemed,
+                          media, imaging, training, ipd, wellness
 ```
 
 Production notes (spec §5.6): multi-AZ; NG-region or on-prem for states that

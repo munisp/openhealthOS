@@ -153,6 +153,103 @@ services:
     environment: { LISTEN: ":8086" }
     ports: ["18086:8086"]
 
+  # ── Platform plane completion (ADR-0036) ──────────────────────────
+  # Every platform service ships in the compose plane; the gateway is
+  # the only public entry.
+
+  scheduling-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: scheduling-service }
+    environment:
+      LISTEN: ":8092"
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      NOTIFY_URL: http://notification-service:8089
+      ELIGIBILITY_URL: http://claims-orchestrator:8080
+    ports: ["18092:8092"]
+    depends_on: [migrate, claims-orchestrator]
+
+  dispatch-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: dispatch-service }
+    environment:
+      LISTEN: ":8093"
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      REGISTRY_URL: http://registry-service:8081
+      NOTIFY_URL: http://notification-service:8089
+    ports: ["18093:8093"]
+    depends_on: [migrate, registry-service]
+
+  telemed-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: telemed-service }
+    environment:
+      LISTEN: ":8094"
+      # LK_API_KEY / LK_API_SECRET: set for live-video rooms; without
+      # them the service runs store-and-forward only (by design).
+    ports: ["18094:8094"]
+
+  media-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: media-service }
+    environment:
+      LISTEN: ":8095"
+      MEDIA_DIR: /var/lib/openhealth/media
+    volumes: ["media-blobs:/var/lib/openhealth/media"]
+    ports: ["18095:8095"]
+
+  imaging-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: imaging-service }
+    environment:
+      LISTEN: ":8096"
+      # ORTHANC_URL: set to a PACS when one exists; the worklist and
+      # priors seam run without it (compose, don't fork).
+    ports: ["18096:8096"]
+
+  training-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: training-service }
+    environment: { LISTEN: ":8097" }
+    ports: ["18097:8097"]
+
+  ipd-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: ipd-service }
+    environment:
+      LISTEN: ":8098"
+      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      SHR_URL: http://shr-service:8085
+      NOTIFY_URL: http://notification-service:8089
+    ports: ["18098:8098"]
+    depends_on: [migrate, shr-service]
+
+  wellness-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: wellness-service }
+    environment:
+      LISTEN: ":8090"
+      WELLNESS_DATA_DIR: /var/lib/openhealth/wellness
+      SHR_URL: http://shr-service:8085
+    volumes: ["wellness-journal:/var/lib/openhealth/wellness"]
+    ports: ["18090:8090"]
+    depends_on: [shr-service]
+
   ussd-gateway:
     build:
       context: ../..
@@ -195,12 +292,20 @@ services:
       PHARMACY_URL: http://pharmacy-service:8088
       NOTIFY_URL: http://notification-service:8089
       SYNC_URL: http://sync-ingest:8443
+      SCHEDULING_URL: http://scheduling-service:8092
+      DISPATCH_URL: http://dispatch-service:8093
+      TELEMED_URL: http://telemed-service:8094
+      MEDIA_URL: http://media-service:8095
+      IMAGING_URL: http://imaging-service:8096
+      TRAINING_URL: http://training-service:8097
+      IPD_URL: http://ipd-service:8098
+      WELLNESS_URL: http://wellness-service:8090
       APPS_ROOT: /srv/openhealth/apps   # serves /app (PWA) and /dash (boards)
       # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment to enforce
     volumes:
       - ../../apps:/srv/openhealth/apps:ro
     ports: ["8000:8000"]
-    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest]
+    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest, scheduling-service, dispatch-service, telemed-service, media-service, imaging-service, training-service, ipd-service, wellness-service]
 
   # Outbound patient-contact rail (ADR-0011): appointment/result/pickup/
   # referral/immunisation SMS driven by domain events. Log provider by
@@ -272,3 +377,5 @@ volumes:
   ledger-claims:
   ledger-wallet:
   medplum-pgdata:
+  media-blobs:
+  wellness-journal:
