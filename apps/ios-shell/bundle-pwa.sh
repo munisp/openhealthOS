@@ -3,7 +3,7 @@
 # mirrors apps/android-shell/bundle-pwa.sh. Run on a Mac before building.
 set -euo pipefail
 cd "$(dirname "$0")"
-SRC="../pwa"
+SRC="${APP_SRC:-../pwa}"  # clinician PWA by default; APP_SRC=../patient for the patient build
 DEST="OpenHealthShell/Resources/pwa"
 rm -rf "$DEST"
 mkdir -p "$DEST"

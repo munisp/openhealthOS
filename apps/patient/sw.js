@@ -2,7 +2,7 @@
  * precached shell, API traffic never cached (the feed comes from the
  * network and falls back to the app's localStorage last-known copy). */
 
-const CACHE = "openhealth-patient-v4"; // v4: wellness tab (ADR-0035)
+const CACHE = "openhealth-patient-v5"; // v5: PHI step-up gate (ADR-0039)
 const SHELL = [
   "./",
   "./index.html",
@@ -14,6 +14,7 @@ const SHELL = [
   "./js/i18n.js",
   "./js/logic.js",
   "./js/geo.js",
+  "./js/stepup.js",
   "./manifest.webmanifest",
   "./icons/icon.svg",
   "./icons/icon-192.png",

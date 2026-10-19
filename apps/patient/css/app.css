@@ -256,3 +256,28 @@ body {
 .wl-kpi-v { font-size: 1.15rem; font-weight: 700; }
 .wl-ok { color: var(--green); }
 .wl-warn { color: var(--warn); }
+
+/* PHI step-up sheet (ADR-0039) — calm, one job, no dark patterns. */
+#stepup-sheet {
+  position: fixed; inset: 0; z-index: 60;
+  background: rgba(20, 30, 25, .45);
+  display: flex; align-items: flex-end; justify-content: center;
+}
+#stepup-sheet .su-card {
+  background: var(--paper); width: 100%; max-width: 480px;
+  border-radius: 16px 16px 0 0; padding: 24px 20px 28px;
+  display: flex; flex-direction: column; gap: 14px;
+}
+#stepup-sheet h2 { font-size: 20px; color: var(--ink); }
+#stepup-sheet .su-body { color: var(--muted); font-size: 15px; line-height: 1.5; }
+#stepup-sheet .su-status { font-size: 14px; color: var(--green); min-height: 20px; }
+#stepup-sheet input {
+  font-size: 28px; letter-spacing: 8px; text-align: center;
+  padding: 12px; border: 2px solid var(--green); border-radius: 12px;
+}
+#stepup-sheet .su-row { display: flex; gap: 10px; }
+#stepup-sheet button {
+  flex: 1; min-height: 48px; font-size: 16px; font-weight: 600;
+  border: 0; border-radius: 12px; background: var(--green); color: #fff;
+}
+#stepup-sheet .su-cancel { background: transparent; color: var(--muted); border: 1px solid var(--muted); }

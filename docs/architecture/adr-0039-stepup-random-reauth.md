@@ -63,3 +63,13 @@ are forensically visible without a new store.
 - Verified by `demo/matrix-stepup.sh`: 428 without elevation → code
   delivered into the patient's own Matrix room → wrong code 404 → elevate
   → replay burned → record renders → valid token randomly bounced.
+- **Client coverage**: the patient app (`apps/patient/js/stepup.js`) wraps
+  every PHI fetch in `elevatedFetch` — 428 opens a challenge sheet
+  (5-language, WebView-safe DOM), wrong codes re-open with an error state,
+  tokens live in sessionStorage only (die with the tab), cancel/offline
+  return the honest 428, and protocol/UI are split so the gate is fully
+  unit-tested (6 tests). **Native mobile needs no native code**: the sheet
+  is plain DOM, so the Android WebView shell and iOS WKWebView shell
+  inherit it — both bundle scripts now take `APP_SRC=../patient` to package
+  the patient app natively. howUdeyChat's Capacitor shells likewise inherit
+  the web gate unchanged.

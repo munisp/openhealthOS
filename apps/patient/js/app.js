@@ -12,6 +12,7 @@ import {
   wellnessKpis, planItems, riskBadge, logEntry,
 } from "./logic.js";
 import { nearest, facilityRow } from "./geo.js";
+import { elevatedFetch } from "./stepup.js";
 
 const LS_KEY = "openhealth-patient";
 const REC_CACHE_KEY = "openhealth-patient-record";
@@ -186,8 +187,10 @@ async function refresh() {
  * feed: offline you see your saved copy, clearly stamped — never a
  * fabricated "live" one. */
 async function fetchRecord() {
-  const url = `${apiBase()}/portal/record?patient_id=${encodeURIComponent(state.patientId)}&phone=${encodeURIComponent(state.phone)}`;
-  const resp = await fetch(url, { cache: "no-store" });
+  // PHI boundary (ADR-0039): the record renders only through the step-up
+  // gate — 428 opens the challenge sheet, elevation retries transparently.
+  const path = `/portal/record?patient_id=${encodeURIComponent(state.patientId)}&phone=${encodeURIComponent(state.phone)}`;
+  const resp = await elevatedFetch(apiBase(), path, { patientId: state.patientId, phone: state.phone });
   if (!resp.ok) throw new Error(String(resp.status));
   return resp.json();
 }
