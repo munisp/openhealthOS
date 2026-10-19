@@ -4,7 +4,8 @@
 //
 // States form a small tree: menu → one branch per service → terminal
 // confirmation. "menu" or "0" from anywhere resets to the root — in a
-// chat channel, the escape hatch must be one keystroke.
+// chat channel, the escape hatch must be one keystroke. All user-facing
+// strings come from i18n.go; the session carries the patient's language.
 package main
 
 import (
@@ -29,6 +30,7 @@ const (
 	StateAsk         = "ask"
 	StateLogType     = "log_type"
 	StateLogValue    = "log_value"
+	StateLangPick    = "lang_pick"
 )
 
 // choice is one numbered option shown to the patient.
@@ -41,6 +43,7 @@ type Session struct {
 	Phone     string // WhatsApp MSISDN (digits)
 	PatientID string // resolved registry patient id
 	Name      string
+	Lang      string // en | pcm | ha | yo | ig (i18n.go)
 	State     string
 	Choices   []choice // options of the current prompt
 	Data      map[string]string
@@ -129,38 +132,38 @@ func (s *Session) portalQ() url.Values {
 
 // ---------- the dialogue ----------
 
-const menuText = `Reply with a number:
-1. Book an appointment
-2. My appointments
-3. My coverage
-4. Clinic updates
-5. Ask the clinic
-6. Log a health reading
-0. This menu`
-
 // Handle advances the session one message and returns the reply text.
 // "" means stay silent (non-text events, empty input).
 func (s *service) Handle(ss *Session, text string) string {
 	low := strings.ToLower(strings.TrimSpace(text))
 
+	// Language switch works from anywhere, in any language's word for it.
+	if code, ok := langKeywords[low]; ok {
+		if code == "picker" {
+			return s.languagePicker(ss)
+		}
+		ss.Lang = code
+		return ss.tr("lang_set", langName(code)) + "\n" + ss.tr("menu")
+	}
+
 	// Escape hatches first, from any state.
-	if low == "menu" || low == "hi" || low == "hello" || low == "start" {
+	if low == "menu" || low == "hi" || low == "hello" || low == "start" || low == "sannu" || low == "ndewo" || low == "pẹlẹ" || low == "pele" {
 		ss.State = StateMenu
 		return s.greet(ss)
 	}
 	if low == "0" && ss.State != StateMenu {
 		ss.State = StateMenu
-		return menuText
+		return ss.tr("menu")
 	}
 
 	// Identity gate: everything past the menu needs a bound patient.
 	if ss.PatientID == "" {
 		id, name, err := s.resolvePatient(ss.Phone)
 		if err != nil {
-			return "Our registry is unreachable right now — please try again shortly."
+			return ss.tr("registry_down")
 		}
 		if id == "" {
-			return "This number isn't linked to a health record yet. Visit your nearest primary health centre with this phone, or dial the enrolment USSD code, and come back — your record will find you here."
+			return ss.tr("not_registered")
 		}
 		ss.PatientID, ss.Name = id, name
 	}
@@ -184,22 +187,52 @@ func (s *service) Handle(ss *Session, text string) string {
 		return s.logType(ss, low)
 	case StateLogValue:
 		return s.logValue(ss, low)
+	case StateLangPick:
+		return s.pickLanguage(ss, low)
 	}
 	ss.State = StateMenu
-	return menuText
+	return ss.tr("menu")
 }
 
 func (s *service) greet(ss *Session) string {
-	if ss.PatientID == "" {
-		if _, _, err := s.resolvePatient(ss.Phone); err == nil {
-			// resolve lazily in the gate above; greeting stays generic
+	g := ss.tr("hello")
+	if ss.Name != "" {
+		g = ss.tr("hello_name", strings.Split(ss.Name, " ")[0])
+	}
+	return g + ss.tr("intro") + "\n" + ss.tr("menu")
+}
+
+// ---- 7. language ----
+
+func (s *service) languagePicker(ss *Session) string {
+	ss.State = StateLangPick
+	ss.Choices = nil
+	var b strings.Builder
+	b.WriteString(ss.tr("lang_prompt"))
+	for i, l := range LangNames {
+		ss.Choices = append(ss.Choices, choice{ID: l.Code, Label: l.Name})
+		fmt.Fprintf(&b, "%d. %s\n", i+1, l.Name)
+	}
+	return strings.TrimRight(b.String(), "\n")
+}
+
+func (s *service) pickLanguage(ss *Session, low string) string {
+	c, ok := pickN(ss.Choices, low)
+	if !ok {
+		return ss.tr("lang_prompt")
+	}
+	ss.Lang = c.ID
+	ss.State = StateMenu
+	return ss.tr("lang_set", c.Label) + "\n" + ss.tr("menu")
+}
+
+func langName(code string) string {
+	for _, l := range LangNames {
+		if l.Code == code {
+			return l.Name
 		}
 	}
-	g := "Hello!"
-	if ss.Name != "" {
-		g = "Hello " + strings.Split(ss.Name, " ")[0] + "!"
-	}
-	return g + " This is your health channel.\n" + menuText
+	return code
 }
 
 func (s *service) menu(ss *Session, low string) string {
@@ -214,12 +247,14 @@ func (s *service) menu(ss *Session, low string) string {
 		return s.clinicUpdates(ss)
 	case "5":
 		ss.State = StateAsk
-		return "Type your question for the clinic in one message. A nurse will see it in the triage queue.\n(0 to cancel)"
+		return ss.tr("ask_prompt")
 	case "6":
 		ss.State = StateLogType
-		return "What are you logging?\n1. Steps today\n2. Weight (kg)\n3. Blood pressure (e.g. 120/80)\n(0 to cancel)"
+		return ss.tr("log_type_prompt")
+	case "7":
+		return s.languagePicker(ss)
 	default:
-		return menuText
+		return ss.tr("menu")
 	}
 }
 
@@ -233,14 +268,14 @@ func (s *service) startBooking(ss *Session) string {
 		} `json:"facilities"`
 	}
 	if err := s.getJSON(s.portal, "/portal/facilities", ss.portalQ(), &out); err != nil {
-		return "I can't reach the facility list right now — please try again shortly."
+		return ss.tr("facilities_down")
 	}
 	if len(out.Facilities) == 0 {
-		return "No facilities are open for self-booking yet. Your clinic can book for you."
+		return ss.tr("no_facilities")
 	}
 	ss.Choices = nil
 	var b strings.Builder
-	b.WriteString("Where would you like to book? Reply with a number:\n")
+	b.WriteString(ss.tr("facilities_prompt"))
 	for i, f := range out.Facilities {
 		if i == 8 {
 			break
@@ -248,7 +283,7 @@ func (s *service) startBooking(ss *Session) string {
 		ss.Choices = append(ss.Choices, choice{ID: f.ID, Label: f.Name})
 		fmt.Fprintf(&b, "%d. %s\n", i+1, f.Name)
 	}
-	b.WriteString("(0 to cancel)")
+	b.WriteString(ss.tr("or_cancel"))
 	ss.State = StateBookFac
 	return b.String()
 }
@@ -256,14 +291,13 @@ func (s *service) startBooking(ss *Session) string {
 func (s *service) pickFacility(ss *Session, low string) string {
 	c, ok := pickN(ss.Choices, low)
 	if !ok {
-		return "Reply with the number of the facility, or 0 to cancel."
+		return ss.tr("pick_facility_err")
 	}
 	ss.Data["facility_id"] = c.ID
 	ss.Data["facility"] = c.Label
-	// Next five days as date choices.
 	ss.Choices = nil
 	var b strings.Builder
-	b.WriteString("Which day? Reply with a number:\n")
+	b.WriteString(ss.tr("which_day"))
 	today := time.Now().UTC()
 	for i := 1; i <= 5; i++ {
 		d := today.AddDate(0, 0, i).Format("2006-01-02")
@@ -271,7 +305,7 @@ func (s *service) pickFacility(ss *Session, low string) string {
 		ss.Choices = append(ss.Choices, choice{ID: d, Label: label})
 		fmt.Fprintf(&b, "%d. %s\n", i, label)
 	}
-	b.WriteString("(0 to cancel)")
+	b.WriteString(ss.tr("or_cancel"))
 	ss.State = StateBookDate
 	return b.String()
 }
@@ -279,7 +313,7 @@ func (s *service) pickFacility(ss *Session, low string) string {
 func (s *service) pickDate(ss *Session, low string) string {
 	c, ok := pickN(ss.Choices, low)
 	if !ok {
-		return "Reply with the number of the day, or 0 to cancel."
+		return ss.tr("pick_day_err")
 	}
 	ss.Data["date"] = c.ID
 	ss.Data["date_label"] = c.Label
@@ -287,7 +321,6 @@ func (s *service) pickDate(ss *Session, low string) string {
 		Slots []struct {
 			ID    string `json:"id"`
 			Start string `json:"start"`
-			Free  int    `json:"-"`
 			Cap   int    `json:"capacity"`
 			Book  int    `json:"booked"`
 		} `json:"slots"`
@@ -296,11 +329,11 @@ func (s *service) pickDate(ss *Session, low string) string {
 	q.Set("facility_id", ss.Data["facility_id"])
 	q.Set("date", c.ID)
 	if err := s.getJSON(s.portal, "/portal/slots", q, &out); err != nil {
-		return "I can't reach the appointment book right now — please try again shortly."
+		return ss.tr("slots_down")
 	}
 	ss.Choices = nil
 	var b strings.Builder
-	fmt.Fprintf(&b, "Free times at %s on %s:\n", ss.Data["facility"], ss.Data["date_label"])
+	b.WriteString(ss.tr("free_times", ss.Data["facility"], ss.Data["date_label"]))
 	n := 0
 	for _, sl := range out.Slots {
 		if sl.Cap-sl.Book <= 0 {
@@ -319,9 +352,9 @@ func (s *service) pickDate(ss *Session, low string) string {
 	}
 	if n == 0 {
 		ss.State = StateBookFac
-		return "No free slots that day at " + ss.Data["facility"] + ". Pick another day or facility.\n(0 to cancel)"
+		return ss.tr("no_slots", ss.Data["facility"])
 	}
-	b.WriteString("(0 to cancel)")
+	b.WriteString(ss.tr("or_cancel"))
 	ss.State = StateBookSlot
 	return b.String()
 }
@@ -329,19 +362,18 @@ func (s *service) pickDate(ss *Session, low string) string {
 func (s *service) pickSlot(ss *Session, low string) string {
 	c, ok := pickN(ss.Choices, low)
 	if !ok {
-		return "Reply with the number of the time, or 0 to cancel."
+		return ss.tr("pick_slot_err")
 	}
 	ss.Data["slot_id"] = c.ID
 	ss.Data["slot_label"] = c.Label
 	ss.State = StateBookConfirm
-	return fmt.Sprintf("Book %s at %s on %s?\n1. Yes, book it\n2. No, start over",
-		ss.Data["facility"], ss.Data["date_label"], ss.Data["slot_label"])
+	return ss.tr("confirm_booking", ss.Data["facility"], ss.Data["date_label"], ss.Data["slot_label"])
 }
 
 func (s *service) confirmBooking(ss *Session, low string) string {
 	if low != "1" {
 		ss.State = StateMenu
-		return "Cancelled.\n" + menuText
+		return ss.tr("booking_cancelled") + "\n" + ss.tr("menu")
 	}
 	var out map[string]any
 	err := s.postJSON(s.portal, "/portal/appointments", map[string]string{
@@ -349,10 +381,10 @@ func (s *service) confirmBooking(ss *Session, low string) string {
 	}, &out)
 	ss.State = StateMenu
 	if err != nil {
-		return "That slot couldn't be booked — it may have just filled. Pick another time.\n" + menuText
+		return ss.tr("booking_failed") + "\n" + ss.tr("menu")
 	}
-	return fmt.Sprintf("Booked: %s, %s at %s. Bring your patient card; we'll remind you the day before.\n\n%s",
-		ss.Data["facility"], ss.Data["date_label"], ss.Data["slot_label"], menuText)
+	return ss.tr("booked", ss.Data["facility"], ss.Data["date_label"], ss.Data["slot_label"]) +
+		"\n\n" + ss.tr("menu")
 }
 
 // ---- 2. my appointments ----
@@ -368,11 +400,11 @@ func (s *service) listAppointments(ss *Session) string {
 		} `json:"appointments"`
 	}
 	if err := s.getJSON(s.portal, "/portal/appointments", ss.portalQ(), &out); err != nil {
-		return "I can't reach your appointments right now — please try again shortly."
+		return ss.tr("appts_down")
 	}
 	ss.Choices = nil
 	var b strings.Builder
-	b.WriteString("Your appointments:\n")
+	b.WriteString(ss.tr("appts_header"))
 	n := 0
 	for _, a := range out.Appointments {
 		if a.Status != "booked" && a.Status != "checked-in" {
@@ -388,9 +420,9 @@ func (s *service) listAppointments(ss *Session) string {
 	}
 	if n == 0 {
 		ss.State = StateMenu
-		return "You have no upcoming appointments.\n" + menuText
+		return ss.tr("no_appts") + "\n" + ss.tr("menu")
 	}
-	b.WriteString("\nReply with a number to cancel that appointment, or 0 for the menu.")
+	b.WriteString(ss.tr("appt_cancel_hint"))
 	ss.State = StateApptCancel
 	return b.String()
 }
@@ -398,16 +430,16 @@ func (s *service) listAppointments(ss *Session) string {
 func (s *service) cancelAppointment(ss *Session, low string) string {
 	c, ok := pickN(ss.Choices, low)
 	if !ok {
-		return "Reply with the number of the appointment to cancel, or 0 for the menu."
+		return ss.tr("appt_cancel_hint")
 	}
 	err := s.postJSON(s.portal, "/portal/appointments/cancel", map[string]string{
 		"patient_id": ss.PatientID, "phone": ss.Phone, "appointment_id": c.ID,
 	}, nil)
 	ss.State = StateMenu
 	if err != nil {
-		return "That appointment couldn't be cancelled — please call the clinic.\n" + menuText
+		return ss.tr("cancel_err") + "\n" + ss.tr("menu")
 	}
-	return "Cancelled: " + c.Label + ". The slot goes back to the book for someone else.\n" + menuText
+	return ss.tr("cancelled_appt", c.Label) + "\n" + ss.tr("menu")
 }
 
 // ---- 3. coverage ----
@@ -415,7 +447,7 @@ func (s *service) cancelAppointment(ss *Session, low string) string {
 func (s *service) coverage(ss *Session) string {
 	var out map[string]any
 	if err := s.getJSON(s.portal, "/portal/coverage", ss.portalQ(), &out); err != nil {
-		return "I can't reach the coverage desk right now — please try again shortly."
+		return ss.tr("coverage_down")
 	}
 	status, _ := out["status"].(string)
 	scheme, _ := out["scheme"].(string)
@@ -425,17 +457,17 @@ func (s *service) coverage(ss *Session) string {
 	var msg string
 	switch status {
 	case "eligible":
-		msg = "You are covered"
+		msg = ss.tr("covered")
 		if scheme != "" {
-			msg += " under " + scheme
+			msg += ss.tr("covered_scheme", scheme)
 		}
-		msg += ". Show your patient card at any empanelled facility."
+		msg += ss.tr("covered_tail")
 	case "suspended":
-		msg = "Your cover is currently suspended — the scheme office can tell you why."
+		msg = ss.tr("suspended")
 	default:
-		msg = "We found no active enrolment for you. Visit your nearest PHC to enrol — the basic package is tax-funded."
+		msg = ss.tr("not_enrolled")
 	}
-	return msg + "\n" + menuText
+	return msg + "\n" + ss.tr("menu")
 }
 
 // ---- 4. clinic updates ----
@@ -449,20 +481,20 @@ func (s *service) clinicUpdates(ss *Session) string {
 		} `json:"notifications"`
 	}
 	if err := s.getJSON(s.portal, "/portal/feed", ss.portalQ(), &out); err != nil {
-		return "I can't reach your clinic updates right now — please try again shortly."
+		return ss.tr("updates_down")
 	}
 	if len(out.Notifications) == 0 {
-		return "No updates from your clinic yet.\n" + menuText
+		return ss.tr("no_updates") + "\n" + ss.tr("menu")
 	}
 	var b strings.Builder
-	b.WriteString("Your latest clinic updates:\n")
+	b.WriteString(ss.tr("updates_header"))
 	for i, ntf := range out.Notifications {
 		if i == 5 {
 			break
 		}
 		fmt.Fprintf(&b, "• %s\n", ntf.Body)
 	}
-	b.WriteString("\n" + menuText)
+	b.WriteString("\n" + ss.tr("menu"))
 	return b.String()
 }
 
@@ -474,9 +506,9 @@ func (s *service) askClinic(ss *Session, text string) string {
 	}, nil)
 	ss.State = StateMenu
 	if err != nil {
-		return "Your message couldn't be sent right now — please try again shortly.\n" + menuText
+		return ss.tr("ask_failed") + "\n" + ss.tr("menu")
 	}
-	return "Sent. A nurse will see it in the triage queue and reply here.\n" + menuText
+	return ss.tr("ask_sent") + "\n" + ss.tr("menu")
 }
 
 // ---- 6. log a health reading (wellness rail, source=manual) ----
@@ -486,17 +518,17 @@ func (s *service) logType(ss *Session, low string) string {
 	case "1":
 		ss.Data["log_type"] = "steps"
 		ss.State = StateLogValue
-		return "How many steps today? (number only, 0 to cancel)"
+		return ss.tr("log_steps_prompt")
 	case "2":
 		ss.Data["log_type"] = "weight"
 		ss.State = StateLogValue
-		return "Your weight in kg? (e.g. 72.5, 0 to cancel)"
+		return ss.tr("log_weight_prompt")
 	case "3":
 		ss.Data["log_type"] = "bp"
 		ss.State = StateLogValue
-		return "Your blood pressure? (e.g. 120/80, 0 to cancel)"
+		return ss.tr("log_bp_prompt")
 	default:
-		return "Reply 1 for steps, 2 for weight, 3 for blood pressure — or 0 to cancel."
+		return ss.tr("log_type_err")
 	}
 }
 
@@ -507,12 +539,12 @@ func (s *service) logValue(ss *Session, low string) string {
 	if lt == "bp" {
 		parts := strings.Split(low, "/")
 		if len(parts) != 2 {
-			return "Use the format 120/80, or 0 to cancel."
+			return ss.tr("bp_format_err")
 		}
 		sys, err1 := strconv.ParseFloat(strings.TrimSpace(parts[0]), 64)
 		dia, err2 := strconv.ParseFloat(strings.TrimSpace(parts[1]), 64)
 		if err1 != nil || err2 != nil || sys < 50 || sys > 300 || dia < 30 || dia > 200 {
-			return "That doesn't look like a blood pressure. Use e.g. 120/80, or 0 to cancel."
+			return ss.tr("bp_range_err")
 		}
 		obs["type"] = "bp"
 		obs["value"] = sys
@@ -520,7 +552,7 @@ func (s *service) logValue(ss *Session, low string) string {
 	} else {
 		v, err := strconv.ParseFloat(low, 64)
 		if err != nil || v < 0 || v > 100000 {
-			return "A plain number please, or 0 to cancel."
+			return ss.tr("number_err")
 		}
 		obs["type"] = lt
 		obs["value"] = v
@@ -530,9 +562,9 @@ func (s *service) logValue(ss *Session, low string) string {
 	}, nil)
 	ss.State = StateMenu
 	if err != nil {
-		return "That reading couldn't be saved right now — please try again shortly.\n" + menuText
+		return ss.tr("log_failed") + "\n" + ss.tr("menu")
 	}
-	return "Logged to your record — your care team can see it, and it shapes your prevention plan.\n" + menuText
+	return ss.tr("log_saved") + "\n" + ss.tr("menu")
 }
 
 // pickN resolves a 1-based numbered reply against the current choices.

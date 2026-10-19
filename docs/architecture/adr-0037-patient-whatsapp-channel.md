@@ -58,7 +58,17 @@ GET verification handshake; inbound dedupe by message id (a retried
 `WHATSAPP_APP_SECRET` is set; malformed payloads ack 200 — a webhook
 that retries poison payloads forever is a self-inflicted outage.
 
-### 5. Nothing proprietary embedded
+### 5. Five languages, patient-switchable
+
+The channel speaks the platform's five languages — English, Nigerian
+Pidgin, Hausa, Yoruba, Igbo — the same set as the PWA and notification
+rail. Every user-facing string is keyed (`i18n.go`); the session
+carries the language; menu option 7 opens the picker, and the words
+"language" / "harshe" / "èdè" / "asụsụ" work from anywhere in any
+state. A missing translation falls back to English, so adding a
+language never silences the bot. Register is chat-short, not brochure.
+
+### 6. Nothing proprietary embedded
 
 The Cloud API is one HTTPS POST behind a `Sender` seam. Default
 senders are a local log or a JSONL outbox (`WA_OUTBOX`) so the whole

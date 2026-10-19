@@ -96,6 +96,12 @@ curl -s -o /dev/null -X POST "http://127.0.0.1:$PORT/webhooks/whatsapp" -H 'Cont
   -d '{"entry":[{"changes":[{"value":{"messages":[{"id":"x2","from":"2348099999999","type":"text","text":{"body":"1"}}]}}]}]}'
 grep -q "isn't linked to a health record" "$OUT" && echo "ok: enrolment guidance, nothing leaked"
 
+echo "== five languages"
+wa g1 7; grep -q "Hausa" "$OUT" && echo "ok: language picker"
+wa g2 3; grep -q "Yi rajistar" "$OUT" && echo "ok: menu in Hausa"
+wa g3 "pidgin"; grep -q "Naija" "$OUT" && echo "ok: pidgin keyword switch"
+wa g4 3; grep -q "You get cover" "$OUT" && echo "ok: coverage in Pidgin"
+
 echo "== unit battery"
 (cd services/whatsapp-gateway && go test ./... >/dev/null) && echo "ok: whatsapp-gateway tests"
 
