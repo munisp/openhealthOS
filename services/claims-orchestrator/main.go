@@ -80,6 +80,10 @@ func main() {
 	mux.Handle("/eligibility", eligibilityHandler{Checker: adj})
 	mux.Handle("/enrolments", enrolmentHandler{Enroller: adj, Audit: audit})
 	mux.Handle("/preauth", preauthHandler{Authorizer: adj})
+	mux.Handle("/benefits/{scheme}", benefitsHandler{Q: SubprocessBenefits{
+		Python: env("PYTHON", "python3"),
+		Script: resolveToolPath(env("BENEFITS", "../../packages/benefits/benefits.py")),
+	}})
 	registerIntegrityRoutes(mux, store, audit, poster)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	addr := env("LISTEN", ":8080")

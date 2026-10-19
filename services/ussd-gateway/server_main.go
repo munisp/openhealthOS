@@ -41,6 +41,11 @@ func main() {
 		g.WithWallet(hw, hw)
 		log.Print("ussd: health wallet via WALLET_URL")
 	}
+	// Benefit visibility (ADR-0031): CLAIMS_URL binds claims-orchestrator.
+	if u := os.Getenv("CLAIMS_URL"); u != "" {
+		g.WithBenefits(HTTPBenefits{BaseURL: u})
+		log.Print("ussd: benefit visibility via CLAIMS_URL")
+	}
 	s := server{g: g}
 	log.Printf("OpenHealth OS ussd-gateway on %s (fixture checker — bind the eligibility seam in production)", addr)
 	log.Fatal(servex.ListenAndServe(addr, s.routes(), servex.Options{}))

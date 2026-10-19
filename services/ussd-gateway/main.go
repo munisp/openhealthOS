@@ -22,7 +22,7 @@ type EligibilityChecker interface {
 
 // Session holds one USSD dialog's position in the menu tree.
 type Session struct {
-	Step   string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient" | "wallet-nin" | "wallet-pay-facility" | "wallet-pay-amount"
+	Step   string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient" | "benefits-member" | "wallet-nin" | "wallet-pay-facility" | "wallet-pay-amount"
 	Buffer string
 	Phone  string // msisdn from the telco — the patient's second factor
 }
@@ -35,6 +35,7 @@ type Gateway struct {
 	reader   FeedReader
 	wallet   WalletReader // ADR-0030 citizen health wallet (nil = menu hides it)
 	payer    WalletPayer
+	benefits BenefitsReader // ADR-0031 benefit visibility (nil = menu hides it)
 }
 
 func NewGateway(c EligibilityChecker) *Gateway {
@@ -57,7 +58,13 @@ func (g *Gateway) WithWallet(r WalletReader, p WalletPayer) *Gateway {
 	return g
 }
 
-const menu = "CON OpenHealth\n1. Check my coverage\n2. My enrolment ID\n3. My clinic updates\n4. My health wallet\n0. Exit"
+// WithBenefits wires benefit-package visibility (ADR-0031).
+func (g *Gateway) WithBenefits(b BenefitsReader) *Gateway {
+	g.benefits = b
+	return g
+}
+
+const menu = "CON OpenHealth\n1. Check my coverage\n2. My enrolment ID\n3. My clinic updates\n4. My health wallet\n5. What does my cover include?\n0. Exit"
 
 // Handle processes one USSD step with no caller identity (tests, legacy
 // aggregators); HandleWithPhone is the production path.
@@ -98,6 +105,13 @@ func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 		case "3":
 			s.Step = "feed-patient"
 			return "CON Enter your patient code (on your clinic card):"
+		case "5":
+			if g.benefits == nil {
+				delete(g.sessions, sessionID)
+				return "END Benefit details are not active in this state yet. Ask at your PHC."
+			}
+			s.Step = "benefits-member"
+			return "CON Enter your member ID (e.g. NG-0001):"
 		case "4":
 			if g.wallet == nil {
 				delete(g.sessions, sessionID)
@@ -137,6 +151,21 @@ func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 			return "END No clinic updates found for that code on this number. Check the code on your clinic card."
 		}
 		return ussdFeed(items)
+	case "benefits-member":
+		// Resolve the scheme from the eligibility seam, then read the
+		// same plain-language summary the adjudicator enforces.
+		eligible, scheme, _, err := g.checker.Check(last)
+		if err != nil || !eligible {
+			delete(g.sessions, sessionID)
+			return "END We could not find that member ID. Visit your PHC to enrol."
+		}
+		headline, referral, err := g.benefits.Explain(scheme)
+		if err != nil {
+			delete(g.sessions, sessionID)
+			return "END Benefit details unavailable right now. Try again shortly."
+		}
+		delete(g.sessions, sessionID)
+		return fmt.Sprintf("END %s (%s): %s. %s", last, scheme, headline, referral)
 	case "wallet-nin":
 		// Balance first; the same step arms the pay flow.
 		total, envs, err := g.wallet.Balance(last)
