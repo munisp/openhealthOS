@@ -32,3 +32,6 @@ services/scheduling-service/scheduling-service
 services/ipd-service/ipd-service
 services/gateway/gateway
 services/dispatch-service/dispatch-service
+services/api-gateway/api-gateway
+services/whatsapp-gateway/whatsapp-gateway
+services/claims-orchestrator/claims-orchestrator
