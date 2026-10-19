@@ -111,8 +111,20 @@ type WalletService struct {
 	// refs is the idempotency record store (ADR-0013); nil keeps the
 	// legacy non-idempotent path for tests and demos.
 	refs  IdemStore
+	env   *citizenEnv // ADR-0030 envelope registry
 	mu    sync.Mutex
 	txSeq int
+}
+
+// envReg lazily initialises the envelope registry so legacy
+// &WalletService{Ledger: ...} literals keep working.
+func (w *WalletService) envReg() *citizenEnv {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+	if w.env == nil {
+		w.env = newCitizenEnv()
+	}
+	return w.env
 }
 
 var ErrBadAmount = errors.New("amount must be positive minor units (kobo)")
@@ -250,6 +262,106 @@ func (s server) routes() *http.ServeMux {
 		default:
 			writeJSON(w, 201, map[string]string{"ledger": res})
 		}
+	})
+	// ---- citizen health wallets (ADR-0030) ----
+	mux.HandleFunc("POST /citizens/fund", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			NIN           string `json:"nin"`
+			Envelope      string `json:"envelope"`
+			AmountKobo    int    `json:"amount_kobo"`
+			Programme     string `json:"programme"`
+			Ref           string `json:"ref"` // mandatory idempotency key
+			ExpiresInDays int    `json:"expires_in_days"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		tx, dup, err := s.w.FundCitizen(req.NIN, req.Envelope, req.AmountKobo, req.Programme, req.Ref, req.ExpiresInDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		if dup {
+			writeJSON(w, 200, map[string]any{"ledger": tx, "duplicate": true})
+			return
+		}
+		writeJSON(w, 201, map[string]string{"ledger": tx})
+	})
+	mux.HandleFunc("POST /citizens/gift", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			NIN           string `json:"nin"`
+			Envelope      string `json:"envelope"`
+			AmountKobo    int    `json:"amount_kobo"`
+			Giver         string `json:"giver"` // e.g. diaspora payer reference
+			Ref           string `json:"ref"`   // PSP/remittance receipt no.
+			ExpiresInDays int    `json:"expires_in_days"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		tx, dup, err := s.w.GiftCitizen(req.NIN, req.Envelope, req.AmountKobo, req.Giver, req.Ref, req.ExpiresInDays)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusUnprocessableEntity)
+			return
+		}
+		if dup {
+			writeJSON(w, 200, map[string]any{"ledger": tx, "duplicate": true})
+			return
+		}
+		writeJSON(w, 201, map[string]string{"ledger": tx})
+	})
+	mux.HandleFunc("POST /citizens/pay", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			NIN         string `json:"nin"`
+			Envelope    string `json:"envelope"`
+			Destination string `json:"destination"`
+			AmountKobo  int    `json:"amount_kobo"`
+			Ref         string `json:"ref"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		tx, dup, err := s.w.CitizenPay(req.NIN, req.Envelope, req.Destination, req.AmountKobo, req.Ref)
+		switch {
+		case errors.Is(err, ErrRestrictedDestination):
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": err.Error()})
+		case err != nil:
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+		case dup:
+			writeJSON(w, 200, map[string]any{"ledger": tx, "duplicate": true})
+		default:
+			writeJSON(w, 201, map[string]string{"ledger": tx})
+		}
+	})
+	mux.HandleFunc("GET /citizens/{nin}/balance", func(w http.ResponseWriter, r *http.Request) {
+		envs, total, err := s.w.CitizenBalances(r.PathValue("nin"))
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+		writeJSON(w, 200, map[string]any{
+			"nin": r.PathValue("nin"), "total_kobo": total, "envelopes": envs,
+			"destinations": Destinations(),
+		})
+	})
+	mux.HandleFunc("POST /citizens/sweep", func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			NIN      string `json:"nin"`
+			Envelope string `json:"envelope"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			http.Error(w, "bad request", http.StatusBadRequest)
+			return
+		}
+		res, err := s.w.SweepExpired(req.NIN, req.Envelope, r.Header.Get("X-Actor"))
+		if err != nil {
+			writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
+		writeJSON(w, 200, map[string]string{"ledger": res})
 	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux

@@ -22,7 +22,7 @@ type EligibilityChecker interface {
 
 // Session holds one USSD dialog's position in the menu tree.
 type Session struct {
-	Step   string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient"
+	Step   string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient" | "wallet-nin" | "wallet-pay-facility" | "wallet-pay-amount"
 	Buffer string
 	Phone  string // msisdn from the telco — the patient's second factor
 }
@@ -33,6 +33,8 @@ type Gateway struct {
 	sessions map[string]*Session
 	checker  EligibilityChecker
 	reader   FeedReader
+	wallet   WalletReader // ADR-0030 citizen health wallet (nil = menu hides it)
+	payer    WalletPayer
 }
 
 func NewGateway(c EligibilityChecker) *Gateway {
@@ -48,7 +50,14 @@ func NewGatewayWithFeed(c EligibilityChecker, r FeedReader) *Gateway {
 	return g
 }
 
-const menu = "CON OpenHealth\n1. Check my coverage\n2. My enrolment ID\n3. My clinic updates\n0. Exit"
+// WithWallet wires the citizen health wallet (ADR-0030).
+func (g *Gateway) WithWallet(r WalletReader, p WalletPayer) *Gateway {
+	g.wallet = r
+	g.payer = p
+	return g
+}
+
+const menu = "CON OpenHealth\n1. Check my coverage\n2. My enrolment ID\n3. My clinic updates\n4. My health wallet\n0. Exit"
 
 // Handle processes one USSD step with no caller identity (tests, legacy
 // aggregators); HandleWithPhone is the production path.
@@ -89,6 +98,13 @@ func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 		case "3":
 			s.Step = "feed-patient"
 			return "CON Enter your patient code (on your clinic card):"
+		case "4":
+			if g.wallet == nil {
+				delete(g.sessions, sessionID)
+				return "END Health wallet is not active in this state yet. Ask at your PHC."
+			}
+			s.Step = "wallet-nin"
+			return "CON Enter your NIN (the number on your NIN slip):"
 		case "0":
 			delete(g.sessions, sessionID)
 			return "END Thank you."
@@ -121,6 +137,51 @@ func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 			return "END No clinic updates found for that code on this number. Check the code on your clinic card."
 		}
 		return ussdFeed(items)
+	case "wallet-nin":
+		// Balance first; the same step arms the pay flow.
+		total, envs, err := g.wallet.Balance(last)
+		if err != nil {
+			delete(g.sessions, sessionID)
+			return "END No health wallet found for that NIN. Ask at your PHC or SHIA office."
+		}
+		s.Buffer = last
+		s.Step = "wallet-pay-facility"
+		naira := fmt.Sprintf("%.2f", float64(total)/100)
+		var extra string
+		for name, bal := range envs {
+			if name != "GENERAL" {
+				extra += fmt.Sprintf(" (%s: ₦%.2f)", name, float64(bal)/100)
+			}
+		}
+		return fmt.Sprintf("CON Health wallet: ₦%s%s\nPay a facility: enter facility code (e.g. phc-karu)\n0. Exit", naira, extra)
+	case "wallet-pay-facility":
+		if last == "0" {
+			delete(g.sessions, sessionID)
+			return "END Thank you."
+		}
+		s.Step = "wallet-pay-amount"
+		s.Buffer += "|" + last // nin|facility
+		return "CON Enter amount in naira:"
+	case "wallet-pay-amount":
+		delete(g.sessions, sessionID)
+		if g.payer == nil {
+			return "END Payments are not active in this state yet. Your balance is safe."
+		}
+		ninFac := strings.SplitN(s.Buffer, "|", 2)
+		if len(ninFac) != 2 {
+			return "END Session error. Start again."
+		}
+		var naira int
+		if _, err := fmt.Sscanf(last, "%d", &naira); err != nil || naira <= 0 {
+			return "END Invalid amount. Dial again to retry."
+		}
+		// Deterministic ref: session + step count — a redial of the same
+		// session can never double-pay (wallet-service dedupes).
+		ref := "USSD-" + sessionID
+		if err := g.payer.Pay(ninFac[0], "GENERAL", "WALLET-"+ninFac[1], naira*100, ref); err != nil {
+			return "END Payment failed: funds can only pay registered healthcare providers. Your money is safe."
+		}
+		return fmt.Sprintf("END Paid ₦%d to %s. Keep this screen as your receipt.", naira, ninFac[1])
 	}
 	delete(g.sessions, sessionID)
 	return "END Session ended."

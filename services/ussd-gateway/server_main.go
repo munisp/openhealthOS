@@ -33,7 +33,15 @@ func main() {
 		reader = HTTPFeedReader{BaseURL: u}
 		log.Print("ussd: patient updates via NOTIFY_URL")
 	}
-	s := server{g: NewGatewayWithFeed(staticChecker{}, reader)}
+	g := NewGatewayWithFeed(staticChecker{}, reader)
+	// Citizen health wallet (ADR-0030): WALLET_URL binds wallet-service;
+	// unset = wallet menu answers "not active yet".
+	if u := os.Getenv("WALLET_URL"); u != "" {
+		hw := HTTPWallet{BaseURL: u}
+		g.WithWallet(hw, hw)
+		log.Print("ussd: health wallet via WALLET_URL")
+	}
+	s := server{g: g}
 	log.Printf("OpenHealth OS ussd-gateway on %s (fixture checker — bind the eligibility seam in production)", addr)
 	log.Fatal(servex.ListenAndServe(addr, s.routes(), servex.Options{}))
 }
