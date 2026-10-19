@@ -75,6 +75,7 @@ func TestDefaultUpstreamPortsMatchServiceDefaults(t *testing.T) {
 		"TRAINING_URL":   "8097",
 		"IPD_URL":        "8098",
 		"WELLNESS_URL":   "8090",
+		"WHATSAPP_URL":   "8099",
 	}
 	for _, r := range DefaultRoutes(func(string) string { return "" }) {
 		for env, port := range want {

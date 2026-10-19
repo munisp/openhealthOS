@@ -451,3 +451,71 @@ metadata:
 spec:
   selector: { app: wellness-service }
   ports: [{ port: 8090, targetPort: 8090 }]
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: whatsapp-gateway
+  namespace: oh-state-example
+  labels: { app: whatsapp-gateway }
+spec:
+  replicas: 2
+  selector:
+    matchLabels: { app: whatsapp-gateway }
+  template:
+    metadata:
+      labels: { app: whatsapp-gateway }
+    spec:
+      securityContext:
+        seccompProfile:
+          type: RuntimeDefault
+      volumes:
+        - { name: tmp, emptyDir: {} }
+      containers:
+        - name: whatsapp-gateway
+          image: ghcr.io/munisp/openhealthos/whatsapp-gateway:latest
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 10001
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: [ALL]
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+          ports: [{ containerPort: 8099 }]
+          env:
+            - { name: LISTEN, value: ":8099" }
+            - { name: AUTH_REQUIRED, value: "1" }  # fail closed, ADR-0013
+            - name: OIDC_ISSUER
+              valueFrom:
+                configMapKeyRef: { name: openhealth-idp, key: issuer }
+            - { name: REGISTRY_URL, value: "http://registry-service:8081" }
+            - { name: PORTAL_URL, value: "http://notification-service:8089" }
+            - { name: WELLNESS_URL, value: "http://wellness-service:8090" }
+            - name: WHATSAPP_VERIFY_TOKEN
+              valueFrom:
+                secretKeyRef: { name: whatsapp-channel, key: verify-token }
+            - name: WHATSAPP_TOKEN
+              valueFrom:
+                secretKeyRef: { name: whatsapp-channel, key: access-token }
+            - name: WHATSAPP_PHONE_ID
+              valueFrom:
+                secretKeyRef: { name: whatsapp-channel, key: phone-id }
+            - name: WHATSAPP_APP_SECRET
+              valueFrom:
+                secretKeyRef: { name: whatsapp-channel, key: app-secret }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8099 }
+          resources:
+            requests: { cpu: 50m, memory: 64Mi }
+            limits: { cpu: 500m, memory: 256Mi }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: whatsapp-gateway
+  namespace: oh-state-example
+spec:
+  selector: { app: whatsapp-gateway }
+  ports: [{ port: 8099, targetPort: 8099 }]

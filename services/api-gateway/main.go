@@ -74,6 +74,7 @@ func DefaultRoutes(env func(string) string) []Route {
 		{Prefix: "/api/imaging", Service: "imaging-service", Upstream: up("IMAGING_URL", "http://imaging-service:8096"), Strip: true},
 		{Prefix: "/api/training", Service: "training-service", Upstream: up("TRAINING_URL", "http://training-service:8097"), Strip: true},
 		{Prefix: "/api/ipd", Service: "ipd-service", Upstream: up("IPD_URL", "http://ipd-service:8098"), Strip: true},
+		{Prefix: "/api/whatsapp", Service: "whatsapp-gateway", Upstream: up("WHATSAPP_URL", "http://whatsapp-gateway:8099"), Strip: true},
 		{Prefix: "/api/sync", Service: "sync-ingest", Upstream: up("SYNC_URL", "http://sync-ingest:8443"), Strip: true},
 	}
 }

@@ -60,6 +60,7 @@ spec:
             - { name: TRAINING_URL, value: "http://training-service:8097" }
             - { name: IPD_URL, value: "http://ipd-service:8098" }
             - { name: WELLNESS_URL, value: "http://wellness-service:8090" }
+            - { name: WHATSAPP_URL, value: "http://whatsapp-gateway:8099" }
           readinessProbe:
             httpGet: { path: /healthz, port: 8000 }
           resources:

@@ -19,10 +19,10 @@ for s in api-gateway claims-orchestrator consent-service dispatch-service \
          equipment-service imaging-service ipd-service media-service \
          notification-service pharmacy-service registry-service \
          scheduling-service shr-service telehealth-service telemed-service \
-         training-service ussd-gateway wallet-service wellness-service sync-ingest; do
+         training-service ussd-gateway wallet-service wellness-service whatsapp-gateway sync-ingest; do
   grep -q "^  $s:" infra/compose/platform.yaml || fail "$s missing from platform.yaml"
 done
-ok "20/20 platform services in compose"
+ok "21/21 platform services in compose"
 
 echo "== 3. compose yaml parses, volumes resolve"
 python3 - <<'PY'
@@ -49,7 +49,7 @@ want = {'api-gateway','claims-orchestrator','registry-service','consent-service'
         'shr-service','sync-ingest','telehealth-service','wallet-service',
         'equipment-service','pharmacy-service','notification-service','ussd-gateway',
         'scheduling-service','dispatch-service','telemed-service','media-service',
-        'imaging-service','training-service','ipd-service','wellness-service'}
+        'imaging-service','training-service','ipd-service','wellness-service','whatsapp-gateway'}
 missing = want - names
 if missing:
     raise SystemExit(f"FAIL: k8s planes missing deployments: {sorted(missing)}")

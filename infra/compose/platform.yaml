@@ -237,6 +237,22 @@ services:
     ports: ["18098:8098"]
     depends_on: [migrate, shr-service]
 
+  whatsapp-gateway:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: whatsapp-gateway }
+    environment:
+      LISTEN: ":8099"
+      REGISTRY_URL: http://registry-service:8081
+      PORTAL_URL: http://notification-service:8089
+      WELLNESS_URL: http://wellness-service:8090
+      WHATSAPP_VERIFY_TOKEN: dev-verify-token  # set real values in deployment
+      # WHATSAPP_TOKEN / WHATSAPP_PHONE_ID / WHATSAPP_APP_SECRET: Cloud API
+      # credentials — without them the sender is the local log (dev).
+    ports: ["18099:8099"]
+    depends_on: [registry-service, notification-service, wellness-service]
+
   wellness-service:
     build:
       context: ../..
@@ -300,12 +316,13 @@ services:
       TRAINING_URL: http://training-service:8097
       IPD_URL: http://ipd-service:8098
       WELLNESS_URL: http://wellness-service:8090
+      WHATSAPP_URL: http://whatsapp-gateway:8099
       APPS_ROOT: /srv/openhealth/apps   # serves /app (PWA) and /dash (boards)
       # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment to enforce
     volumes:
       - ../../apps:/srv/openhealth/apps:ro
     ports: ["8000:8000"]
-    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest, scheduling-service, dispatch-service, telemed-service, media-service, imaging-service, training-service, ipd-service, wellness-service]
+    depends_on: [claims-orchestrator, registry-service, consent-service, shr-service, sync-ingest, scheduling-service, dispatch-service, telemed-service, media-service, imaging-service, training-service, ipd-service, wellness-service, whatsapp-gateway]
 
   # Outbound patient-contact rail (ADR-0011): appointment/result/pickup/
   # referral/immunisation SMS driven by domain events. Log provider by
