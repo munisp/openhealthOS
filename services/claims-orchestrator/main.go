@@ -84,6 +84,10 @@ func main() {
 		Python: env("PYTHON", "python3"),
 		Script: resolveToolPath(env("BENEFITS", "../../packages/benefits/benefits.py")),
 	}})
+	mux.Handle("/economics/{op}", economicsHandler{R: SubprocessEconomics{
+		Python: env("PYTHON", "python3"),
+		Script: resolveToolPath(env("ECONOMICS", "../../packages/economics/economics.py")),
+	}})
 	registerIntegrityRoutes(mux, store, audit, poster)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	addr := env("LISTEN", ":8080")
