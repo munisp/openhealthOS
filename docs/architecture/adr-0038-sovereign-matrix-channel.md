@@ -56,6 +56,15 @@ binding flow is explicit and fail-closed:
   — sovereignty is preferred, never required. Content-derived txn ids make
   chain retries idempotent. Verified by `demo/matrix-notify.sh`: FHIR
   Observation → drain → patient's Matrix room; unbound phone falls through.
+- **Inline artifacts (media bridge)**: events that explicitly attach
+  `blob://media/{id}` (e.g. a FHIR `DiagnosticReport` with
+  `media[].link.reference = Blob/media-…`) are delivered as viewable media:
+  the matrix leg fetches the bytes from media-service, uploads them to the
+  homeserver media repo (`mxc://`), and sends `m.image`/`m.video`/`m.audio`
+  into the room. Artifact delivery is a provider capability
+  (`ArtifactSender`); when no leg can carry media, the chain degrades to the
+  plain detail-free caption — the message always lands. howUdeyChat renders
+  these natively (matrix-lite media cache).
 - **No new licence surface**: Matrix protocol is open; Synapse/Dendrite are
   Apache-2.0; our listener is original code (compose, don't fork — ADR-0005).
 - Verified end-to-end by `demo/matrix.sh`: bind → book (6 steps) → coverage →

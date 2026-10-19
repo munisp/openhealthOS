@@ -53,12 +53,17 @@ class H(BaseHTTPRequestHandler):
     def do_PUT(self):
         if "/send/m.room.message/" in self.path:
             room = self.path.split("/rooms/")[1].split("/")[0]
-            body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))["body"]
-            SENT.append({"room": room, "body": body})
+            d = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+            SENT.append({"room": room, "body": d["body"], "msgtype": d.get("msgtype", ""), "url": d.get("url", "")})
             return self._j({"event_id": "$ok"})
         return self._j({}, 404)
 
     def do_POST(self):
+        if self.path.startswith("/_matrix/media/v3/upload"):
+            data = self.rfile.read(int(self.headers["Content-Length"]))
+            if not data:
+                return self._j({"err": "empty"}, 400)
+            return self._j({"content_uri": "mxc://hs/demo-xray1"})
         self.rfile.read(int(self.headers.get("Content-Length", 0)))
         return self._j({"status": "ok"})
 
@@ -77,10 +82,14 @@ LISTEN=":18312" REGISTRY_URL=http://127.0.0.1:18310 \
   MATRIX_HOMESERVER=http://127.0.0.1:18311 MATRIX_ACCESS_TOKEN=tok \
   /tmp/wa-gateway >/tmp/mxn-gw.log 2>&1 & WA_PID=$!
 
+(cd services/media-service && go build -o /tmp/media-svc .)
+LISTEN=":18314" MEDIA_DIR=/tmp/mxn-media /tmp/media-svc >/tmp/mxn-media.log 2>&1 & MED_PID=$!
+
 LISTEN=":18313" SMS_PROVIDERS="matrix:http://127.0.0.1:18312,log" \
   MATRIX_HOMESERVER=http://127.0.0.1:18311 MATRIX_ACCESS_TOKEN=tok \
+  MEDIA_URL=http://127.0.0.1:18314 \
   /tmp/ntf >/tmp/mxn-ntf.log 2>&1 & NTF_PID=$!
-trap 'kill $HS_PID $PL_PID $WA_PID $NTF_PID 2>/dev/null || true' EXIT
+trap 'kill $HS_PID $PL_PID $WA_PID $NTF_PID $MED_PID 2>/dev/null || true' EXIT
 sleep 2
 
 sent_count() { curl -s http://127.0.0.1:18311/control/sent | python3 -c "import json,sys;print(len(json.load(sys.stdin)['sent']))"; }
@@ -127,6 +136,25 @@ sleep 1
   || { echo "FAIL: unbound phone reached the homeserver"; exit 1; }
 curl -s "http://127.0.0.1:18313/notifications?patient=OH-KD-0002" | grep -q '"state":"sent"' \
   && echo "ok: fallback leg still delivered (state sent)" || { echo "FAIL: fallback delivery"; exit 1; }
+
+echo "== imaging: blob -> mxc -> inline artifact in the matrix room"
+REF=$(printf '\x89PNG-demo-xray-bytes' | curl -sf -X POST http://127.0.0.1:18314/blobs \
+  -H 'X-Actor: radiologist-demo' -H 'Content-Type: image/png' --data-binary @- \
+  | python3 -c "import json,sys;print(json.load(sys.stdin)['ref'])")
+[ -n "$REF" ] && echo "ok: xray blob in media-service ($REF)"
+BLOB_ID=$(echo "$REF" | sed 's|blob://media/||')
+curl -sf -X POST http://127.0.0.1:18313/fhir/inbox -H 'Content-Type: application/json' -d '{
+  "resourceType": "DiagnosticReport", "id": "rad-1",
+  "code": {"text": "Chest X-ray"},
+  "subject": {"reference": "Patient/OH-KD-0001"},
+  "media": [{"link": {"reference": "Blob/media-'"$BLOB_ID"'"}}]}' >/dev/null && echo "ok: DiagnosticReport accepted"
+curl -sf -X POST http://127.0.0.1:18313/drain >/dev/null
+sleep 1
+check "image is attached" "imaging caption delivered"
+curl -s http://127.0.0.1:18311/control/sent | grep -q '"msgtype": "m.image"' \
+  && curl -s http://127.0.0.1:18311/control/sent | grep -q 'mxc://hs/demo-xray1' \
+  && echo "ok: xray delivered as m.image with mxc url (blob bridged media-service -> homeserver)" \
+  || { echo "FAIL: artifact delivery — $(curl -s http://127.0.0.1:18311/control/sent)"; exit 1; }
 
 echo "== unit batteries"
 (cd services/whatsapp-gateway && go test ./... >/dev/null) && echo "ok: whatsapp-gateway tests"

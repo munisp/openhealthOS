@@ -32,6 +32,7 @@ type MatrixProvider struct {
 	BindingsURL string // whatsapp-gateway internal base, e.g. http://gateway:8099
 	Homeserver  string // homeserver base URL
 	Token       string // bot access token on that homeserver
+	MediaURL    string // media-service base (blob bytes); empty = artifacts fail
 	HTTP        *http.Client
 }
 
@@ -40,6 +41,7 @@ func NewMatrixProvider(bindingsURL, homeserver, token string) *MatrixProvider {
 		BindingsURL: strings.TrimRight(bindingsURL, "/"),
 		Homeserver:  strings.TrimRight(homeserver, "/"),
 		Token:       token,
+		MediaURL:    strings.TrimRight(os.Getenv("MEDIA_URL"), "/"),
 		HTTP:        &http.Client{Timeout: 8 * time.Second},
 	}
 }
@@ -103,6 +105,95 @@ func (p *MatrixProvider) Send(phone, text string) error {
 	}
 	return nil
 }
+
+// SendArtifact delivers a media blob inline: blob://media/{id} bytes are
+// fetched from media-service (SHA-256-verified store, ADR-0027), uploaded
+// to the homeserver's media repo (mxc://), and sent as m.image — so an
+// imaging result arrives as a viewable artifact in howUdeyChat, not a
+// "come back tomorrow" slip. Any failure errors the leg: the chain then
+// degrades to the text caption.
+func (p *MatrixProvider) SendArtifact(phone, caption, blobRef, mime string) error {
+	if p.MediaURL == "" {
+		return fmt.Errorf("artifact delivery needs MEDIA_URL")
+	}
+	id := strings.TrimPrefix(blobRef, "blob://media/")
+	if mime == "" {
+		mime = "application/octet-stream"
+	}
+	// 1. fetch the blob
+	resp, err := p.HTTP.Get(p.MediaURL + "/blobs/" + url.PathEscape(id))
+	if err != nil {
+		return err
+	}
+	blob, err := io.ReadAll(io.LimitReader(resp.Body, MaxBlobBytesForMatrix))
+	resp.Body.Close()
+	if err != nil {
+		return err
+	}
+	if resp.StatusCode != 200 || len(blob) == 0 {
+		return fmt.Errorf("blob %s: %s", id, resp.Status)
+	}
+	// 2. upload to the homeserver media repo -> mxc://
+	up, err := http.NewRequest(http.MethodPost,
+		p.Homeserver+"/_matrix/media/v3/upload?filename="+url.QueryEscape(id),
+		bytes.NewReader(blob))
+	if err != nil {
+		return err
+	}
+	up.Header.Set("Content-Type", mime)
+	up.Header.Set("Authorization", "Bearer "+p.Token)
+	ures, err := p.HTTP.Do(up)
+	if err != nil {
+		return err
+	}
+	defer ures.Body.Close()
+	if ures.StatusCode >= 300 {
+		io.Copy(io.Discard, io.LimitReader(ures.Body, 1<<16))
+		return fmt.Errorf("media upload: %s", ures.Status)
+	}
+	var uploaded struct {
+		ContentURI string `json:"content_uri"`
+	}
+	if err := json.NewDecoder(io.LimitReader(ures.Body, 1<<16)).Decode(&uploaded); err != nil || uploaded.ContentURI == "" {
+		return fmt.Errorf("media upload: bad response")
+	}
+	// 3. send the artifact into the patient's room
+	room, err := p.roomFor(phone)
+	if err != nil {
+		return err
+	}
+	msgtype := "m.image"
+	if strings.HasPrefix(mime, "video/") {
+		msgtype = "m.video"
+	} else if strings.HasPrefix(mime, "audio/") {
+		msgtype = "m.audio"
+	}
+	body, _ := json.Marshal(map[string]string{
+		"msgtype": msgtype, "body": caption, "url": uploaded.ContentURI,
+	})
+	txn := fmt.Sprintf("ntf-art-%x", fnv(blobRef))
+	u := fmt.Sprintf("%s/_matrix/client/v3/rooms/%s/send/m.room.message/%s",
+		p.Homeserver, url.PathEscape(room), txn)
+	req, err := http.NewRequest(http.MethodPut, u, bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Authorization", "Bearer "+p.Token)
+	sres, err := p.HTTP.Do(req)
+	if err != nil {
+		return err
+	}
+	defer sres.Body.Close()
+	io.Copy(io.Discard, io.LimitReader(sres.Body, 1<<16))
+	if sres.StatusCode >= 300 {
+		return fmt.Errorf("matrix send: %s", sres.Status)
+	}
+	return nil
+}
+
+// MaxBlobBytesForMatrix mirrors media-service's 25 MiB ceiling.
+const MaxBlobBytesForMatrix = 25 << 20
 
 func fnv(s string) uint64 {
 	var h uint64 = 1469598103934665603

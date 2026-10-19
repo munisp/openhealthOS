@@ -84,6 +84,26 @@ func fhirToEvent(resourceType string, res map[string]any) (DomainEvent, bool) {
 		}
 		payload["when"] = str(res, "start")
 		return DomainEvent{Type: "appointment", Payload: payload}, payload["patient_id"] != ""
+	case "DiagnosticReport":
+		// Imaging reports: media[].link.reference "Blob/media-{id}" attaches
+		// the artifact for inline delivery (matrix leg); without it the
+		// message is the ordinary detail-free "result is ready".
+		payload["patient_id"] = patientRefID(refOf(res, "subject"))
+		if payload["patient_id"] == "" {
+			return DomainEvent{}, false
+		}
+		if code, ok := res["code"].(map[string]any); ok {
+			payload["modality"] = str(code, "text")
+		}
+		for _, m := range asMapList(res["media"]) {
+			if link, ok := m["link"].(map[string]any); ok {
+				ref := str(link, "reference")
+				if strings.HasPrefix(ref, "Blob/media-") {
+					payload["blob_ref"] = "blob://media/" + strings.TrimPrefix(ref, "Blob/media-")
+				}
+			}
+		}
+		return DomainEvent{Type: "imaging_result", Payload: payload}, true
 	}
 	return DomainEvent{}, false
 }

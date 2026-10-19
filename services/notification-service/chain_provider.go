@@ -148,6 +148,44 @@ func (c *ChainProvider) Send(phone, text string) error {
 	return fmt.Errorf("all sms providers failed [%s]", strings.Join(errs, "; "))
 }
 
+// SendArtifact walks the legs like Send, but only legs with artifact
+// capability can carry media. If every capable leg fails, the message
+// degrades to plain text through the ordinary chain — the patient always
+// gets "your result is ready", media or not.
+func (c *ChainProvider) SendArtifact(phone, caption, blobRef, mime string) error {
+	now := c.now()
+	capable := 0
+	var errs []string
+	for i := range c.legs {
+		l := &c.legs[i]
+		ap, ok := l.p.(ArtifactSender)
+		if !ok {
+			continue
+		}
+		capable++
+		if !l.br.allow(now) {
+			errs = append(errs, l.name+": circuit open")
+			continue
+		}
+		if err := ap.SendArtifact(phone, caption, blobRef, mime); err != nil {
+			l.br.failure(now)
+			errs = append(errs, l.name+": "+err.Error())
+			continue
+		}
+		l.br.success()
+		return nil
+	}
+	if capable == 0 {
+		return c.Send(phone, caption) // no artifact-capable leg at all: text only
+	}
+	// capable legs exist but all failed — degrade to text via the full chain
+	if err := c.Send(phone, caption); err != nil {
+		return fmt.Errorf("artifact failed [%s]; text fallback also failed: %w",
+			strings.Join(errs, "; "), err)
+	}
+	return nil
+}
+
 // providerFromEnv builds the delivery chain from the environment:
 //
 //	SMS_PROVIDERS   ordered comma list, e.g. "webhook:https://termii.example/api,webhook:https://at.example/sms,log"

@@ -56,8 +56,10 @@ type Notification struct {
 	ID        string `json:"id"`
 	PatientID string `json:"patient_id"`
 	Phone     string `json:"phone"`
-	Kind      string `json:"kind"` // appointment | lab_ready | pickup | referral | immunization
+	Kind      string `json:"kind"` // appointment | lab_ready | pickup | referral | immunization | imaging
 	Text      string `json:"text"`
+	BlobRef   string `json:"blob_ref,omitempty"` // blob://media/{id} — artifact to deliver inline
+	Mime      string `json:"mime,omitempty"`
 	State     string `json:"state"`
 	Attempts  int    `json:"attempts"`
 	LastError string `json:"last_error,omitempty"`
@@ -319,6 +321,17 @@ func renderMessage(ev DomainEvent) (kind, text string, ok bool) {
 	case "discharge":
 		return "general", fmt.Sprintf("OpenHealth: you have been discharged from %s. Your discharge summary is in your record — follow the care instructions.",
 			facility), true
+	case "imaging_result":
+		mod := str("modality")
+		if mod == "" {
+			mod = "imaging"
+		}
+		if str("blob_ref") != "" {
+			return "imaging", fmt.Sprintf("OpenHealth: your %s result is ready at %s — the image is attached. Show it at any referral visit.",
+				mod, facility), true
+		}
+		return "imaging", fmt.Sprintf("OpenHealth: your %s result is ready at %s. Please come with your card.",
+			mod, facility), true
 	case "vitals_danger":
 		vital := str("vital_label")
 		if vital == "" {
@@ -453,6 +466,12 @@ func (s *Service) HandleEvent(ev DomainEvent) (Notification, error) {
 		Kind: kind, Text: text, State: StateQueued,
 		CreatedAt: s.now().UTC().Format(time.RFC3339),
 	}
+	// Artifact delivery is opt-in per event: only when the producing service
+	// explicitly attaches a blob reference does the rail carry media inline.
+	if ref, _ := ev.Payload["blob_ref"].(string); strings.HasPrefix(ref, "blob://media/") {
+		n.BlobRef = ref
+		n.Mime, _ = ev.Payload["mime"].(string)
+	}
 	return n, s.store.Enqueue(n)
 }
 
@@ -462,9 +481,22 @@ const MaxAttempts = 3
 // Drain delivers up to limit pending notifications through the provider.
 // Failures stay queued until MaxAttempts, then are marked failed — a dead
 // aggregator must never block the rail forever.
+// ArtifactSender is an optional provider capability: deliver a media blob
+// inline (e.g. an X-ray thumbnail into a Matrix room). Providers that lack
+// it simply get the text — the message always degrades gracefully.
+type ArtifactSender interface {
+	SendArtifact(phone, caption, blobRef, mime string) error
+}
+
 func (s *Service) Drain(limit int) (sent, failed int) {
 	for _, n := range s.store.Pending(limit) {
-		if err := s.provider.Send(n.Phone, n.Text); err != nil {
+		var err error
+		if ap, ok := s.provider.(ArtifactSender); ok && n.BlobRef != "" {
+			err = ap.SendArtifact(n.Phone, n.Text, n.BlobRef, n.Mime)
+		} else {
+			err = s.provider.Send(n.Phone, n.Text)
+		}
+		if err != nil {
 			attempts, aerr := s.store.RecordAttempt(n.ID)
 			if aerr == nil && attempts >= MaxAttempts {
 				_ = s.store.MarkFailed(n.ID, err.Error())
