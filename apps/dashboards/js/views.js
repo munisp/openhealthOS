@@ -5,7 +5,9 @@
 import { el } from "./dom.js";
 import { dial, sparkline, facilityMap, hbar } from "./charts.js";
 import { eventsByType, encountersToday, perFacilityCounts, pilotGates,
-         overviewRows, platformHealth, payerRows, payerSummary } from "./data.js";
+         overviewRows, platformHealth, payerRows, payerSummary,
+         marginRows, marginTotals, panelRows, panelSummary, denialSummary,
+         catchmentRows, catchmentSummary, mlHealthRows, driftSummary } from "./data.js";
 import { nearest, navLink, renderMap, hitTest } from "./map.js";
 
 /* ---------- shared bits ---------- */
@@ -437,5 +439,166 @@ export function PayerView(data) {
       el("td", { class: "mono" }, `${r.payableShare}%`)));
   }
   page.append(el("h2", {}, "Decision mix"), table);
+  return page;
+}
+
+/* ---------- facility economics board (ADR-0033) ----------
+ * The nightly KPI plane's facility_economics / panel_risk / catchments
+ * sections, read by a hospital manager every morning: which service
+ * lines lose money, where the capitation panel is under water, how much
+ * denial value was preventable, who walks in without attribution. */
+
+function noDataPanel(section) {
+  return el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, section),
+    el("div", { class: "empty" },
+      "No data yet — the nightly KPI job (packages/kpiplane) has not seen this export. The board fills itself once it has."));
+}
+
+export function EconomicsView(data) {
+  const k = data.kpi;
+  const page = el("div", { class: "page" });
+  page.append(el("div", { class: "section-label" },
+    `Facility economics${k?.generated_at ? ` · built ${new Date(k.generated_at).toLocaleString()}` : ""}`));
+
+  const mt = marginTotals(k), ps = panelSummary(k), ds = denialSummary(k);
+  if (!mt && !ps && !ds) {
+    page.append(noDataPanel("Facility economics"));
+    return page;
+  }
+
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(mt ? fmtNGN(mt.marginNgn) : "—", "margin this period",
+      { kind: mt && mt.marginNgn >= 0 ? "ok" : "crit", sub: mt ? `${mt.encounters} encounters · tariff ${data.kpi?.sections?.facility_economics?.margins?.tariff_year || "?"}` : "" }),
+    kpi(ps ? fmtNGN(ps.totalMarginNgn) : "—", "capitation panel P&L",
+      { kind: ps && ps.totalMarginNgn >= 0 ? "ok" : "warn", sub: ps ? `${ps.panelSize.toLocaleString()} enrolled @ ${fmtNGN(ps.capitationNgn)}/mo` : "" }),
+    kpi(ds ? `${ds.preventableSharePct}%` : "—", "preventable denials",
+      { kind: ds && ds.preventableSharePct > 40 ? "warn" : "ok", sub: ds ? `${fmtNGN(ds.preventableNgn)} recoverable` : "" }),
+    kpi(ps ? fmtNGN(ps.walkInLeakNgn) : "—", "walk-in leakage",
+      { kind: ps && ps.walkInLeakNgn > 0 ? "warn" : "ok", sub: "care with no capitation attribution" })));
+
+  // margin per service line, worst first — the pricing desk's table
+  const mrows = marginRows(k);
+  if (mrows.length) {
+    const mt2 = el("table", { class: "matrix" },
+      el("tr", {},
+        el("th", {}, "Service"), el("th", {}, "Code"), el("th", {}, "Vol"),
+        el("th", {}, "Tariff"), el("th", {}, "Margin"), el("th", {}, "Margin %")));
+    for (const r of mrows) {
+      mt2.append(el("tr", { class: r.marginNgn < 0 ? "warn" : "" },
+        el("td", {}, r.name + (r.inSchedule ? "" : " ⚠ not in tariff schedule")),
+        el("td", { class: "mono" }, r.code),
+        el("td", { class: "mono" }, String(r.count)),
+        el("td", { class: "mono" }, fmtNGN(r.tariffNgn)),
+        el("td", { class: `mono ${r.marginNgn < 0 ? "crit" : "ok"}` }, fmtNGN(r.marginNgn)),
+        el("td", { class: "mono" }, r.marginPct == null ? "—" : `${r.marginPct}%`)));
+    }
+    page.append(el("h2", {}, "Margin per service line — worst first"), mt2);
+  }
+
+  // panel P&L per risk band — flat capitation hides this
+  const prows = panelRows(k);
+  if (prows.length) {
+    const pt = el("table", { class: "matrix" },
+      el("tr", {},
+        el("th", {}, "Risk band"), el("th", {}, "Enrolled"), el("th", {}, "Enc"),
+        el("th", {}, "Panel margin"), el("th", {}, "Per enrollee/mo")));
+    for (const r of prows) {
+      pt.append(el("tr", { class: r.marginNgn < 0 ? "warn" : "" },
+        el("td", {}, r.band),
+        el("td", { class: "mono" }, String(r.enrollees)),
+        el("td", { class: "mono" }, String(r.encounters)),
+        el("td", { class: `mono ${r.marginNgn < 0 ? "crit" : "ok"}` }, fmtNGN(r.marginNgn)),
+        el("td", { class: "mono" }, r.perEnrolleeNgn == null ? "—" : fmtNGN(r.perEnrolleeNgn))));
+    }
+    page.append(el("h2", {}, "Capitation panel by risk band — who the flat rate starves"), pt);
+  }
+
+  // denials by HMO
+  if (ds) {
+    const dn = el("div", { class: "panel" },
+      el("div", { class: "panel-title" }, `Denial pressure (${ds.denied}/${ds.claims} claims denied)`));
+    for (const h of ds.byHmo) {
+      dn.append(el("div", { class: "hbar-row" },
+        el("span", {}, h.hmo),
+        hbar(h.denialRatePct / 100),
+        el("span", { class: "mono" }, `${h.denialRatePct}%`)));
+    }
+    page.append(dn);
+  }
+
+  // catchments
+  const crows = catchmentRows(k), cs = catchmentSummary(k);
+  if (crows.length) {
+    const cp = el("div", { class: "panel" },
+      el("div", { class: "panel-title" },
+        `Catchments — ${cs.members.toLocaleString()} members · ${cs.over15km} beyond 15km${cs.unassigned ? ` · ${cs.unassigned} without coordinates` : ""}`));
+    const ct = el("table", { class: "matrix" },
+      el("tr", {},
+        el("th", {}, "Facility"), el("th", {}, "Assigned"), el("th", {}, "Mean km"),
+        el("th", {}, "P90 km"), el("th", {}, ">15km")));
+    for (const r of crows) {
+      ct.append(el("tr", { class: r.over_15km > 0 ? "warn" : "" },
+        el("td", {}, r.name),
+        el("td", { class: "mono" }, String(r.assigned)),
+        el("td", { class: "mono" }, r.mean_km == null ? "—" : String(r.mean_km)),
+        el("td", { class: "mono" }, r.p90_km == null ? "—" : String(r.p90_km)),
+        el("td", { class: `mono ${r.over_15km ? "warn" : "ok"}` }, String(r.over_15km))));
+    }
+    cp.append(ct);
+    page.append(cp);
+  }
+  return page;
+}
+
+/* ---------- ML health board (ADR-0033) ----------
+ * Registry champions + drift PSI from the ml_health section. A manager
+ * should never have to ask "is the fraud model stale?" — it's on the
+ * wall, next to the money. */
+
+export function MLHealthView(data) {
+  const k = data.kpi;
+  const page = el("div", { class: "page" });
+  page.append(el("div", { class: "section-label" },
+    `ML health${k?.generated_at ? ` · built ${new Date(k.generated_at).toLocaleString()}` : ""}`));
+
+  const rows = mlHealthRows(k), drift = driftSummary(k);
+  if (!rows.length && !drift) {
+    page.append(noDataPanel("ML health"));
+    return page;
+  }
+
+  const verdictKind = drift
+    ? (drift.verdict === "significant" ? "crit" : drift.verdict === "moderate" ? "warn" : "ok")
+    : "";
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(drift ? drift.verdict.toUpperCase() : "—", "feature drift (PSI)",
+      { kind: verdictKind, sub: drift && drift.worstPsi != null ? `worst PSI ${drift.worstPsi} · >0.25 = retrain now` : "no claims windows yet" }),
+    kpi(String(rows.length), "models registered"),
+    kpi(rows.some((r) => r.stale) ? "STALE" : "FRESH", "champion freshness",
+      { kind: rows.some((r) => r.stale) ? "warn" : "ok", sub: "stale = champion >30 days old" })));
+
+  const t = el("table", { class: "matrix" },
+    el("tr", {},
+      el("th", {}, "Model"), el("th", {}, "Champion"), el("th", {}, "AUC"),
+      el("th", {}, "Age (days)"), el("th", {}, "State")));
+  for (const r of rows) {
+    t.append(el("tr", { class: r.stale ? "warn" : "" },
+      el("td", { class: "mono" }, r.model),
+      el("td", { class: "mono" }, r.champion),
+      el("td", { class: "mono" }, r.auc == null ? "—" : r.auc.toFixed(3)),
+      el("td", { class: "mono" }, r.ageDays == null ? "—" : String(r.ageDays)),
+      el("td", {}, el("span", { class: `status-dot ${r.stale ? "warn" : "ok"}`, style: "display:inline-block" }))));
+  }
+  page.append(el("h2", {}, "Champions in production"), t);
+
+  if (drift?.worstPsi != null) {
+    page.append(el("div", { class: "panel" },
+      el("div", { class: "panel-title" }, "Drift policy"),
+      el("div", { class: "kpi-sub" },
+        "PSI <0.10 stable · 0.10–0.25 watch · >0.25 retrain now. " +
+        "Drift recomputed nightly from the lakehouse claims windows; " +
+        "continuous.py only ever promotes a challenger that beats the champion on holdout.")));
+  }
   return page;
 }

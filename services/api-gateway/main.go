@@ -141,6 +141,7 @@ type gateway struct {
 	probes   map[string]string // service -> health URL
 	metrics  map[string]string // service -> metrics URL
 	appsRoot string            // static app shell root ("" disables serving)
+	kpiPath  string            // ADR-0033 nightly KPI plane JSON ("" disables)
 
 	breakersMu sync.Mutex
 	breakers   map[string]*upBreaker // service -> circuit breaker
@@ -241,6 +242,9 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "/api/platform/overview":
 		g.serveOverview(w)
 		return
+	case "/api/kpi/plane":
+		g.serveKPIPlane(w, r)
+		return
 	}
 	for _, route := range g.routes {
 		if strings.HasPrefix(r.URL.Path, route.Prefix) {
@@ -269,6 +273,31 @@ func (g *gateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	http.Error(w, `{"error":"no route"}`, http.StatusNotFound)
+}
+
+// serveKPIPlane serves the nightly KPI document (ADR-0033) built by
+// packages/kpiplane. It is a file, not a fan-out: the dashboards must
+// render from last-night's snapshot even when every upstream is down,
+// so the gateway never computes it live. Only GET; 404 until the first
+// nightly build lands.
+func (g *gateway) serveKPIPlane(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		w.Header().Set("Allow", "GET")
+		http.Error(w, `{"error":"method not allowed"}`, http.StatusMethodNotAllowed)
+		return
+	}
+	if g.kpiPath == "" {
+		http.Error(w, `{"error":"kpi plane not configured"}`, http.StatusNotFound)
+		return
+	}
+	data, err := os.ReadFile(g.kpiPath)
+	if err != nil {
+		http.Error(w, `{"error":"kpi plane not built"}`, http.StatusNotFound)
+		return
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Cache-Control", "max-age=300")
+	w.Write(data)
 }
 
 // serveApp maps / and /app/* to apps/pwa, /dash/* to apps/dashboards,
@@ -401,7 +430,8 @@ func main() {
 	}
 	g := newGateway(DefaultRoutes(os.Getenv), newRateLimiter(10, 20))
 	g.metrics = metricsProbes(os.Getenv)
-	g.appsRoot = os.Getenv("APPS_ROOT") // e.g. /srv/openhealth/apps
+	g.kpiPath = os.Getenv("KPI_PLANE_PATH") // ADR-0033, e.g. /srv/openhealth/lakehouse/gold/kpi_plane.json
+	g.appsRoot = os.Getenv("APPS_ROOT")     // e.g. /srv/openhealth/apps
 	if g.appsRoot != "" {
 		log.Printf("serving client apps from %s (/app, /dash)", g.appsRoot)
 	}

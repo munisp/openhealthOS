@@ -5,7 +5,7 @@
 
 import { el } from "./dom.js";
 import { DataSource } from "./data.js";
-import { FacilityView, StateView, PayerView, MapView, renderTicker } from "./views.js";
+import { FacilityView, StateView, PayerView, MapView, EconomicsView, MLHealthView, renderTicker } from "./views.js";
 
 const REFRESH_MS = 30000;
 const ds = new DataSource();
@@ -23,6 +23,12 @@ function currentView() {
   }
   if (h.startsWith("#/map")) {
     return { name: "map", id: h.split("/")[2] || null };
+  }
+  if (h.startsWith("#/economics")) {
+    return { name: "economics" };
+  }
+  if (h.startsWith("#/mlhealth")) {
+    return { name: "mlhealth" };
   }
   return { name: "state" };
 }
@@ -42,7 +48,9 @@ async function render() {
       (view.name === "state" && a.dataset.view === "state") ||
       (view.name === "facility" && a.dataset.view === "facility") ||
       (view.name === "payers" && a.dataset.view === "payers") ||
-      (view.name === "map" && a.dataset.view === "map"));
+      (view.name === "map" && a.dataset.view === "map") ||
+      (view.name === "economics" && a.dataset.view === "economics") ||
+      (view.name === "mlhealth" && a.dataset.view === "mlhealth"));
   }
   const root = $("#board");
   root.innerHTML = "";
@@ -62,6 +70,8 @@ async function render() {
   root.append(view.name === "facility" ? FacilityView(last, view.id)
     : view.name === "payers" ? PayerView(last)
     : view.name === "map" ? MapView(last, view.id)
+    : view.name === "economics" ? EconomicsView(last)
+    : view.name === "mlhealth" ? MLHealthView(last)
     : StateView(last));
   renderTicker($("#ticker-track"), last);
 

@@ -173,6 +173,7 @@ export class DataSource {
       equipment: "/api/equipment/equipment",
       tickets: "/api/equipment/tickets",
       payers: "/api/claims/payers/stats",
+      kpi: "/api/kpi/plane",
     };
     const out = {};
     let anyLive = false;
@@ -216,6 +217,105 @@ export function payerSummary(rows) {
     payers: rows.length,
     unmapped: rows.filter((r) => r.kind === "unmapped").length,
   };
+}
+
+/* ---------- KPI plane transforms (ADR-0033) ----------
+ * The nightly job (packages/kpiplane) writes one document; these pure
+ * functions shape its sections for the economics / ML-health boards.
+ * Every transform tolerates {"status":"no-data"} sections. */
+
+export function marginRows(kpi) {
+  const econ = kpi?.sections?.facility_economics;
+  if (!econ || econ.status !== "ok" || !econ.margins) return [];
+  return econ.margins.lines.map((l) => ({
+    code: l.code,
+    name: l.name,
+    count: l.count,
+    tariffNgn: Math.round(l.tariff_kobo / 100),
+    marginNgn: Math.round(l.margin_kobo / 100),
+    marginPct: l.margin_pct,
+    inSchedule: l.in_tariff_schedule !== false,
+  }));
+}
+
+export function marginTotals(kpi) {
+  const m = kpi?.sections?.facility_economics?.margins;
+  if (!m) return null;
+  return {
+    encounters: m.encounters || 0,
+    revenueNgn: Math.round((m.totals?.revenue_kobo || 0) / 100),
+    marginNgn: Math.round((m.totals?.margin_kobo || 0) / 100),
+    unknownCodes: (m.unknown_codes || []).length,
+  };
+}
+
+export function panelRows(kpi) {
+  const panel = kpi?.sections?.facility_economics?.panel;
+  if (!panel) return [];
+  return panel.bands.map((b) => ({
+    band: b.band,
+    enrollees: b.enrollees,
+    marginNgn: Math.round(b.margin_kobo / 100),
+    perEnrolleeNgn: b.margin_per_enrollee_kobo == null
+      ? null : Math.round(b.margin_per_enrollee_kobo / 100),
+    encounters: b.encounters,
+  }));
+}
+
+export function panelSummary(kpi) {
+  const econ = kpi?.sections?.facility_economics;
+  const panel = econ?.panel;
+  if (!panel) return null;
+  return {
+    panelSize: panel.panel_size,
+    capitationNgn: Math.round(panel.capitation_kobo / 100),
+    totalMarginNgn: Math.round(panel.total_margin_kobo / 100),
+    walkInLeakNgn: Math.round((panel.walk_in_cost_kobo || 0) / 100),
+  };
+}
+
+export function denialSummary(kpi) {
+  const d = kpi?.sections?.facility_economics?.denials;
+  if (!d) return null;
+  return {
+    claims: d.claims,
+    denied: d.denied,
+    preventableSharePct: d.preventable_share_pct,
+    preventableNgn: Math.round((d.preventable_denied_kobo || 0) / 100),
+    byHmo: Object.entries(d.by_hmo || {})
+      .map(([hmo, v]) => ({ hmo, denialRatePct: v.denial_rate_pct }))
+      .sort((a, b) => b.denialRatePct - a.denialRatePct),
+  };
+}
+
+export function catchmentRows(kpi) {
+  const c = kpi?.sections?.catchments;
+  if (!c || c.status !== "ok") return [];
+  return c.facilities;
+}
+
+export function catchmentSummary(kpi) {
+  const c = kpi?.sections?.catchments;
+  if (!c || c.status !== "ok") return null;
+  return { members: c.members, unassigned: c.unassigned, over15km: c.over_15km_total };
+}
+
+export function mlHealthRows(kpi) {
+  const mh = kpi?.sections?.ml_health;
+  if (!mh || !mh.models) return [];
+  return mh.models.map((m) => ({
+    model: m.model,
+    champion: m.champion,
+    auc: m.metrics?.auc ?? null,
+    ageDays: m.champion_age_days ?? null,
+    stale: (m.champion_age_days ?? 0) > 30,
+  }));
+}
+
+export function driftSummary(kpi) {
+  const d = kpi?.sections?.ml_health?.drift;
+  if (!d) return null;
+  return { verdict: d.verdict, worstPsi: d.worst_psi ?? null };
 }
 
 /* ---------- demo set (offline-with-no-cache fallback) ---------- */
@@ -294,5 +394,73 @@ export function demoData() {
       { payer: "RELIANCE", kind: "commercial", claims: 210, approved: 177, pended: 18, denied: 15, payable_ngn: 802300 },
     ],
   };
-  return { facilities, events, overview, equipment, tickets, payers };
+  const kpi = {
+    generated_at: new Date(now - 5 * 3600000).toISOString(),
+    sections: {
+      facility_economics: {
+        status: "ok",
+        margins: {
+          tariff_year: 2025, encounters: 412,
+          lines: [
+            { code: "CS-EMG", name: "Caesarean section (emergency)", count: 18, tariff_kobo: 7500000, revenue_kobo: 135000000, cost_kobo: 151200000, margin_kobo: -16200000, margin_pct: -12.0, in_tariff_schedule: true },
+            { code: "MAL-RDT", name: "Malaria RDT + ACT", count: 96, tariff_kobo: 120000, revenue_kobo: 11520000, cost_kobo: 11040000, margin_kobo: 480000, margin_pct: 4.2, in_tariff_schedule: true },
+            { code: "CONS-GEN", name: "General consultation", count: 298, tariff_kobo: 80000, revenue_kobo: 23840000, cost_kobo: 19610000, margin_kobo: 4230000, margin_pct: 17.7, in_tariff_schedule: true },
+          ],
+          unknown_codes: [],
+          totals: { revenue_kobo: 170360000, cost_kobo: 166250000, margin_kobo: 4110000 },
+        },
+        margin_worst: { code: "CS-EMG", margin_kobo: -16200000 },
+        panel: {
+          capitation_kobo: 145000, tariff_year: 2025, panel_size: 4200, encounters: 412,
+          bands: [
+            { band: "adult", enrollees: 2380, capitation_kobo: 345100000, care_cost_kobo: 221300000, margin_kobo: 123800000, margin_per_enrollee_kobo: 52016, encounters: 171 },
+            { band: "chronic", enrollees: 610, capitation_kobo: 88450000, care_cost_kobo: 149700000, margin_kobo: -61250000, margin_per_enrollee_kobo: -100409, encounters: 122 },
+            { band: "elderly", enrollees: 402, capitation_kobo: 58290000, care_cost_kobo: 70400000, margin_kobo: -12110000, margin_per_enrollee_kobo: -30124, encounters: 61 },
+            { band: "maternal", enrollees: 318, capitation_kobo: 46110000, care_cost_kobo: 52100000, margin_kobo: -5990000, margin_per_enrollee_kobo: -18836, encounters: 44 },
+            { band: "under5", enrollees: 490, capitation_kobo: 71050000, care_cost_kobo: 48200000, margin_kobo: 22850000, margin_per_enrollee_kobo: 46632, encounters: 14 },
+            { band: "walk-in", enrollees: 0, capitation_kobo: 0, care_cost_kobo: 3890000, margin_kobo: -3890000, margin_per_enrollee_kobo: null, encounters: 20 },
+          ],
+          total_margin_kobo: -5210000, walk_in_cost_kobo: 3890000,
+        },
+        denials: {
+          claims: 1836, denied: 120,
+          by_reason: {
+            "missing-referral": { count: 41, amount_kobo: 9800000, klass: "preventable" },
+            "not-covered": { count: 33, amount_kobo: 7200000, klass: "package" },
+            "duplicate-claim": { count: 12, amount_kobo: 4100000, klass: "fraud-screen" },
+            "documentation-gap": { count: 34, amount_kobo: 6900000, klass: "preventable" },
+          },
+          by_hmo: {
+            HYGEIA: { submitted: 842, denied: 58, denied_kobo: 13900000, denial_rate_pct: 6.9 },
+            NHIA: { submitted: 711, denied: 44, denied_kobo: 11200000, denial_rate_pct: 6.2 },
+            RELIANCE: { submitted: 283, denied: 18, denied_kobo: 2900000, denial_rate_pct: 6.4 },
+          },
+          preventable_denied_kobo: 16700000, preventable_share_pct: 59.6,
+        },
+      },
+      panel_risk: {
+        status: "ok", panel_size: 4200,
+        bands: { under5: 490, adult: 2380, "older-adult": 408, elderly: 402, maternal: 318, chronic: 610 },
+        band_share_pct: { under5: 11.7, adult: 56.7, "older-adult": 9.7, elderly: 9.6, maternal: 7.6, chronic: 14.5 },
+      },
+      catchments: {
+        status: "ok", members: 4200, unassigned: 96, over_15km_total: 268,
+        facilities: [
+          { facility: "HOS-001", name: "General Hospital Ikeja", assigned: 1180, mean_km: 4.2, p90_km: 9.8, over_15km: 41 },
+          { facility: "PHC-004", name: "Nsukka PHC", assigned: 880, mean_km: 6.1, p90_km: 13.4, over_15km: 88 },
+          { facility: "PHC-001", name: "Kawo PHC", assigned: 812, mean_km: 5.4, p90_km: 12.1, over_15km: 62 },
+          { facility: "PHC-005", name: "Sabon Gari PHC", assigned: 704, mean_km: 7.9, p90_km: 16.2, over_15km: 77 },
+        ],
+      },
+      ml_health: {
+        status: "ok",
+        models: [
+          { model: "claim-gcn", champion: "v3", metrics: { auc: 0.934, precision_at_k: 0.61 }, card: { data_hash: "9f2c" }, champion_age_days: 6.2 },
+          { model: "fraud-mlp", champion: "v7", metrics: { auc: 0.908, precision_at_k: 0.44 }, card: { data_hash: "9f2c" }, champion_age_days: 11.8 },
+        ],
+        drift: { verdict: "moderate", worst_psi: 0.18, per_feature: { amount_ratio: 0.18, qty: 0.07 }, reference_n: 5200, current_n: 1836 },
+      },
+    },
+  };
+  return { facilities, events, overview, equipment, tickets, payers, kpi };
 }
