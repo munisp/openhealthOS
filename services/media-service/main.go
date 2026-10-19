@@ -20,6 +20,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -53,9 +54,14 @@ type Meta struct {
 func (m Meta) Ref() string { return "blob://media/" + m.ID }
 
 // BlobStore is the backend contract — local today, S3 at scale.
+// PutLarge admits an assembled multipart object (ADR-0028) with a hash
+// already computed during assembly; GetRange serves byte ranges for video
+// playback without hauling the whole object into memory.
 type BlobStore interface {
 	Put(contentType string, data []byte, actor string) (Meta, error)
+	PutLarge(contentType, path string, size int64, sha256hex, actor string) (Meta, error)
 	Get(id string) (Meta, []byte, error)
+	GetRange(id string, start, end int64) (Meta, []byte, error)
 	Stat(id string) (Meta, error)
 	Tombstone(id, actor, reason string) (Meta, error)
 	List() []Meta
@@ -170,6 +176,84 @@ func (l *LocalStore) Get(id string) (Meta, []byte, error) {
 		return Meta{}, nil, fmt.Errorf("integrity failure on %s", id)
 	}
 	return m, data, nil
+}
+
+// PutLarge adopts an assembled multipart file: size must match the declared
+// assembly, then the file moves next to its sidecar. The SHA-256 computed
+// during assembly is the integrity anchor — re-hashing a 2 GiB object here
+// would double the write cost for no assurance gain.
+func (l *LocalStore) PutLarge(contentType, path string, size int64, sha256hex, actor string) (Meta, error) {
+	if actor == "" {
+		return Meta{}, errors.New("uploads name an actor")
+	}
+	fi, err := os.Stat(path)
+	if err != nil {
+		return Meta{}, err
+	}
+	if fi.Size() != size {
+		return Meta{}, fmt.Errorf("assembled size %d != declared %d", fi.Size(), size)
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	l.mu.Lock()
+	l.seq++
+	m := Meta{
+		ID:          fmt.Sprintf("BLOB-%08d", l.seq),
+		ContentType: contentType,
+		Size:        size,
+		SHA256:      sha256hex,
+		UploadedBy:  actor,
+		UploadedAt:  time.Now(),
+	}
+	l.meta[m.ID] = m
+	l.mu.Unlock()
+	if err := os.Rename(path, l.path(m.ID)); err != nil {
+		// Cross-device fallback: stream-copy then remove.
+		src, err := os.Open(path)
+		if err != nil {
+			return Meta{}, err
+		}
+		defer src.Close()
+		dst, err := os.OpenFile(l.path(m.ID), os.O_CREATE|os.O_WRONLY|os.O_TRUNC, 0o640)
+		if err != nil {
+			return Meta{}, err
+		}
+		if _, err := io.Copy(dst, src); err != nil {
+			dst.Close()
+			return Meta{}, err
+		}
+		dst.Close()
+		os.Remove(path)
+	}
+	if err := l.writeSidecar(m); err != nil {
+		return Meta{}, err
+	}
+	return m, nil
+}
+
+// GetRange serves [start, end] inclusive via ReadAt — partial reads skip
+// whole-object verification by design (a range proof needs the full hash);
+// players fetch HLS segments whole, so tamper evidence is preserved where
+// it matters.
+func (l *LocalStore) GetRange(id string, start, end int64) (Meta, []byte, error) {
+	m, err := l.Stat(id)
+	if err != nil {
+		return Meta{}, nil, err
+	}
+	if start < 0 || end < start || end >= m.Size {
+		return Meta{}, nil, fmt.Errorf("range %d-%d outside object of %d bytes", start, end, m.Size)
+	}
+	f, err := os.Open(l.path(id))
+	if err != nil {
+		return Meta{}, nil, err
+	}
+	defer f.Close()
+	buf := make([]byte, end-start+1)
+	if _, err := f.ReadAt(buf, start); err != nil {
+		return Meta{}, nil, err
+	}
+	return m, buf, nil
 }
 
 func (l *LocalStore) Stat(id string) (Meta, error) {

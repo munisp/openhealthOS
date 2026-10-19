@@ -1,0 +1,70 @@
+# ADR-0028/0029 compose: imaging + video + document intelligence + training.
+# Licence doctrine: Orthanc (GPLv3) and MinIO (AGPL) run as standalone
+# containers reached over the network only — composed, never linked.
+services:
+  orthanc:
+    image: jodogne/orthanc-plugins:latest   # GPLv3, standalone PACS
+    environment:
+      ORTHANC__NAME: openhealth-pacs
+      ORTHANC__AUTHENTICATION_ENABLED: "false"   # auth at imaging-service
+    volumes:
+      - orthanc-db:/var/lib/orthanc/db
+
+  minio:
+    image: minio/minio:latest               # AGPLv3, S3 wire protocol only
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: openhealth
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?set me}
+    volumes:
+      - minio-data:/data
+
+  media-service:
+    build: ../../services/media-service
+    environment:
+      LISTEN: ":8095"
+      S3_ENDPOINT: http://minio:9000
+      S3_BUCKET: media
+      S3_ACCESS_KEY: openhealth
+      S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD:?set me}
+    depends_on: [minio]
+
+  imaging-service:
+    build: ../../services/imaging-service
+    environment:
+      LISTEN: ":8096"
+      ORTHANC_URL: http://orthanc:8042
+      MEDIA_URL: http://media-service:8095
+    depends_on: [orthanc, media-service]
+    ports:
+      - "8096:8096"
+
+  transcoder:
+    build:
+      context: ../../workers
+      dockerfile: ../deploy/imaging/Dockerfile.transcoder
+    environment:
+      IMAGING_URL: http://imaging-service:8096
+      MEDIA_URL: http://media-service:8095
+      BACKEND: rsmpeg            # in-process FFmpeg; set "cli" to use ffmpeg subprocess
+    depends_on: [imaging-service, media-service]
+
+  docai:
+    build: ../../ml/docai        # fenced heavy engines (PaddleOCR/Docling/VLM)
+    profiles: ["ml"]             # opt-in: plain deploys stay lightweight
+    environment:
+      DOCAI_PORT: "8100"
+      DOCAI_VLM_MODEL: HuggingFaceTB/SmolVLM-256M-Instruct
+
+  training-service:
+    build: ../../services/training-service
+    environment:
+      LISTEN: ":8097"
+      LEDGER_BIN: /app/oh_ledger
+    depends_on: [media-service]
+    ports:
+      - "8097:8097"
+
+volumes:
+  orthanc-db:
+  minio-data:

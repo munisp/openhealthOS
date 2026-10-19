@@ -1,0 +1,8 @@
+# ml/docai sidecar dependencies — installed ONLY in the docai container
+# image, never in platform services. All licences embeddable-clean.
+paddleocr>=2.7          # Apache-2.0 — degraded-scan OCR
+paddlepaddle>=2.6       # Apache-2.0 — PaddleOCR runtime
+docling>=2.4            # MIT — layout-aware document parsing
+torch>=2.2              # BSD-3-Clause — VLM runtime (ml/ fence exception)
+transformers>=4.45      # Apache-2.0 — VLM weights/runtime loading
+Pillow>=10.0            # HPND (PIL license) — image IO

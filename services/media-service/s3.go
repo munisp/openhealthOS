@@ -106,6 +106,90 @@ func (s *S3Store) do(method, key string, body []byte, contentType string) (*http
 	return resp, data, nil
 }
 
+// doRaw streams an arbitrary body with a precomputed payload hash — the
+// multipart path (ADR-0028) knows the SHA-256 from assembly and must not
+// buffer a 2 GiB object just to sign it. extraHeaders ride unsigned, which
+// SigV4 permits.
+func (s *S3Store) doRaw(method, key string, body io.Reader, size int64, contentType, payloadHash string, extra map[string]string) (*http.Response, []byte, error) {
+	req, err := http.NewRequest(method,
+		fmt.Sprintf("%s/%s/%s", s.endpoint, s.bucket, key), body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if size >= 0 {
+		req.ContentLength = size
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+	for k, v := range extra {
+		req.Header.Set(k, v)
+	}
+	s.sign(req, payloadHash)
+	resp, err := s.client.Do(req)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer resp.Body.Close()
+	data, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, nil, err
+	}
+	if resp.StatusCode >= 300 {
+		return nil, nil, fmt.Errorf("s3 %s %s: %d", method, key, resp.StatusCode)
+	}
+	return resp, data, nil
+}
+
+// PutLarge streams an assembled multipart file straight to the object store.
+func (s *S3Store) PutLarge(contentType, path string, size int64, sha256hex, actor string) (Meta, error) {
+	if actor == "" {
+		return Meta{}, errors.New("uploads name an actor")
+	}
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	f, err := os.Open(path)
+	if err != nil {
+		return Meta{}, err
+	}
+	defer f.Close()
+	fi, err := f.Stat()
+	if err != nil {
+		return Meta{}, err
+	}
+	if fi.Size() != size {
+		return Meta{}, fmt.Errorf("assembled size %d != declared %d", fi.Size(), size)
+	}
+	s.seq++
+	m := Meta{ID: fmt.Sprintf("BLOB-%08d", s.seq), ContentType: contentType,
+		Size: size, SHA256: sha256hex, UploadedBy: actor, UploadedAt: time.Now()}
+	if _, _, err := s.doRaw("PUT", m.ID+".bin", f, size, contentType, sha256hex, nil); err != nil {
+		return Meta{}, err
+	}
+	s.meta[m.ID] = m
+	return m, writeSidecarTo(s.metaDir, m)
+}
+
+// GetRange issues a signed GET with a Range header. Partial objects cannot
+// be whole-hash verified — same trade-off as the local backend.
+func (s *S3Store) GetRange(id string, start, end int64) (Meta, []byte, error) {
+	m, err := s.Stat(id)
+	if err != nil {
+		return Meta{}, nil, err
+	}
+	if start < 0 || end < start || end >= m.Size {
+		return Meta{}, nil, fmt.Errorf("range %d-%d outside object of %d bytes", start, end, m.Size)
+	}
+	_, data, err := s.doRaw("GET", id+".bin", nil, -1, "",
+		"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855", // sha256 of empty body
+		map[string]string{"Range": fmt.Sprintf("bytes=%d-%d", start, end)})
+	if err != nil {
+		return Meta{}, nil, err
+	}
+	return m, data, nil
+}
+
 func (s *S3Store) Put(contentType string, data []byte, actor string) (Meta, error) {
 	if actor == "" {
 		return Meta{}, errors.New("uploads name an actor")

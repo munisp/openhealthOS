@@ -11,11 +11,16 @@ import (
 
 func newTestServer(t *testing.T) server {
 	t.Helper()
-	st, err := NewLocalStore(t.TempDir())
+	dir := t.TempDir()
+	st, err := NewLocalStore(dir)
 	if err != nil {
 		t.Fatal(err)
 	}
-	return server{store: st}
+	u, err := NewUploadManager(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return server{store: st, uploads: u}
 }
 
 func rawReq(t *testing.T, s server, method, path, body, ctype, actor string) *httptest.ResponseRecorder {

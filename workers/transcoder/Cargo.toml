@@ -1,0 +1,9 @@
+[package]
+name = "oh_transcoder"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "OpenHealth OS clinical-video transcode worker (ADR-0028): core logic + ffmpeg-CLI backend, zero crates.io deps"
+
+[profile.release]
+opt-level = 2

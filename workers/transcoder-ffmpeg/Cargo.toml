@@ -1,0 +1,17 @@
+[package]
+name = "oh_transcoder_ffmpeg"
+version = "0.1.0"
+edition = "2021"
+license = "AGPL-3.0-only"
+description = "In-process FFmpeg transcoder backend via rsmpeg (MIT) — deploy image only"
+
+# DEPLOY-IMAGE CRATE. Not built in the development sandbox: it needs
+# crates.io access (rsmpeg) and FFmpeg dev headers (libavcodec-dev etc.).
+# Built inside deploy/imaging/Dockerfile.transcoder where both exist.
+
+[dependencies]
+oh_transcoder = { path = "../transcoder" }
+rsmpeg = { version = "0.15", default-features = false, features = ["ffmpeg6"] }
+
+[profile.release]
+opt-level = 2

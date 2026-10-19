@@ -1,0 +1,19 @@
+# Transcoder image (ADR-0028). This is where FFmpeg dev headers and
+# crates.io access exist, so the rsmpeg backend compiles here — never in
+# the development sandbox.
+FROM rust:1.82-bookworm AS build
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        clang pkg-config libavcodec-dev libavformat-dev libavutil-dev \
+        libswscale-dev libavfilter-dev libavdevice-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY transcoder/ transcoder/
+COPY transcoder-ffmpeg/ transcoder-ffmpeg/
+RUN cd transcoder-ffmpeg && cargo build --release
+
+FROM debian:bookworm-slim
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        ffmpeg tesseract-ocr \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=build /src/transcoder-ffmpeg/target/release/oh_transcoder_ffmpeg /usr/local/bin/transcoder
+ENTRYPOINT ["transcoder"]

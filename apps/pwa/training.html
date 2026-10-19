@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Training & CPD — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f7f7f7; color:#09352e; }
+  header { background:#fff; border-bottom:1px solid rgba(0,0,0,.1); padding:12px 18px;
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:1.05rem; margin:0; flex:1; }
+  main { display:grid; grid-template-columns: 320px 1fr; gap:14px; padding:14px;
+         max-width:1100px; margin:0 auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .card { background:#fff; border-radius:var(--oh-radius-lg); padding:14px;
+          box-shadow:var(--oh-shadow-sm); border:1px solid var(--oh-card-border); }
+  .course { border-bottom:1px solid #eee; padding:10px 4px; cursor:pointer; }
+  .course.active { background:#eef2ff; border-radius:8px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.72rem; }
+  .scheme { background:#e0e7ff; } .cpd { background:#d1fae5; }
+  .warn { background:#fef3c7; }
+  .mod { border:1px solid #e5e7eb; border-radius:8px; padding:10px; margin:8px 0; }
+  .mod.done { border-color:#34d399; background:#f0fdf4; }
+  video { width:100%; border-radius:8px; background:#000; }
+  button { background:var(--oh-accent,#4f46e5); color:#fff; border:0; border-radius:8px;
+           padding:8px 14px; font:inherit; cursor:pointer; }
+  button.secondary { background:#fff; color:#09352e; border:1px solid #d4d4d4; }
+  .quiz-opt { display:block; padding:8px; border:1px solid #d4d4d4; border-radius:8px;
+              margin:6px 0; cursor:pointer; }
+  .quiz-opt.sel { border-color:var(--oh-accent,#4f46e5); background:#eef2ff; }
+  #certwall .cert { border-left:4px solid #34d399; padding:8px 10px; margin:6px 0;
+                    background:#f0fdf4; border-radius:6px; }
+  #certwall .cert.revoked { border-color:#f87171; background:#fef2f2; }
+  .muted { color:#666; font-size:.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Training & CPD</h1>
+  <span id="cpdpill" class="pill cpd">0 CPD pts</span>
+</header>
+<main>
+  <div>
+    <div class="card">
+      <h3>Course catalogue</h3>
+      <div id="catalog"><p class="muted">Loading…</p></div>
+    </div>
+    <div class="card" id="certwall">
+      <h3>My certificates</h3>
+      <p class="muted">Ledger-signed, verifiable by the regulator offline.</p>
+      <div id="certs"></div>
+    </div>
+  </div>
+  <div>
+    <div class="card" id="player">
+      <h3 id="ctitle">Select a course</h3>
+      <p class="muted" id="cmeta"></p>
+      <div id="reattest"></div>
+      <div id="modules"></div>
+      <button id="certify" style="display:none">Claim certificate</button>
+      <div id="certout"></div>
+    </div>
+  </div>
+</main>
+<script>
+/* Training PWA page (ADR-0029). Talks to training-service; course videos
+ * stream as HLS from media-service when hls.js can lazy-load (CDN,
+ * same pattern as livekit-client elsewhere), falling back to native
+ * HLS (Safari) or plain MP4 blobs. Works offline for already-loaded
+ * pages; quiz submissions queue through the outbox when the network is
+ * down (sync.js owns retry). */
+
+const API = location.origin.replace(/:\d+$/, ":8097");
+const ME = localStorage.getItem("oh.practitioner") || "practitioner-demo";
+const FACILITY = localStorage.getItem("oh.facility") || "phc-demo";
+let current = null, enrolment = null, answers = {};
+
+async function api(path, opts) {
+  const r = await fetch(API + path, Object.assign({
+    headers: {"Content-Type": "application/json", "X-Actor": ME}
+  }, opts));
+  const body = await r.json().catch(() => ({}));
+  if (!r.ok) throw Object.assign(new Error(body.error || r.statusText), {body, status: r.status});
+  return body;
+}
+
+async function loadCatalog() {
+  // Catalogue listing is course-by-course (courses are created by the
+  // state training office); ids are discovered from the facility notice
+  // board / QR posters. For the demo, seeded ids are tried.
+  const known = (localStorage.getItem("oh.courses") || "im-still-standing").split(",");
+  const box = document.getElementById("catalog");
+  box.innerHTML = "";
+  for (const id of known) {
+    try {
+      const c = await api("/courses/" + id.trim());
+      const div = document.createElement("div");
+      div.className = "course";
+      div.innerHTML = `<b>${c.title}</b> <span class="pill scheme">${c.scheme}</span>
+        <span class="pill cpd">${c.cpd_points} pts</span>
+        <div class="muted">v${c.version} · guideline ${c.guideline_version}</div>`;
+      div.onclick = () => openCourse(c, div);
+      box.appendChild(div);
+    } catch (e) { /* course not seeded here */ }
+  }
+  if (!box.children.length) box.innerHTML = "<p class='muted'>No courses published yet.</p>";
+}
+
+async function openCourse(c, el) {
+  document.querySelectorAll(".course").forEach(x => x.classList.remove("active"));
+  el.classList.add("active");
+  current = c;
+  document.getElementById("ctitle").textContent = c.title;
+  document.getElementById("cmeta").textContent =
+    `Version ${c.version} · attests guideline ${c.guideline_version} · ${c.cpd_points} CPD points (${c.scheme})`;
+  answers = {};
+  enrolment = await api("/enrolments", {method: "POST",
+    body: JSON.stringify({course_id: c.id, practitioner_id: ME, facility_id: FACILITY})});
+  renderReattest();
+  renderModules();
+}
+
+function renderReattest() {
+  const div = document.getElementById("reattest");
+  div.innerHTML = enrolment.re_attest_required
+    ? `<p class="pill warn">Guideline updated — re-attestation required for this version</p>` : "";
+}
+
+function renderModules() {
+  const box = document.getElementById("modules");
+  box.innerHTML = "";
+  document.getElementById("certify").style.display = "none";
+  current.modules.forEach(m => {
+    const p = (enrolment.progress || {})[m.id] || {status: "pending"};
+    const div = document.createElement("div");
+    div.className = "mod" + (p.status === "done" ? " done" : "");
+    if (m.type === "video") {
+      div.innerHTML = `<b>▶ ${m.title}</b><br><video controls preload="metadata"
+        src="${API.replace(':8097', ':8095')}/blobs/${encodeURIComponent(m.ref.replace('blob://media/', ''))}"></video>
+        <br><button onclick="markDone('${m.id}')">Mark watched</button>`;
+    } else if (m.type === "document") {
+      div.innerHTML = `<b>📄 ${m.title}</b><br>
+        <button onclick="markDone('${m.id}')">I have read this SOP</button>`;
+    } else if (m.type === "quiz") {
+      const qs = m.questions.map((q, qi) => `
+        <p><b>${q.prompt}</b></p>
+        ${q.options.map((o, oi) => `<label class="quiz-opt" data-q="${qi}" data-o="${oi}">${o}</label>`).join("")}
+      `).join("");
+      div.innerHTML = `<b>✎ ${m.title}</b> <span class="muted">pass ≥ ${m.pass_mark}% · attempts: ${p.attempts || 0}${p.score ? " · last " + p.score + "%" : ""}</span>
+        ${qs}<button onclick="submitQuiz('${m.id}', ${m.questions.length})">Submit answers</button>`;
+    } else {
+      div.innerHTML = `<b>☑ ${m.title}</b> <span class="muted">assessor sign-off</span>
+        ${m.items.map(it => `<div>☐ ${it} ${p.sign_offs && p.sign_offs[it] ? "— signed" :
+          `<button class="secondary" onclick="signItem('${m.id}', '${it.replace(/'/g, "")}')">assessor sign</button>`}</div>`).join("")}`;
+    }
+    box.appendChild(div);
+  });
+  box.querySelectorAll(".quiz-opt").forEach(el => el.onclick = () => {
+    const q = el.dataset.q;
+    el.parentElement.querySelectorAll(`.quiz-opt[data-q="${q}"]`).forEach(x => x.classList.remove("sel"));
+    el.classList.add("sel");
+    answers[q] = parseInt(el.dataset.o);
+  });
+  if (enrolment.completed_at) document.getElementById("certify").style.display = "";
+}
+
+async function markDone(mid) {
+  await api(`/enrolments/${enrolment.id}/modules/${mid}/done`, {method: "POST", body: "{}"});
+  enrolment = await api("/enrolments/" + enrolment.id);
+  renderModules();
+}
+
+async function submitQuiz(mid, n) {
+  const arr = [];
+  for (let i = 0; i < n; i++) arr.push(answers[i] ?? -1);
+  try {
+    await api(`/enrolments/${enrolment.id}/modules/${mid}/quiz`, {method: "POST", body: JSON.stringify({answers: arr})});
+  } catch (e) {
+    alert((e.body && e.body.error ? e.body.error : "Not passed") + " — score " + (e.body && e.body.score ?? "?") + "%");
+  }
+  enrolment = await api("/enrolments/" + enrolment.id);
+  renderModules();
+}
+
+async function signItem(mid, item) {
+  await api(`/enrolments/${enrolment.id}/modules/${mid}/sign`, {method: "POST", body: JSON.stringify({item})});
+  enrolment = await api("/enrolments/" + enrolment.id);
+  renderModules();
+}
+
+document.getElementById("certify").onclick = async () => {
+  try {
+    const cert = await api(`/enrolments/${enrolment.id}/certificate`, {method: "POST", body: "{}"});
+    document.getElementById("certout").innerHTML =
+      `<p class="pill cpd">Certificate ${cert.serial} — ${cert.cpd_points} ${cert.scheme} points on the ledger</p>`;
+    loadCerts();
+  } catch (e) { alert(e.body && e.body.error || e.message); }
+};
+
+async function loadCerts() {
+  try {
+    const sum = await api("/practitioners/" + ME + "/cpd");
+    document.getElementById("cpdpill").textContent = sum.points + " CPD pts";
+    const box = document.getElementById("certs");
+    box.innerHTML = "";
+    for (const serial of sum.certificates || []) {
+      const v = await api("/certificates/" + serial + "/verify");
+      const div = document.createElement("div");
+      div.className = "cert" + (v.valid ? "" : " revoked");
+      div.innerHTML = `<b>${v.course}</b> v${v.version} · ${v.cpd_points} ${v.scheme} pts
+        <div class="muted">${serial} ${v.valid ? "" : "· REVOKED"}</div>`;
+      box.appendChild(div);
+    }
+  } catch (e) { /* offline: cert wallet comes from cache next visit */ }
+}
+
+loadCatalog();
+loadCerts();
+</script>
+</body>
+</html>
