@@ -9,6 +9,7 @@ import {
   kindMeta, groupFeed, relTime, stateLabel, groupRecord, groupConsults,
   upcomingAppointments, coverageSummary, bookableSlots, nextDue, buildQuestionnaireResponse,
   claimRows, nairaText,
+  wellnessKpis, planItems, riskBadge, logEntry,
 } from "./logic.js";
 import { nearest, facilityRow } from "./geo.js";
 
@@ -31,6 +32,9 @@ const state = {
   consents: null,    // last good consent list
   claims: null,      // last good claims-in-my-name list (ADR-0018)
   careLoading: false,
+  wellness: null,        // last good wellness summary (ADR-0035)
+  wellnessPlan: null,    // last good prevention plan
+  wellnessLoading: false,
 };
 
 function el(tag, attrs = {}, ...children) {
@@ -73,6 +77,86 @@ function apiBase() {
 function registryBase() {
   if (location.pathname.startsWith("/patient")) return `${location.origin}/api/registry`;
   return location.origin.startsWith("http") ? `${location.origin}/api/registry` : "http://127.0.0.1:18082";
+}
+
+/* Wellness rail (ADR-0035): device + self-logged activity, nutrition,
+ * prevention plan — its own service, same-origin via the gateway. */
+function wellnessBase() {
+  if (location.pathname.startsWith("/patient")) return `${location.origin}/api/wellness`;
+  return location.origin.startsWith("http") ? `${location.origin}/api/wellness` : "http://127.0.0.1:18090";
+}
+
+const WQ_KEY = "oh-wellness-queue"; // offline outbox: entries sync when online
+
+function wellnessQueue() {
+  try { return JSON.parse(localStorage.getItem(WQ_KEY) || "[]"); } catch { return []; }
+}
+function setWellnessQueue(q) {
+  try { localStorage.setItem(WQ_KEY, JSON.stringify(q)); } catch { /* private mode */ }
+}
+
+async function flushWellnessQueue() {
+  if (!navigator.onLine || !state.patientId) return;
+  const q = wellnessQueue();
+  if (!q.length) return;
+  const left = [];
+  for (const entry of q) {
+    try {
+      const r = await fetch(`${wellnessBase()}/wellness/ingest`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          patient_id: state.patientId, source: entry.source || "manual",
+          observations: [entry.obs],
+        }),
+      });
+      if (!r.ok) left.push(entry);
+    } catch { left.push(entry); }
+  }
+  setWellnessQueue(left);
+  if (left.length < q.length) loadWellness(true);
+}
+
+/* Log a wellness entry: online it goes straight to the rail, offline it
+ * waits in the outbox — either way the deterministic ref makes the
+ * eventual sync exactly-once. */
+async function logWellness(type, payload, source = "manual") {
+  const obs = logEntry(state.patientId, type, payload);
+  const entry = { source, obs };
+  if (navigator.onLine) {
+    try {
+      const r = await fetch(`${wellnessBase()}/wellness/ingest`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ patient_id: state.patientId, source, observations: [obs] }),
+      });
+      if (r.ok) { toast(t("wl_logged")); loadWellness(true); return; }
+    } catch { /* fall through to queue */ }
+  }
+  setWellnessQueue([...wellnessQueue(), entry]);
+  toast(t("wl_queued"));
+}
+
+async function loadWellness(force = false) {
+  if (state.wellnessLoading || (!force && state.wellness)) return;
+  state.wellnessLoading = true;
+  const pid = encodeURIComponent(state.patientId);
+  // age/sex for the plan come from the record when we have it — the
+  // wellness rail never asks the patient to re-enter clinical facts.
+  let age = "", sex = "";
+  const pat = (state.record?.record?.entry || [])
+    .map((e) => e.resource).find((r) => r?.resourceType === "Patient");
+  if (pat?.birthDate) {
+    age = String(new Date().getFullYear() - parseInt(pat.birthDate.slice(0, 4), 10));
+    sex = pat.gender || "";
+  }
+  const settle = (p) => p.then((v) => ({ ok: true, v })).catch(() => ({ ok: false }));
+  const [sum, plan] = await Promise.all([
+    settle(fetch(`${wellnessBase()}/wellness/${pid}/summary`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))),
+    settle(fetch(`${wellnessBase()}/wellness/${pid}/plan?age=${age}&sex=${sex}`, { cache: "no-store" }).then((r) => r.ok ? r.json() : Promise.reject(r.status))),
+  ]);
+  if (sum.ok) state.wellness = sum.v;
+  if (plan.ok) state.wellnessPlan = plan.v;
+  state.wellnessLoading = false;
+  if (state.tab === "wellness") render();
 }
 
 async function fetchFeed() {
@@ -204,11 +288,13 @@ function Tabs() {
       state.tab = tab;
       if (tab === "record" && !state.record && navigator.onLine) loadRecord();
       if (tab === "care" && state.appts === null && navigator.onLine) loadCare();
+      if (tab === "wellness" && !state.wellness && navigator.onLine) loadWellness();
       render();
     },
   }, t(key));
   return el("div", { class: "tabs", role: "tablist" },
-    mk("updates", "tab_updates"), mk("record", "tab_record"), mk("care", "tab_care"));
+    mk("updates", "tab_updates"), mk("record", "tab_record"), mk("care", "tab_care"),
+    mk("wellness", "tab_wellness"));
 }
 
 function FeedView() {
@@ -919,6 +1005,107 @@ function CareView() {
   return wrap;
 }
 
+/* ---------- wellness tab (ADR-0035): prevention plan + activity + nutrition + devices ---------- */
+
+function WellnessView() {
+  const wrap = el("div", { class: "view" });
+  const kpis = wellnessKpis(state.wellness);
+  const plan = planItems(state.wellnessPlan);
+  const queued = wellnessQueue().length;
+
+  // prevention plan — the reason the tab exists
+  const planCard = el("div", { class: "card care-card" },
+    el("div", { class: "care-head" },
+      el("div", { class: "notif-kind" }, t("wl_plan")),
+      plan?.risk ? el("span", { class: `pill pill-${riskBadge(plan.risk.cvd)}` },
+        `${t("wl_risk")}: ${plan.risk.cvd}`) : null));
+  if (plan) {
+    if (plan.risk?.model) {
+      planCard.append(el("div", { class: "notif-meta" },
+        t("wl_risk_note").replace("{model}", plan.risk.model)));
+    }
+    for (const g of plan.overdue) {
+      planCard.append(el("div", { class: "notif-text" }, `⏰ ${g.label} — ${g.note}`));
+    }
+    for (const r of plan.recs) {
+      planCard.append(el("div", { class: "notif-text" }, `• ${r}`));
+    }
+    if (!plan.recs.length && !plan.overdue.length) {
+      planCard.append(el("div", { class: "notif-text" }, t("wl_plan_ok")));
+    }
+  } else {
+    planCard.append(el("div", { class: "notif-meta" },
+      state.wellnessLoading ? t("loading") : t(navigator.onLine ? "wl_plan_none" : "offline")));
+  }
+  wrap.append(planCard);
+
+  // today's numbers
+  const strip = el("div", { class: "card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("wl_today"))));
+  if (kpis.length) {
+    const grid = el("div", { class: "wl-grid" });
+    for (const k of kpis) {
+      grid.append(el("div", { class: "wl-kpi" },
+        el("div", { class: `wl-kpi-v ${k.kind === "ok" ? "wl-ok" : k.kind === "warn" ? "wl-warn" : ""}` }, k.value),
+        el("div", { class: "notif-meta" }, k.sub)));
+    }
+    strip.append(grid);
+  } else {
+    strip.append(el("div", { class: "notif-meta" },
+      state.wellnessLoading ? t("loading") : t("wl_no_data")));
+  }
+  if (queued) strip.append(el("div", { class: "notif-meta" },
+    t("wl_queued_n").replace("{n}", queued)));
+  wrap.append(strip);
+
+  // quick logs — manual entry is the zero-device baseline
+  wrap.append(QuickLogCard());
+
+  // device connections — honest about how each source arrives
+  const dev = el("div", { class: "card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("wl_devices"))));
+  const active = new Set(state.wellness?.sources || []);
+  const SOURCES_INFO = [
+    ["health-connect", "wl_dev_hc"], ["apple-health", "wl_dev_ah"],
+    ["fitbit", "wl_dev_fitbit"], ["generic-iot", "wl_dev_iot"],
+  ];
+  for (const [id, labelKey] of SOURCES_INFO) {
+    dev.append(el("div", { class: "notif-text" },
+      `${active.has(id) ? "🟢" : "⚪"} ${t(labelKey)}`));
+  }
+  dev.append(el("div", { class: "notif-meta" }, t("wl_devices_note")));
+  wrap.append(dev);
+  return wrap;
+}
+
+function QuickLogCard() {
+  const card = el("div", { class: "card" },
+    el("div", { class: "care-head" }, el("div", { class: "notif-kind" }, t("wl_log"))));
+  const row = (labelKey, fn) => el("button", {
+    class: "btn btn-outline btn-block",
+    onclick: async () => { await fn(); },
+  }, t(labelKey));
+  card.append(
+    row("wl_log_workout", () => {
+      const mins = prompt(t("wl_log_workout_prompt"), "30");
+      if (mins) return logWellness("workout", { text: `${mins} min workout`, value: +mins, unit: "min" });
+    }),
+    row("wl_log_nutrition", () => {
+      const meal = prompt(t("wl_log_nutrition_prompt"), "");
+      if (meal) return logWellness("nutrition", { text: meal });
+    }),
+    row("wl_log_weight", () => {
+      const kg = prompt(t("wl_log_weight_prompt"), "");
+      if (kg) return logWellness("weight", { value: +kg, unit: "kg" });
+    }),
+    row("wl_log_steps", () => {
+      const n = prompt(t("wl_log_steps_prompt"), "");
+      if (n) return logWellness("steps", { value: +n, unit: "steps" });
+    }),
+  );
+  return card;
+}
+
 /* ---------- boot ------------------------------------------------------ */
 
 function render() {
@@ -927,7 +1114,10 @@ function render() {
   const root = $("#view-root");
   root.innerHTML = "";
   root.append(state.patientId
-    ? (state.tab === "record" ? RecordView() : state.tab === "care" ? CareView() : FeedView())
+    ? (state.tab === "record" ? RecordView()
+      : state.tab === "care" ? CareView()
+      : state.tab === "wellness" ? WellnessView()
+      : FeedView())
     : SignInView());
   const b = $("#offline-banner");
   if (!navigator.onLine) {
@@ -957,11 +1147,12 @@ function boot() {
     state.updatedAt = saved.updatedAt;
     loadRecordLocal();
   }
-  window.addEventListener("online", () => { render(); refresh(); });
+  window.addEventListener("online", () => { render(); refresh(); flushWellnessQueue(); });
   window.addEventListener("offline", render);
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
   render();
   refresh();                       // opportunistic freshness
+  flushWellnessQueue();            // drain any offline wellness logs
   setInterval(refresh, 5 * 60000); // gentle 5-minute poll when online
 }
 

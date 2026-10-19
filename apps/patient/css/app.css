@@ -248,3 +248,11 @@ body {
 /* health check questionnaire */
 .hc-row { padding: 8px 0; border-top: 1px solid var(--line); }
 .hc-q { font-weight: 600; margin-bottom: 8px; }
+
+/* wellness tab (ADR-0035) */
+.pill-crit { background: var(--warn-bg); color: var(--red, #d43); }
+.wl-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); gap: 10px; margin-top: 8px; }
+.wl-kpi { text-align: center; padding: 10px 4px; border: 1px solid var(--line, #e3e7ee); border-radius: 10px; }
+.wl-kpi-v { font-size: 1.15rem; font-weight: 700; }
+.wl-ok { color: var(--green); }
+.wl-warn { color: var(--warn); }

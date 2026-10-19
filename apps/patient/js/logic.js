@@ -305,3 +305,76 @@ export function nairaText(amount) {
   const s = String(Math.abs(n)).replace(/\B(?=(\d{3})+(?!\d))/g, ",");
   return (n < 0 ? "-₦" : "₦") + s;
 }
+
+/* ---------- wellness (ADR-0035) — pure transforms, node-tested -------- */
+
+export function wellnessKpis(summary) {
+  if (!summary) return [];
+  const out = [];
+  out.push({ key: "steps", value: String(Math.round(summary.steps_today || 0)),
+    sub: "today", kind: (summary.steps_today || 0) >= 5000 ? "ok" : "" });
+  if (summary.avg_daily_steps_14d != null) {
+    out.push({ key: "steps14", value: String(Math.round(summary.avg_daily_steps_14d)),
+      sub: "daily avg · 14d", kind: summary.avg_daily_steps_14d >= 5000 ? "ok" : "warn" });
+  }
+  out.push({ key: "workouts", value: String(summary.workouts_7d || 0),
+    sub: "workouts · 7d", kind: (summary.workouts_7d || 0) >= 3 ? "ok" : "" });
+  out.push({ key: "nutrition", value: String(summary.nutrition_days_7d || 0),
+    sub: "nutrition logs · 7d", kind: (summary.nutrition_days_7d || 0) >= 3 ? "ok" : "" });
+  if (summary.avg_sleep_hours_7d != null) {
+    out.push({ key: "sleep", value: `${summary.avg_sleep_hours_7d}h`,
+      sub: "sleep avg · 7d", kind: summary.avg_sleep_hours_7d >= 7 ? "ok" : "warn" });
+  }
+  if (summary.latest_weight) {
+    out.push({ key: "weight",
+      value: `${summary.latest_weight.value} ${summary.latest_weight.unit || "kg"}`,
+      sub: "latest weight", kind: "" });
+  }
+  if (summary.latest_heart_rate) {
+    out.push({ key: "hr", value: String(Math.round(summary.latest_heart_rate.value)),
+      sub: "resting HR (bpm)", kind: "" });
+  }
+  return out;
+}
+
+export function riskBadge(band) {
+  return band === "high" ? "crit" : band === "moderate" ? "warn" : "ok";
+}
+
+/* Shape the pophealth plan for the wellness tab. A heuristic risk score
+ * is labelled as such — the app never shows it as a diagnosis. */
+export function planItems(plan) {
+  if (!plan) return null;
+  const r = plan.risk || {};
+  return {
+    overdue: (plan.overdue || []).map((g) => ({
+      label: g.label,
+      note: g.last_done
+        ? `last done ${Math.round(g.months_since)} months ago`
+        : "never recorded",
+    })),
+    recs: plan.recommendations || [],
+    risk: plan.risk ? {
+      cvd: r.cvd_band, diabetes: r.diabetes_band,
+      model: r.model || "heuristic-1",
+      steps: plan.avg_daily_steps_14d ?? null,
+    } : null,
+  };
+}
+
+/* Build a normalized ingest observation with a deterministic client ref —
+ * the ref is what makes offline replays exactly-once server-side. */
+export function makeLogRef(patientId, type, ts, text) {
+  let h = 0;
+  const s = `${patientId}|${type}|${ts}|${text || ""}`;
+  for (let i = 0; i < s.length; i++) h = (h * 31 + s.charCodeAt(i)) >>> 0;
+  return `wl-${h.toString(16)}`;
+}
+
+export function logEntry(patientId, type, { value = 0, text = "", unit = "", ts = null } = {}) {
+  const at = ts || new Date().toISOString();
+  return {
+    type, value, text, unit, ts: at,
+    ref: makeLogRef(patientId, type, at, text || String(value)),
+  };
+}

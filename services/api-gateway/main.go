@@ -63,6 +63,7 @@ func DefaultRoutes(env func(string) string) []Route {
 		{Prefix: "/api/telehealth", Service: "telehealth-service", Upstream: up("TELEHEALTH_URL", "http://telehealth-service:8087"), Strip: true},
 		{Prefix: "/api/pharmacy", Service: "pharmacy-service", Upstream: up("PHARMACY_URL", "http://pharmacy-service:8088"), Strip: true},
 		{Prefix: "/api/notify", Service: "notification-service", Upstream: up("NOTIFY_URL", "http://notification-service:8089"), Strip: true},
+		{Prefix: "/api/wellness", Service: "wellness-service", Upstream: up("WELLNESS_URL", "http://wellness-service:8090"), Strip: true},
 		{Prefix: "/api/sync", Service: "sync-ingest", Upstream: up("SYNC_URL", "http://sync-ingest:8443"), Strip: true},
 	}
 }
