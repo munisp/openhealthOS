@@ -24,6 +24,7 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"sync"
 	"time"
 )
 
@@ -81,8 +82,23 @@ type matrixListener struct {
 	sender  matrixSender
 	botUser string
 	since   string
+	mu      sync.Mutex
 	rooms   map[string]string // user id → last room they spoke in
 	seen    map[string]bool   // event id dedupe
+}
+
+// roomFor returns the last room a user spoke in — the delivery target for
+// outbound notifications routed to the Matrix channel.
+func (l *matrixListener) roomFor(userID string) string {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	return l.rooms[userID]
+}
+
+func (l *matrixListener) remember(userID, roomID string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.rooms[userID] = roomID
 }
 
 func newMatrixListener(svc *service, hs, token string) *matrixListener {
@@ -169,7 +185,7 @@ func (l *matrixListener) syncOnce() error {
 				continue
 			}
 			l.seen[ev.EventID] = true
-			l.rooms[ev.Sender] = roomID
+			l.remember(ev.Sender, roomID)
 			ss := l.svc.matrixSession(ev.Sender)
 			reply := l.svc.Handle(ss, strings.TrimSpace(ev.Content.Body))
 			if reply == "" {

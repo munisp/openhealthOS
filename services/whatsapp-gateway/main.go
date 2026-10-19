@@ -153,6 +153,31 @@ type service struct {
 	mu       sync.Mutex
 	sessions map[string]*Session  // keyed by sender MSISDN
 	seen     map[string]time.Time // inbound message-id dedupe
+	mx       *matrixListener      // nil unless the matrix channel is on
+}
+
+// matrixRoomFor resolves a registered phone to the Matrix room of a bound,
+// active matrix session — the delivery target for the notification rail's
+// sovereign-first routing (ADR-0038). Returns "" when no such binding exists.
+func (s *service) matrixRoomFor(phone string) (userID, roomID string) {
+	if s.mx == nil {
+		return "", ""
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for key, ss := range s.sessions {
+		if ss.Channel != "matrix" || ss.PatientID == "" || ss.Phone == "" {
+			continue // only fully bound sessions are addressable
+		}
+		if normPhone(ss.Phone) != normPhone(phone) {
+			continue
+		}
+		uid := strings.TrimPrefix(key, "mx:")
+		if room := s.mx.roomFor(uid); room != "" {
+			return uid, room
+		}
+	}
+	return "", ""
 }
 
 func (s *service) session(phone string) *Session {
@@ -217,6 +242,18 @@ func (s *service) verifySignature(body []byte, sigHeader string) bool {
 
 func (s *service) routes() *http.ServeMux {
 	mux := http.NewServeMux()
+	// Internal rail endpoint: the notification-service resolves phone →
+	// Matrix room here before delivering via the homeserver (ADR-0038).
+	// Same honesty rule as the portal gate: no binding, bare 404.
+	mux.HandleFunc("GET /internal/matrix-room", func(w http.ResponseWriter, r *http.Request) {
+		uid, room := s.matrixRoomFor(r.URL.Query().Get("phone"))
+		if room == "" {
+			http.Error(w, "no matrix binding", http.StatusNotFound)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		json.NewEncoder(w).Encode(map[string]string{"user_id": uid, "room_id": room})
+	})
 	mux.HandleFunc("GET /webhooks/whatsapp", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.Query()
 		if q.Get("hub.mode") == "subscribe" && q.Get("hub.verify_token") == s.verifyTok {
@@ -287,7 +324,8 @@ func main() {
 	// a Matrix homeserver we control — pull mode, nothing exposed.
 	if hs := os.Getenv("MATRIX_HOMESERVER"); hs != "" {
 		if tok := os.Getenv("MATRIX_ACCESS_TOKEN"); tok != "" {
-			go newMatrixListener(s, hs, tok).run()
+			s.mx = newMatrixListener(s, hs, tok)
+			go s.mx.run()
 		} else {
 			log.Print("MATRIX_HOMESERVER set without MATRIX_ACCESS_TOKEN — matrix channel off")
 		}

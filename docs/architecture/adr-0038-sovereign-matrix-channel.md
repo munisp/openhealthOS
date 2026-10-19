@@ -48,6 +48,14 @@ binding flow is explicit and fail-closed:
 - **One engine, two channels**: booking, coverage, results, wellness, and the
   5-language i18n (en/pcm/ha/yo/ig) work identically on both — the dialogue
   engine never knows which transport delivered the message.
+- **Outbound, sovereign-first**: the notification rail (ADR-0013/0015) gains a
+  `matrix:` provider leg. At send time it resolves phone → bound Matrix room
+  through the gateway's `/internal/matrix-room` (bound sessions only, bare
+  404 otherwise) and delivers via the homeserver. Unbound patients or a dead
+  homeserver fail the leg, the circuit breaker opens, and SMS legs take over
+  — sovereignty is preferred, never required. Content-derived txn ids make
+  chain retries idempotent. Verified by `demo/matrix-notify.sh`: FHIR
+  Observation → drain → patient's Matrix room; unbound phone falls through.
 - **No new licence surface**: Matrix protocol is open; Synapse/Dendrite are
   Apache-2.0; our listener is original code (compose, don't fork — ADR-0005).
 - Verified end-to-end by `demo/matrix.sh`: bind → book (6 steps) → coverage →

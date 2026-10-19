@@ -189,6 +189,8 @@ func providerFromEnv() SMSProvider {
 		switch {
 		case part == "log":
 			legs = append(legs, &LogProvider{})
+		case strings.HasPrefix(part, "matrix:"):
+			legs = append(legs, matrixProviderFromEnv(strings.TrimPrefix(part, "matrix:")))
 		case strings.HasPrefix(part, "webhook:"):
 			webhookN++
 			token := os.Getenv(fmt.Sprintf("SMS_WEBHOOK_TOKEN_%d", webhookN))
