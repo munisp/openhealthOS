@@ -1,0 +1,38 @@
+# Media storage (ADR-0027) — two deployment shapes, one blob:// contract.
+#
+# Default: media-service local backend (stdlib Go, filesystem) — offline-first,
+# right for facility servers and state pilots.
+#
+# At state/national scale: compose MinIO (AGPLv3 — composed over the S3 wire
+# protocol, never embedded; the doctrine permits AGPL services we *talk to*,
+# not code we *link*). media-service keeps serving the blob:// contract and
+# proxying to MinIO via S3; consult threads never learn the difference.
+
+services:
+  media:
+    build: ../../services/media-service
+    environment:
+      LISTEN: ":8095"
+      MEDIA_DIR: /data
+      # S3_BACKEND: s3               # uncomment to proxy to MinIO below
+      # S3_ENDPOINT: http://minio:9000
+      # S3_BUCKET: openhealth-media
+      # S3_ACCESS_KEY: ${MINIO_ROOT_USER}
+      # S3_SECRET_KEY: ${MINIO_ROOT_PASSWORD}
+    volumes:
+      - media-data:/data
+    ports: ["8095:8095"]
+    restart: unless-stopped
+
+  # minio:                                # AGPLv3 server — S3 wire protocol only
+  #   image: minio/minio:latest
+  #   command: server /data --console-address ":9001"
+  #   environment:
+  #     MINIO_ROOT_USER: ${MINIO_ROOT_USER}
+  #     MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD}
+  #   volumes: [minio-data:/data]
+  #   restart: unless-stopped
+
+volumes:
+  media-data:
+  # minio-data:

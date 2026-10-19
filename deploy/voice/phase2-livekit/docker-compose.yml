@@ -57,6 +57,31 @@ services:
     depends_on: [livekit]
     restart: unless-stopped
 
+  # Telemedicine (ADR-0026/0027): consult records + HS256 room tokens signed
+  # against THIS fabric's credentials — escalation connects for real.
+  telemed:
+    build: ../../../services/telemed-service
+    environment:
+      LISTEN: ":8094"
+      LK_API_KEY: ${LK_API_KEY}
+      LK_API_SECRET: ${LK_API_SECRET}
+      LIVEKIT_URL: ws://livekit:7880
+      MEDIA_URL: http://media:8095
+    depends_on: [livekit, media]
+    ports: ["8094:8094"]
+    restart: unless-stopped
+
+  # Media blobs (ADR-0027): consult photos etc. Local backend by default;
+  # flip S3_BACKEND=s3 + uncomment minio in deploy/media/ at national scale.
+  media:
+    build: ../../../services/media-service
+    environment:
+      LISTEN: ":8095"
+      MEDIA_DIR: /data
+    volumes:
+      - telemed-media:/data
+    restart: unless-stopped
+
   whisper:
     image: fedirz/faster-whisper-server:latest-cpu   # MIT; scale out + GPU at national size
     environment:
@@ -69,3 +94,6 @@ services:
     image: rhasspy/wyoming-piper:latest               # MIT
     command: --voice en_US-lessac-medium
     restart: unless-stopped
+
+volumes:
+  telemed-media:
