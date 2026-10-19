@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tele-consults — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f7f7f7; color:#09352e; }
+  header { background:#fff; border-bottom:1px solid rgba(0,0,0,.1); padding:12px 18px;
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:1.05rem; margin:0; flex:1; }
+  main { display:grid; grid-template-columns: 320px 1fr; gap:14px; padding:14px;
+         max-width:1100px; margin:0 auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .card { background:#fff; border-radius:var(--oh-radius-lg); padding:14px;
+          box-shadow:var(--oh-shadow-sm); border:1px solid var(--oh-card-border); }
+  .consult { border-bottom:1px solid #eee; padding:10px 4px; cursor:pointer; }
+  .consult.active { background:#eef2ff; border-radius:8px; }
+  .pill { display:inline-block; padding:2px 8px; border-radius:999px; font-size:.72rem; }
+  .st-submitted { background:#fef3c7; } .st-triaged { background:#e0e7ff; }
+  .st-in_review { background:#dbeafe; } .st-advice_given { background:#d1fae5; }
+  .st-escalated_to_call { background:#fce7f3; } .st-completed { background:#e5e7eb; }
+  .msg { margin:8px 0; padding:8px 10px; border-radius:10px; background:#f4f8f5; max-width:85%; }
+  .msg.clinician { background:#eef2ff; margin-left:auto; }
+  .msg .who { font-size:.7rem; color:#666; margin-bottom:2px; }
+  .msg img { max-width:100%; border-radius:8px; margin-top:6px; }
+  textarea, input, select { width:100%; box-sizing:border-box; padding:8px; margin:4px 0;
+          border:1px solid #d4d4d4; border-radius:8px; font:inherit; }
+  button { background:var(--oh-accent,#4f46e5); color:#fff; border:0; border-radius:8px;
+           padding:8px 14px; font:inherit; cursor:pointer; }
+  button.secondary { background:#fff; color:#09352e; border:1px solid #d4d4d4; }
+  #callbar { display:none; gap:8px; margin-top:10px; }
+  .tier-note { font-size:.78rem; color:#555; margin-top:6px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Tele-consults</h1>
+  <span id="net" class="pill st-triaged">async-first</span>
+</header>
+<main>
+  <div>
+    <div class="card">
+      <h3>New consult</h3>
+      <input id="pid" placeholder="Patient ID">
+      <textarea id="complaint" rows="3" placeholder="Describe the problem — works on 2G, photos welcome"></textarea>
+      <select id="priority"><option value="routine">routine (advice within 4h)</option>
+        <option value="urgent">urgent (advice within 1h)</option></select>
+      <label style="font-size:.85rem"><input type="checkbox" id="consent" style="width:auto">
+        Patient consents to a tele-consult (recorded, NDPA)</label>
+      <button onclick="createConsult()">Submit consult</button>
+    </div>
+    <div class="card" style="margin-top:12px">
+      <h3>Open consults</h3>
+      <div id="list"></div>
+    </div>
+  </div>
+  <div class="card" id="thread">
+    <h3 id="threadTitle">Select a consult</h3>
+    <div id="msgs"></div>
+    <div id="composer" style="display:none">
+      <textarea id="reply" rows="2" placeholder="Reply…"></textarea>
+      <button onclick="sendReply()">Send</button>
+      <div id="callbar">
+        <button class="secondary" onclick="escalate('voice')">Escalate to voice call (3G)</button>
+        <button class="secondary" onclick="escalate('video')">Escalate to video call (4G)</button>
+        <button class="secondary" id="joinBtn" style="display:none" onclick="joinCall()">Join call</button>
+      </div>
+      <p class="tier-note">Async first: most consults never need a call. Voice and video
+         rooms run on the LiveKit fabric (ADR-0025 Phase 2) — the consult, its consent,
+         and its notes stay inside the record.</p>
+    </div>
+  </div>
+</main>
+<script>
+const API = window.TELEMED_URL || "http://127.0.0.1:8094";
+const ME = new URLSearchParams(location.search).get("me") || "clinician-demo";
+const MY_ROLE = new URLSearchParams(location.search).get("role") || "clinician";
+let current = null;
+
+async function api(path, opts) {
+  const r = await fetch(API + path, opts ? {
+    method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(opts)
+  } : undefined);
+  return r.json();
+}
+
+async function refresh() {
+  const {consults} = await api("/consults");
+  const el = document.getElementById("list");
+  el.innerHTML = "";
+  for (const c of consults) {
+    if (["completed","cancelled"].includes(c.state)) continue;
+    const d = document.createElement("div");
+    d.className = "consult" + (current && current.id === c.id ? " active" : "");
+    d.innerHTML = `<b>${c.id}</b> — ${c.complaint.slice(0,42)}
+      <span class="pill st-${c.state}">${c.state}</span>
+      ${c.tier !== "async" ? `<span class="pill st-escalated_to_call">${c.tier}</span>` : ""}`;
+    d.onclick = () => openConsult(c.id);
+    el.appendChild(d);
+  }
+}
+
+async function openConsult(id) {
+  current = await api("/consults/" + id);
+  document.getElementById("threadTitle").textContent =
+    `${current.id} — ${current.complaint}`;
+  document.getElementById("composer").style.display = "block";
+  document.getElementById("callbar").style.display = "flex";
+  document.getElementById("joinBtn").style.display = current.room ? "inline-block" : "none";
+  renderMsgs();
+  refresh();
+}
+
+function renderMsgs() {
+  const el = document.getElementById("msgs");
+  el.innerHTML = "";
+  for (const m of current.messages) {
+    const d = document.createElement("div");
+    d.className = "msg " + (m.role === "clinician" ? "clinician" : "");
+    d.innerHTML = `<div class="who">${m.author} · ${m.role}</div>${m.body}` +
+      (m.media_ref ? `<div><a href="${m.media_ref}" target="_blank">attachment</a></div>` : "");
+    el.appendChild(d);
+  }
+}
+
+async function createConsult() {
+  if (!document.getElementById("consent").checked) { alert("Consent is required"); return; }
+  const pid = document.getElementById("pid").value.trim();
+  const complaint = document.getElementById("complaint").value.trim();
+  if (!pid || !complaint) { alert("Patient ID and complaint required"); return; }
+  await api("/consults", {patient_id: pid, complaint, consent: true,
+    priority: document.getElementById("priority").value, actor: pid, role: "patient"});
+  refresh();
+}
+
+async function sendReply() {
+  const body = document.getElementById("reply").value.trim();
+  if (!body) return;
+  await api(`/consults/${current.id}/messages`, {author: ME, role: MY_ROLE, body});
+  document.getElementById("reply").value = "";
+  openConsult(current.id);
+}
+
+async function escalate(tier) {
+  await api(`/consults/${current.id}/escalate`, {tier, actor: ME});
+  openConsult(current.id);
+}
+
+async function joinCall() {
+  // Mints a short-lived LiveKit JWT and opens the room. The LiveKit client
+  // SDK is loaded on demand — media code ships only when a call happens,
+  // keeping the async-first PWA light for 2G users. Offline note: a room
+  // needs connectivity to the LiveKit fabric; async thread keeps working.
+  const {token, room, tier} = await api(`/consults/${current.id}/token`, {identity: ME});
+  const url = (window.LIVEKIT_URL || "ws://127.0.0.1:7880");
+  await import("https://cdn.jsdelivr.net/npm/livekit-client@2/+esm");
+  const lk = window.livekit;
+  const r = new lk.Room({adaptiveStream: true, dynacast: true});
+  await r.connect(url, token);
+  await r.localParticipant.setMicrophoneEnabled(true);
+  if (tier === "video") await r.localParticipant.setCameraEnabled(true);
+  document.getElementById("threadTitle").textContent = `In ${tier} call — room ${room}`;
+}
+
+refresh();
+</script>
+</body>
+</html>
