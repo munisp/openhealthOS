@@ -188,7 +188,8 @@ func (s server) routes() *http.ServeMux {
 	})
 
 	registerFHIRInbox(mux, s.svc)
-	registerPortalRecord(mux, s.svc)
+	s.registerStepUp(mux)          // PHI gate: challenge/verify (step-up + random re-auth)
+	registerPortalRecord(mux, s)   // elevated endpoints require the gate
 	// Self-service rail (ADR-0017): booking, coverage, messages, consents.
 	registerPortalActions(mux, s.svc)
 	// Passkey unlock (ADR-0017): PORTAL_RP_ID / PORTAL_ORIGINS bind the

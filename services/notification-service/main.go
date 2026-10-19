@@ -419,13 +419,14 @@ func naira(v any) string {
 type Service struct {
 	store    Store
 	provider SMSProvider
+	stepup   *stepUp
 	now      func() time.Time
 	seq      int
 	mu       sync.Mutex
 }
 
 func NewService(store Store, provider SMSProvider) *Service {
-	return &Service{store: store, provider: provider, now: time.Now}
+	return &Service{store: store, provider: provider, stepup: newStepUp(), now: time.Now}
 }
 
 func (s *Service) nextID() string {

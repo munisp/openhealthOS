@@ -114,15 +114,14 @@ func portalRecord(ctx context.Context, patientID string) PortalRecord {
 	return out
 }
 
-// registerPortalRecord wires GET /portal/record behind the same
-// subscription gate as /portal/feed.
-func registerPortalRecord(mux *http.ServeMux, svc *Service) {
+// registerPortalRecord wires GET /portal/record behind the step-up gate:
+// the subscription pair authenticates the session, but RENDERING the
+// record (clinical detail — PHI) additionally requires an elevated token
+// that survives the random re-auth roll (stepup.go).
+func registerPortalRecord(mux *http.ServeMux, srv server) {
 	mux.HandleFunc("GET /portal/record", func(w http.ResponseWriter, r *http.Request) {
-		pid := r.URL.Query().Get("patient_id")
-		phone := NormalizePhone(r.URL.Query().Get("phone"))
-		sub, err := svc.store.Subscription(pid)
-		if err != nil || sub.Phone != phone || pid == "" || phone == "" {
-			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+		pid, ok := srv.requireElevation(w, r)
+		if !ok {
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")

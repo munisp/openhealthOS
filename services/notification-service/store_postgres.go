@@ -26,6 +26,17 @@ func NewPostgresStore(dsn string) (*PostgresStore, error) {
 		pool.Close()
 		return nil, fmt.Errorf("postgres ping: %w", err)
 	}
+	// Artifact columns (media bridge): idempotent, nullable — old rows
+	// simply carry no artifact.
+	for _, ddl := range []string{
+		`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS blob_ref text`,
+		`ALTER TABLE notifications ADD COLUMN IF NOT EXISTS mime text`,
+	} {
+		if _, err := pool.Exec(ctx, ddl); err != nil {
+			pool.Close()
+			return nil, fmt.Errorf("postgres migrate: %w", err)
+		}
+	}
 	return &PostgresStore{pool: pool}, nil
 }
 
@@ -86,19 +97,21 @@ func (p *PostgresStore) Enqueue(n Notification) error {
 	ctx, cancel := pgctx()
 	defer cancel()
 	_, err := p.pool.Exec(ctx,
-		`INSERT INTO notifications (id, patient_id, phone, kind, text, state, attempts, created_at)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
-		n.ID, n.PatientID, n.Phone, n.Kind, n.Text, n.State, n.Attempts, n.CreatedAt)
+		`INSERT INTO notifications (id, patient_id, phone, kind, text, state, attempts, created_at, blob_ref, mime)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,NULLIF($9,''),NULLIF($10,''))`,
+		n.ID, n.PatientID, n.Phone, n.Kind, n.Text, n.State, n.Attempts, n.CreatedAt, n.BlobRef, n.Mime)
 	return err
 }
 
 const notCols = `id, patient_id, phone, kind, text, state, attempts,
-                 COALESCE(last_error,''), created_at, COALESCE(sent_at,'')`
+                 COALESCE(last_error,''), created_at, COALESCE(sent_at,''),
+                 COALESCE(blob_ref,''), COALESCE(mime,'')`
 
 func scanNot(row pgx.Row) (Notification, error) {
 	var n Notification
 	err := row.Scan(&n.ID, &n.PatientID, &n.Phone, &n.Kind, &n.Text,
-		&n.State, &n.Attempts, &n.LastError, &n.CreatedAt, &n.SentAt)
+		&n.State, &n.Attempts, &n.LastError, &n.CreatedAt, &n.SentAt,
+		&n.BlobRef, &n.Mime)
 	return n, err
 }
 

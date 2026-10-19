@@ -23,20 +23,41 @@ func portalRig(t *testing.T, shrHandler, teleHandler http.HandlerFunc) (*Service
 	t.Setenv("TELEHEALTH_URL", tele.URL)
 
 	svc := NewService(NewMemoryStore(), &LogProvider{})
+	svc.stepup.randomPct = 0 // deterministic: existing tests exercise fan-out, not the dice
 	if err := svc.store.PutSubscription(Subscription{
 		PatientID: "PT-1", Phone: "+2348030000000", Language: "en", Facility: "Kawo PHC",
 	}); err != nil {
 		t.Fatal(err)
 	}
 	mux := http.NewServeMux()
-	registerPortalRecord(mux, svc)
+	registerPortalRecord(mux, server{svc: svc})
 	return svc, mux
+}
+
+// elevate issues+verifies a challenge internally, returning a valid token.
+func elevate(t *testing.T, svc *Service, patientID string) string {
+	t.Helper()
+	code := svc.stepup.issue(patientID)
+	tok, ok := svc.stepup.verify(patientID, code)
+	if !ok {
+		t.Fatal("elevation failed")
+	}
+	return tok
 }
 
 func getRecord(t *testing.T, mux *http.ServeMux, query string) (*httptest.ResponseRecorder, PortalRecord) {
 	t.Helper()
+	return getRecordTok(t, mux, query, "")
+}
+
+func getRecordTok(t *testing.T, mux *http.ServeMux, query, token string) (*httptest.ResponseRecorder, PortalRecord) {
+	t.Helper()
 	rec := httptest.NewRecorder()
-	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/portal/record?"+query, nil))
+	req := httptest.NewRequest(http.MethodGet, "/portal/record?"+query, nil)
+	if token != "" {
+		req.Header.Set("X-StepUp-Token", token)
+	}
+	mux.ServeHTTP(rec, req)
 	var pr PortalRecord
 	if rec.Code == http.StatusOK {
 		if err := json.NewDecoder(rec.Body).Decode(&pr); err != nil {
@@ -48,7 +69,7 @@ func getRecord(t *testing.T, mux *http.ServeMux, query string) (*httptest.Respon
 
 func TestPortalRecordHappyPath(t *testing.T) {
 	var gotSelf, gotPath string
-	_, mux := portalRig(t,
+	svc, mux := portalRig(t,
 		func(w http.ResponseWriter, r *http.Request) {
 			gotSelf = r.Header.Get("X-Patient-Self")
 			gotPath = r.URL.Path
@@ -59,7 +80,7 @@ func TestPortalRecordHappyPath(t *testing.T) {
 			w.Write([]byte(`{"consults":[{"id":"c-1","complaint":"fever","status":"closed"}]}`))
 		})
 
-	rec, pr := getRecord(t, mux, "patient_id=PT-1&phone=%2B2348030000000")
+	rec, pr := getRecordTok(t, mux, "patient_id=PT-1&phone=%2B2348030000000", elevate(t, svc, "PT-1"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("status: %d %s", rec.Code, rec.Body)
 	}
@@ -84,11 +105,11 @@ func TestPortalRecordHappyPath(t *testing.T) {
 }
 
 func TestPortalRecordSHR404IsEmptyBundle(t *testing.T) {
-	_, mux := portalRig(t,
+	svc, mux := portalRig(t,
 		func(w http.ResponseWriter, r *http.Request) { http.NotFound(w, r) },
 		func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"consults":[]}`)) })
 
-	rec, pr := getRecord(t, mux, "patient_id=PT-1&phone=%2B2348030000000")
+	rec, pr := getRecordTok(t, mux, "patient_id=PT-1&phone=%2B2348030000000", elevate(t, svc, "PT-1"))
 	if rec.Code != http.StatusOK || !pr.Complete {
 		t.Fatalf("404 must not degrade completeness: %d %+v", rec.Code, pr)
 	}
@@ -107,7 +128,7 @@ func TestPortalRecordLegDownDegradesHonestly(t *testing.T) {
 	// Kill the SHR leg: point it at a port nothing listens on.
 	t.Setenv("SHR_URL", "http://127.0.0.1:9")
 
-	rec, pr := getRecord(t, mux, "patient_id=PT-1&phone=%2B2348030000000")
+	rec, pr := getRecordTok(t, mux, "patient_id=PT-1&phone=%2B2348030000000", elevate(t, svc, "PT-1"))
 	if rec.Code != http.StatusOK {
 		t.Fatalf("a dark SHR must never 500 the phone: %d", rec.Code)
 	}
@@ -123,18 +144,18 @@ func TestPortalRecordLegDownDegradesHonestly(t *testing.T) {
 }
 
 func TestPortalRecordConsultsNullBecomesEmptyArray(t *testing.T) {
-	_, mux := portalRig(t,
+	svc, mux := portalRig(t,
 		func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(emptyBundle)) },
 		func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"consults":null}`)) })
 
-	_, pr := getRecord(t, mux, "patient_id=PT-1&phone=%2B2348030000000")
+	_, pr := getRecordTok(t, mux, "patient_id=PT-1&phone=%2B2348030000000", elevate(t, svc, "PT-1"))
 	if string(pr.Consults) != "[]" {
 		t.Fatalf("null consults must normalise to []: %s", pr.Consults)
 	}
 }
 
 func TestPortalRecordAuthGate(t *testing.T) {
-	_, mux := portalRig(t,
+	svc, mux := portalRig(t,
 		func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(emptyBundle)) },
 		func(w http.ResponseWriter, r *http.Request) { w.Write([]byte(`{"consults":[]}`)) })
 
@@ -150,5 +171,21 @@ func TestPortalRecordAuthGate(t *testing.T) {
 	rec, _ = getRecord(t, mux, "patient_id=&phone=")
 	if rec.Code != http.StatusNotFound {
 		t.Fatalf("missing params: %d", rec.Code)
+	}
+
+	// PHI additionally requires elevation: valid pair, no token → 428.
+	rec, _ = getRecord(t, mux, "patient_id=PT-1&phone=%2B2348030000000")
+	if rec.Code != 428 {
+		t.Fatalf("no token must 428, got %d", rec.Code)
+	}
+	// A garbage token → 428 too.
+	rec, _ = getRecordTok(t, mux, "patient_id=PT-1&phone=%2B2348030000000", "bogus")
+	if rec.Code != 428 {
+		t.Fatalf("bad token must 428, got %d", rec.Code)
+	}
+	// Elevated → 200.
+	rec, _ = getRecordTok(t, mux, "patient_id=PT-1&phone=%2B2348030000000", elevate(t, svc, "PT-1"))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("elevated read must 200, got %d", rec.Code)
 	}
 }
