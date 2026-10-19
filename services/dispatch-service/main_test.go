@@ -136,3 +136,23 @@ func TestValidationErrors(t *testing.T) {
 		t.Fatalf("missing phone+patient_id must 400, got %d", rec.Code)
 	}
 }
+
+func TestCORSPreflightAndHeaders(t *testing.T) {
+	s := newTestServer()
+	h := cors(s.routes())
+	// preflight
+	req := httptest.NewRequest("OPTIONS", "/sos", nil)
+	rec := httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Code != http.StatusNoContent ||
+		rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatalf("preflight: %d %v", rec.Code, rec.Header())
+	}
+	// real request carries the header
+	req = httptest.NewRequest("GET", "/healthz", nil)
+	rec = httptest.NewRecorder()
+	h.ServeHTTP(rec, req)
+	if rec.Header().Get("Access-Control-Allow-Origin") != "*" {
+		t.Fatal("responses carry the CORS header")
+	}
+}
