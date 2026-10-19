@@ -505,6 +505,13 @@ spec:
             - name: WHATSAPP_APP_SECRET
               valueFrom:
                 secretKeyRef: { name: whatsapp-channel, key: app-secret }
+            # ADR-0038 sovereign channel — set both to enable; absent = WhatsApp-only
+            - name: MATRIX_HOMESERVER
+              valueFrom:
+                secretKeyRef: { name: whatsapp-channel, key: matrix-homeserver, optional: true }
+            - name: MATRIX_ACCESS_TOKEN
+              valueFrom:
+                secretKeyRef: { name: whatsapp-channel, key: matrix-access-token, optional: true }
           readinessProbe:
             httpGet: { path: /healthz, port: 8099 }
           resources:

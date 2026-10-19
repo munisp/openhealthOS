@@ -167,6 +167,20 @@ func (s *service) session(phone string) *Session {
 	return ss
 }
 
+// matrixSession keys sessions by Matrix user id, channel "matrix".
+func (s *service) matrixSession(userID string) *Session {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	key := "mx:" + userID
+	ss, ok := s.sessions[key]
+	if !ok || time.Since(ss.UpdatedAt) > 30*time.Minute {
+		ss = &Session{Channel: "matrix", State: StateBindID, Data: map[string]string{}}
+		s.sessions[key] = ss
+	}
+	ss.UpdatedAt = time.Now()
+	return ss
+}
+
 // duplicate reports whether this message id was already handled —
 // WhatsApp retries webhook delivery, and a retried "1" must not book
 // twice.
@@ -267,6 +281,16 @@ func main() {
 		wellness:  env("WELLNESS_URL", "http://127.0.0.1:8090"),
 		sessions:  map[string]*Session{},
 		seen:      map[string]time.Time{},
+	}
+	// Sovereign channel (ADR-0038): when MATRIX_HOMESERVER and
+	// MATRIX_ACCESS_TOKEN are set, the same dialogue engine also serves
+	// a Matrix homeserver we control — pull mode, nothing exposed.
+	if hs := os.Getenv("MATRIX_HOMESERVER"); hs != "" {
+		if tok := os.Getenv("MATRIX_ACCESS_TOKEN"); tok != "" {
+			go newMatrixListener(s, hs, tok).run()
+		} else {
+			log.Print("MATRIX_HOMESERVER set without MATRIX_ACCESS_TOKEN — matrix channel off")
+		}
 	}
 	addr := env("LISTEN", ":8099")
 	log.Printf("whatsapp-gateway listening on %s", addr)

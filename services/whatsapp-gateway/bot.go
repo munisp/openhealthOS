@@ -31,6 +31,8 @@ const (
 	StateLogType     = "log_type"
 	StateLogValue    = "log_value"
 	StateLangPick    = "lang_pick"
+	StateBindID      = "bind_id"    // matrix: awaiting patient ID
+	StateBindPhone   = "bind_phone" // matrix: awaiting registered phone
 )
 
 // choice is one numbered option shown to the patient.
@@ -40,7 +42,8 @@ type choice struct {
 }
 
 type Session struct {
-	Phone     string // WhatsApp MSISDN (digits)
+	Channel   string // "whatsapp" | "matrix"
+	Phone     string // WhatsApp MSISDN, or registered phone (matrix, after binding)
 	PatientID string // resolved registry patient id
 	Name      string
 	Lang      string // en | pcm | ha | yo | ig (i18n.go)
@@ -144,6 +147,15 @@ func (s *service) Handle(ss *Session, text string) string {
 		}
 		ss.Lang = code
 		return ss.tr("lang_set", langName(code)) + "\n" + ss.tr("menu")
+	}
+
+	// The Matrix channel binds identity explicitly (no MSISDN to trust):
+	// patient ID + registered phone, validated by the portal gate.
+	if ss.Channel == "matrix" && ss.PatientID == "" {
+		if ss.State == StateLangPick {
+			return s.pickLanguage(ss, low)
+		}
+		return s.bindMatrix(ss, low, text)
 	}
 
 	// Escape hatches first, from any state.
@@ -574,4 +586,51 @@ func pickN(choices []choice, low string) (choice, bool) {
 		return choice{}, false
 	}
 	return choices[n-1], true
+}
+
+// ---- matrix identity binding ----
+
+func (s *service) bindMatrix(ss *Session, low, text string) string {
+	switch ss.State {
+	case StateBindID:
+		if ss.Data["awaiting"] == "" {
+			ss.Data["awaiting"] = "id"
+			return ss.tr("mx_welcome")
+		}
+		id := strings.TrimSpace(text)
+		if id == "" || strings.ContainsAny(id, " \t\n") && len(strings.Fields(id)) > 2 {
+			return ss.tr("mx_ask_id")
+		}
+		// Allow "OH-KD-0001 08012345678" in one message.
+		if parts := strings.Fields(id); len(parts) == 2 {
+			ss.Data["patient_id"] = parts[0]
+			ss.State = StateBindPhone
+			return s.bindMatrix(ss, normPhone(parts[1]), parts[1])
+		}
+		ss.Data["patient_id"] = id
+		ss.State = StateBindPhone
+		return ss.tr("mx_ask_phone")
+	case StateBindPhone:
+		phone := normPhone(text)
+		if phone == "" {
+			return ss.tr("mx_ask_phone")
+		}
+		pid := ss.Data["patient_id"]
+		// The portal gate is the arbiter: 200 binds, 404 reveals nothing.
+		var probe map[string]any
+		err := s.getJSON(s.portal, "/portal/coverage", url.Values{
+			"patient_id": {pid}, "phone": {phone},
+		}, &probe)
+		if err != nil {
+			ss.State = StateBindID
+			ss.Data = map[string]string{}
+			return ss.tr("mx_bind_fail")
+		}
+		ss.PatientID, ss.Phone = pid, phone
+		ss.State = StateMenu
+		ss.Data = map[string]string{}
+		return s.greet(ss)
+	}
+	ss.State = StateBindID
+	return ss.tr("mx_welcome")
 }

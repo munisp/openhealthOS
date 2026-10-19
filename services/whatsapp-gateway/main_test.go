@@ -74,7 +74,14 @@ func stubPlatform(t *testing.T) *httptest.Server {
 	mux.HandleFunc("POST /portal/appointments/cancel", func(w http.ResponseWriter, _ *http.Request) {
 		json.NewEncoder(w).Encode(map[string]any{"status": "cancelled"})
 	})
-	mux.HandleFunc("GET /portal/coverage", func(w http.ResponseWriter, _ *http.Request) {
+	mux.HandleFunc("GET /portal/coverage", func(w http.ResponseWriter, r *http.Request) {
+		// The portal gate, honestly: the pair must match (matrix binding
+		// relies on this 404 revealing nothing).
+		if normPhone(r.URL.Query().Get("phone")) != "2348012345678" ||
+			r.URL.Query().Get("patient_id") != "OH-KD-0001" {
+			http.Error(w, `{"error":"not found"}`, http.StatusNotFound)
+			return
+		}
 		json.NewEncoder(w).Encode(map[string]any{"status": "eligible", "scheme": "NHIA Basic"})
 	})
 	mux.HandleFunc("GET /portal/feed", func(w http.ResponseWriter, _ *http.Request) {

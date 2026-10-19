@@ -23,6 +23,10 @@ var LangNames = []struct{ Code, Name string }{
 // msgs[lang][key]; % verbs follow fmt.Sprintf.
 var msgs = map[string]map[string]string{
 	"en": {
+		"mx_welcome":        "Welcome to OpenHealth. To protect your record, this channel verifies you once: reply with your patient ID (it is on your patient card, e.g. OH-KD-0001).",
+		"mx_ask_id":         "Reply with your patient ID (e.g. OH-KD-0001) — or the ID and your registered phone in one message.",
+		"mx_ask_phone":      "Now the phone number you registered with (e.g. 08012345678).",
+		"mx_bind_fail":      "That ID and phone number don't match any record — check the card and try again, or visit your clinic to register.",
 		"or_cancel":         "(0 to cancel)",
 		"menu":              "Reply with a number:\n1. Book an appointment\n2. My appointments\n3. My coverage\n4. Clinic updates\n5. Ask the clinic\n6. Log a health reading\n7. Change language\n0. This menu",
 		"hello":             "Hello!",
@@ -76,6 +80,10 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "Language set to %s.",
 	},
 	"pcm": {
+		"mx_welcome":        "Welcome to OpenHealth. To protect your record, we go verify you once: reply wit your patient ID (e dey your patient card, e.g. OH-KD-0001).",
+		"mx_ask_id":         "Reply wit your patient ID (e.g. OH-KD-0001) — or the ID plus the phone wey you register, for one message.",
+		"mx_ask_phone":      "Now the phone number wey you register wit (e.g. 08012345678).",
+		"mx_bind_fail":      "Dat ID and phone no match any record — check the card and try again, or go your clinic make dem register you.",
 		"or_cancel":         "(0 to cancel)",
 		"menu":              "Reply wit number:\n1. Book appointment\n2. My appointments\n3. My coverage\n4. Clinic updates\n5. Ask clinic question\n6. Log health reading\n7. Change language\n0. Show dis menu",
 		"hello":             "Sannu!",
@@ -129,6 +137,10 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "Language don change to %s.",
 	},
 	"ha": {
+		"mx_welcome":        "Barka da zuwa OpenHealth. Don kare bayananka, wannan tashar za ta tabbatar da kai sau ɗaya: amsa da ID ɗin majiyyaci (yana katin majiyyaci, misali OH-KD-0001).",
+		"mx_ask_id":         "Amsa da ID ɗin majiyyaci (misali OH-KD-0001) — ko ID da wayar da ka yi rajista a saƙo ɗaya.",
+		"mx_ask_phone":      "Yanzu lambar wayar da ka yi rajista da ita (misali 08012345678).",
+		"mx_bind_fail":      "Wannan ID da waya ba su dace da wani bayani ba — duba katin ka sake gwadawa, ko ka je asibiti don rajista.",
 		"or_cancel":         "(0 don fasa)",
 		"menu":              "Amsa da lamba:\n1. Yi rajistar alƙawari\n2. Alƙawaraina\n3. Rufe na (coverage)\n4. Sababbin labarai daga asibiti\n5. Tambayi asibiti\n6. Shigar da karatu na lafiya\n7. Canza harshe\n0. Wannan menu",
 		"hello":             "Sannu!",
@@ -182,6 +194,10 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "An canza harshe zuwa %s.",
 	},
 	"yo": {
+		"mx_welcome":        "Káàbọ̀ sí OpenHealth. Láti dáàbò bo àkòsílẹ̀ rẹ, a ó jẹ́rìí ẹ ẹ́ẹkan: fìdáhùn pẹlu ID àrùn rẹ (ó wà lórí káàdì àrùn, bíi OH-KD-0001).",
+		"mx_ask_id":         "Fìdáhùn pẹlu ID àrùn rẹ (bíi OH-KD-0001) — tàbí ID àti nọ́ńbà fóònù tí o forúkọsílẹ̀ pẹ̀lú nínú ìfìránṣẹ́ kan ṣoṣo.",
+		"mx_ask_phone":      "Níṣinyí nọ́ńbà fóònù tí o forúkọsílẹ̀ pẹ̀lú (bíi 08012345678).",
+		"mx_bind_fail":      "ID àti nọ́ńbà fóònù yẹn kò bá àkòsílẹ̀ kankan mu — ṣàyẹ̀wò káàdì náà kí o tún gbìyànjú, tàbí lọ sí ilé-iwòsàn láti forúkọsílẹ̀.",
 		"or_cancel":         "(0 láti fagi lé)",
 		"menu":              "Fìdáhùn pẹlu nọ́ńbà:\n1. Dàbáà pàlàpàlà (appointment)\n2. Àwọn pàlàpàlà mi\n3. Ìdáàbòbò mi (coverage)\n4. Àtúnjáde láti ilé-iwòsàn\n5. Béèrè láti ilé-iwòsàn\n6. Kọ àyẹ̀wò ètò ìlera sìlẹ̀\n7. Yí èdè padà\n0. Ìdáhùn yìí",
 		"hello":             "Pẹlẹ o!",
@@ -235,6 +251,10 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "A ti yí èdè padà sí %s.",
 	},
 	"ig": {
+		"mx_welcome":        "Nnọọ na OpenHealth. Iji chebe ndekọ gị, ọwa a ga-akwadò gị otu ugboro: zaa ID onye ọrịa gị (ọ nọ na kaadị onye ọrịa, dị ka OH-KD-0001).",
+		"mx_ask_id":         "Zaa ID onye ọrịa gị (dị ka OH-KD-0001) — ma ọ bụ ID na ekwentị ị debanyere n'otu ozi.",
+		"mx_ask_phone":      "Ugbu a, nọmba ekwentị ị debanyere (dị ka 08012345678).",
+		"mx_bind_fail":      "ID na nọmba ekwentị ahụ adabaghị na ndekọ ọ bụla — lelee kaadị wee nwaa ọzọ, ma ọ bụ gaa ụlọ ọgwụ iji debanye.",
 		"or_cancel":         "(0 iji kpechie)",
 		"menu":              "Zaa nkeji:\n1. Debanye oge njụtụ (appointment)\n2. Oge njụtụ m\n3. Nchekwa m (coverage)\n4. Ozi ọhụrụ si ụlọ ọgwụ\n5. Jụọ ụlọ ọgwụ\n6. Dekọọ ọgụgụ ahụike\n7. Gbanwee asụsụ\n0. Menu a",
 		"hello":             "Ndewo!",

@@ -250,6 +250,9 @@ services:
       WHATSAPP_VERIFY_TOKEN: dev-verify-token  # set real values in deployment
       # WHATSAPP_TOKEN / WHATSAPP_PHONE_ID / WHATSAPP_APP_SECRET: Cloud API
       # credentials — without them the sender is the local log (dev).
+      # MATRIX_HOMESERVER / MATRIX_ACCESS_TOKEN (ADR-0038): point at a
+      # self-hosted homeserver to enable the sovereign channel; absent =
+      # WhatsApp-only.
     ports: ["18099:8099"]
     depends_on: [registry-service, notification-service, wellness-service]
 
