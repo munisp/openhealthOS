@@ -1,0 +1,16 @@
+# APISIX — high-throughput gateway profile.
+nginx_config:
+  worker_processes: auto
+  event:
+    worker_connections: 10240
+plugins:
+  - opentelemetry                    # traces -> otel-collector:4318
+  - prometheus                       # /apisix/prometheus/metrics
+plugin_attr:
+  opentelemetry:
+    collector:
+      address: otel-collector:4318
+    batch_span_processor:
+      max_queue_size: 2048
+      batch_timeout: 2
+      drop_on_queue_full: true       # telemetry sheds, traffic never blocks

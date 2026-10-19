@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/munisp/openhealthOS/shared/authz"
+	"github.com/munisp/openhealthOS/shared/otelx"
 	"github.com/munisp/openhealthOS/shared/servex"
 )
 
@@ -192,6 +193,7 @@ func (s server) routes() *http.ServeMux {
 	registerPortalRecord(mux, s)   // elevated endpoints require the gate
 	// Self-service rail (ADR-0017): booking, coverage, messages, consents.
 	registerPortalActions(mux, s.svc)
+	registerAlertsIntake(mux, s.svc) // alert rail: Alertmanager -> provider chain (ADR-0040)
 	// Passkey unlock (ADR-0017): PORTAL_RP_ID / PORTAL_ORIGINS bind the
 	// relying party; defaults are the dev gateway.
 	passkeyAPI{Store: s.svc.store, Subs: s.svc.store, Jar: newChallengeJar(),
@@ -243,6 +245,9 @@ func main() {
 	if v := os.Getenv("LISTEN"); v != "" {
 		addr = v
 	}
+	// Observability (ADR-0040): OTel traces + Prometheus metrics with
+	// per-tenant labels. Sits outermost so even auth rejections are traced.
+	exp, mx := otelx.Instrument("notification-service", os.Getenv)
 	var handler http.Handler = server{svc: svc}.routes()
 	authV, authErr := authz.RequireFromEnv(os.Getenv)
 	if authErr != nil {
@@ -251,8 +256,12 @@ func main() {
 	if authV != nil {
 		handler = authV.Middleware(handler)
 	}
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", mx.Handler())
+	metricsMux.Handle("/", handler)
+	handler = otelx.MiddlewareMetrics("notification-service", exp, mx, metricsMux)
 	log.Printf("notification-service: listening on %s (provider: %s)", addr, provider.Name())
-	if err := servex.ListenAndServe(addr, handler, servex.Options{}); err != nil {
+	if err := servex.ListenAndServe(addr, handler, servex.Options{MetricsPath: "/metrics-legacy"}); err != nil {
 		panic(err)
 	}
 }

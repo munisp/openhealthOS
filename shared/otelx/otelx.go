@@ -152,8 +152,20 @@ func (r *statusRecorder) WriteHeader(code int) {
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
 // Middleware traces every request: continues an incoming trace if present,
-// exports a completed span with method/route/status/duration.
+// exports a completed span with method/route/status/duration. The tenant
+// (ADR-0040) is resolved from the propagation header and stamped on the
+// span and the request context.
 func Middleware(service string, exp Exporter, next http.Handler) http.Handler {
+	return middleware(service, exp, nil, next)
+}
+
+// MiddlewareMetrics is Middleware plus RED metrics (rate/errors/duration)
+// into mx, labelled by tenant so every series slices per tenant.
+func MiddlewareMetrics(service string, exp Exporter, mx *Metrics, next http.Handler) http.Handler {
+	return middleware(service, exp, mx, next)
+}
+
+func middleware(service string, exp Exporter, mx *Metrics, next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		start := time.Now()
 		tc, ok := ParseTraceparent(r.Header.Get("traceparent"))
@@ -161,14 +173,28 @@ func Middleware(service string, exp Exporter, next http.Handler) http.Handler {
 			tc = TraceContext{TraceID: randHex(16), Sampled: true}
 		}
 		spanID := randHex(8)
+		ctx := WithTrace(r.Context(), tc)
+		tenant := r.Header.Get(TenantHeader)
+		if tenant != "" {
+			ctx = WithTenant(ctx, tenant)
+		}
 		rec := &statusRecorder{ResponseWriter: w, status: 200}
-		next.ServeHTTP(rec, r.WithContext(WithTrace(r.Context(), tc)))
+		next.ServeHTTP(rec, r.WithContext(ctx))
+		dur := float64(time.Since(start).Microseconds()) / 1000.0
+		attrs := map[string]string{}
+		if tenant != "" {
+			attrs[TenantAttr] = tenant
+		}
 		exp.Export(Span{
 			TraceID: tc.TraceID, SpanID: spanID, ParentID: tc.ParentID,
 			Service: service, Name: r.Method + " " + r.URL.Path,
 			Start: start, End: time.Now(),
-			DurMs:  float64(time.Since(start).Microseconds()) / 1000.0,
-			Status: rec.status,
+			DurMs:  dur, Status: rec.status, Attrs: attrs,
 		})
+		if mx != nil {
+			labels := map[string]string{"tenant": tenant, "status": fmt.Sprintf("%d", rec.status)}
+			mx.CounterAdd("http_requests_total", "HTTP requests by tenant and status", labels, 1)
+			mx.ObserveMs("http_request_duration_ms", "HTTP request duration by tenant", map[string]string{"tenant": tenant}, dur)
+		}
 	})
 }

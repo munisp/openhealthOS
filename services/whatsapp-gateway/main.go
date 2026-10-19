@@ -25,6 +25,7 @@
 package main
 
 import (
+	"github.com/munisp/openhealthOS/shared/otelx"
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
@@ -330,7 +331,13 @@ func main() {
 			log.Print("MATRIX_HOMESERVER set without MATRIX_ACCESS_TOKEN — matrix channel off")
 		}
 	}
+	// Observability (ADR-0040): traces + /metrics, per-tenant labels.
+	exp, mx := otelx.Instrument("whatsapp-gateway", os.Getenv)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", mx.Handler())
+	metricsMux.Handle("/", s.routes())
+
 	addr := env("LISTEN", ":8099")
 	log.Printf("whatsapp-gateway listening on %s", addr)
-	log.Fatal(http.ListenAndServe(addr, s.routes()))
+	log.Fatal(http.ListenAndServe(addr, otelx.MiddlewareMetrics("whatsapp-gateway", exp, mx, metricsMux)))
 }

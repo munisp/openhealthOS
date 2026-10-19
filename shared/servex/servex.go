@@ -56,9 +56,9 @@ func (r *statusRecorder) WriteHeader(code int) {
 // ResponseWriter (http.ResponseController support).
 func (r *statusRecorder) Unwrap() http.ResponseWriter { return r.ResponseWriter }
 
-func (m *Metrics) observe(next http.Handler) http.Handler {
+func (m *Metrics) observe(next http.Handler, path string) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/metrics" {
+		if path != "" && r.URL.Path == path {
 			m.serve(w)
 			return
 		}
@@ -94,6 +94,11 @@ func (m *Metrics) serve(w http.ResponseWriter) {
 
 // Options tunes the server; zero values take the defaults.
 type Options struct {
+	// MetricsPath is where the legacy JSON metrics endpoint lives
+	// (default /metrics). Services instrumented with otelx Prometheus
+	// /metrics (ADR-0040) pass "/metrics-legacy" so the old JSON endpoint
+	// survives without shadowing the Prometheus one.
+	MetricsPath string
 	ReadHeaderTimeout time.Duration // default 5s
 	ReadTimeout       time.Duration // default 10s
 	WriteTimeout      time.Duration // default 30s
@@ -117,6 +122,9 @@ func (o Options) withDefaults() Options {
 	if o.DrainTimeout == 0 {
 		o.DrainTimeout = 10 * time.Second
 	}
+	if o.MetricsPath == "" {
+		o.MetricsPath = "/metrics"
+	}
 	return o
 }
 
@@ -139,7 +147,7 @@ func ListenAndServe(addr string, handler http.Handler, opts Options) error {
 	m := &Metrics{Started: time.Now()}
 	srv := &http.Server{
 		Addr:              addr,
-		Handler:           m.observe(handler),
+		Handler:           m.observe(handler, opts.MetricsPath),
 		ReadHeaderTimeout: opts.ReadHeaderTimeout,
 		ReadTimeout:       opts.ReadTimeout,
 		WriteTimeout:      opts.WriteTimeout,

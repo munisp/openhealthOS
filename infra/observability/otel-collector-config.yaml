@@ -1,0 +1,134 @@
+# OpenTelemetry Collector — the single telemetry fan-in for the platform
+# (ADR-0040). Every signal from every component lands here, is stamped with
+# tenant/platform attributes, and is re-exported to Prometheus (metrics),
+# the spans lake (traces, JSONL) and Alertmanager-routed alert sources.
+#
+# Uses the contrib distribution: the postgresql, redis, kafka and filelog
+# receivers are not in the core image.
+#
+#   docker run --rm -v $PWD:/etc/otelcol-contrib \
+#     ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.98.0
+
+receivers:
+  # Push path: every OpenHealth service (shared/otelx OTLP exporter) and
+  # any OTel-SDK-instrumented middleware (Dapr, APISIX, Keycloak, Temporal
+  # interceptors) push here.
+  otlp:
+    protocols:
+      http: { endpoint: 0.0.0.0:4318 }
+      grpc: { endpoint: 0.0.0.0:4317 }
+
+  # Pull path: middleware that exposes Prometheus endpoints is scraped
+  # through the collector so all metrics share one pipeline.
+  prometheus:
+    config:
+      scrape_configs:
+        # Platform services (stdlib /metrics from shared/otelx).
+        - job_name: openhealth-services
+          scrape_interval: 15s
+          static_configs:
+            - targets:
+                - api-gateway:8080
+                - notification-service:8089
+                - whatsapp-gateway:8099
+        # APISIX: native prometheus plugin.
+        - job_name: apisix
+          static_configs:
+            - targets: ["apisix:9091"]
+        # Mojaloop services expose /metrics (hapi prometheus).
+        - job_name: mojaloop
+          static_configs:
+            - targets: ["central-ledger:3001", "account-lookup-service:4002"]
+        # Keycloak: --metrics-enabled=true.
+        - job_name: keycloak
+          metrics_path: /metrics
+          static_configs:
+            - targets: ["keycloak:9000"]
+        # TigerBeetle does not serve Prometheus natively; the sidecar
+        # exporter (deploy/tuning/tigerbeetle) translates its stats.
+        - job_name: tigerbeetle
+          static_configs:
+            - targets: ["tigerbeetle-exporter:9100"]
+        # Temporal server metrics (Prometheus endpoint).
+        - job_name: temporal
+          static_configs:
+            - targets: ["temporal:8000"]
+
+  # Postgres: query-level stats (connections, transactions, replication lag).
+  postgresql:
+    endpoint: postgres:5432
+    username: ${env:PG_OBSERVE_USER}
+    password: ${env:PG_OBSERVE_PASSWORD}
+    databases: [openhealth]
+    collection_interval: 15s
+    tls: { insecure: true }
+
+  # Redis: memory, evictions, keyspace hit ratio, connected clients.
+  redis:
+    endpoint: redis:6379
+    collection_interval: 15s
+
+  # Kafka: broker metrics + consumer lag (lag is the alert that matters).
+  kafkametrics:
+    brokers: ["kafka:9092"]
+    protocol_version: 2.13.0
+    scrapers: [brokers, topics, consumers]
+    collection_interval: 15s
+
+  # Trace fallback: services that can only write JSONL spans files
+  # (OTEL_SPANS_PATH) are tailed here.
+  filelog:
+    include: [/var/spans/*.jsonl]
+    start_at: end
+
+processors:
+  # Hard ceiling first: telemetry must never OOM the collector and take
+  # down the observability plane with it.
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 512
+    spike_limit_mib: 128
+
+  batch:
+    timeout: 2s
+    send_batch_size: 1024
+    send_batch_max_size: 2048
+
+  # Platform identity on every signal; tenant.id arrives from the services
+  # (propagated x-tenant-id header, stamped by shared/otelx) and is left
+  # untouched — per-tenant slicing happens downstream on that attribute.
+  resource:
+    attributes:
+      - key: platform
+        value: openhealth-os
+        action: upsert
+
+exporters:
+  # Metrics re-exported in Prometheus format for Grafana/Alertmanager.
+  prometheus:
+    endpoint: 0.0.0.0:9464
+    resource_to_telemetry_conversion:
+      enabled: true # tenant.id becomes a metric label
+
+  # Traces land in the spans lake (JSONL — the audit-grade format the
+  # platform already uses; object storage in production).
+  file:
+    path: /var/spans-lake/traces.jsonl
+
+  debug:
+    verbosity: basic
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch, resource]
+      exporters: [file, debug]
+    metrics:
+      receivers: [otlp, prometheus, postgresql, redis, kafkametrics]
+      processors: [memory_limiter, batch, resource]
+      exporters: [prometheus]
+    logs:
+      receivers: [otlp, filelog]
+      processors: [memory_limiter, batch, resource]
+      exporters: [file, debug]

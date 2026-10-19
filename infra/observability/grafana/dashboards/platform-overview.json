@@ -1,0 +1,63 @@
+{
+  "title": "OpenHealth OS — platform overview",
+  "uid": "oh-platform",
+  "tags": ["openhealth"],
+  "timezone": "browser",
+  "refresh": "30s",
+  "time": { "from": "now-1h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "name": "tenant",
+        "type": "query",
+        "datasource": "Prometheus",
+        "query": "label_values(http_requests_total, tenant)",
+        "includeAll": true,
+        "multi": true,
+        "current": { "text": ["All"], "value": ["$__all"] }
+      }
+    ]
+  },
+  "panels": [
+    {
+      "id": 1,
+      "title": "Request rate by service (tenant=~$tenant)",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (service) (rate(http_requests_total{tenant=~\"$tenant\"}[5m]))", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "id": 2,
+      "title": "p95 latency by service",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 0, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "histogram_quantile(0.95, sum by (service, le) (rate(http_request_duration_ms_bucket{tenant=~\"$tenant\"}[5m])))", "legendFormat": "{{service}}" }
+      ]
+    },
+    {
+      "id": 3,
+      "title": "5xx rate by tenant",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "sum by (tenant) (rate(http_requests_total{status=~\"5..\"}[5m]))", "legendFormat": "{{tenant}}" }
+      ]
+    },
+    {
+      "id": 4,
+      "title": "Middleware: Postgres connections / Redis memory / Kafka lag",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 8, "w": 12, "h": 8 },
+      "targets": [
+        { "expr": "pg_stat_activity_count", "legendFormat": "pg connections" },
+        { "expr": "redis_memory_used_bytes", "legendFormat": "redis mem" },
+        { "expr": "sum by (consumergroup) (kafka_consumer_group_lag)", "legendFormat": "kafka lag {{consumergroup}}" }
+      ]
+    }
+  ],
+  "schemaVersion": 39,
+  "version": 1
+}

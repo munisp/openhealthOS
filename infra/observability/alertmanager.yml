@@ -1,0 +1,44 @@
+# Alertmanager — open-source alert routing (ADR-0040).
+#
+# Alerts route by tenant label: each tenant's alerts go to that tenant's
+# operations channel through the platform's own notification rail
+# (notification-service POST /alerts/intake) — the same provider chain
+# (Matrix first, SMS fallback) that carries patient messages. Eating our
+# own cooking: the alert platform is open source end to end
+# (Prometheus + Alertmanager + Grafana + OTel Collector).
+
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: platform-ops
+  group_by: [tenant, alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [tenant != ""]
+      receiver: tenant-ops
+      continue: true
+    - matchers: [severity = "critical"]
+      receiver: platform-ops-critical
+
+receivers:
+  # Tenant-scoped alerts: the intake endpoint fans out to the tenant's
+  # configured ops contacts (NOTIFY_OPS_CONTACTS, tenant-tagged).
+  - name: tenant-ops
+    webhook_configs:
+      - url: http://notification-service:8089/alerts/intake
+        send_resolved: true
+
+  - name: platform-ops
+    webhook_configs:
+      - url: http://notification-service:8089/alerts/intake
+        send_resolved: true
+
+  # Criticals additionally page the on-call (webhook to the same rail with
+  # severity preserved; SMS legs in the provider chain carry it).
+  - name: platform-ops-critical
+    webhook_configs:
+      - url: http://notification-service:8089/alerts/intake
+        send_resolved: true

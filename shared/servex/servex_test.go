@@ -23,7 +23,7 @@ func TestMetricsEndpointAndCounters(t *testing.T) {
 			http.Error(w, "boom", http.StatusInternalServerError)
 		}
 	})
-	srv := httptest.NewServer(m.observe(inner))
+	srv := httptest.NewServer(m.observe(inner, "/metrics"))
 	defer srv.Close()
 
 	for _, path := range []string{"/ok", "/ok", "/bad", "/boom"} {

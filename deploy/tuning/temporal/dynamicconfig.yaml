@@ -1,0 +1,7 @@
+# Temporal server — history-service throughput for claims workflows.
+# Worker side: Go SDK with contrib/opentelemetry tracing interceptor +
+# metrics handler (verified upstream support).
+history.maxAutoResetPoints: { value: 100 }
+limit.historyCount.suggest: { value: 50000 }
+# persistence: Postgres (already our state plane), visibility on OpenSearch.
+# Scale: history shards 512 -> 1024 before adding frontend replicas.

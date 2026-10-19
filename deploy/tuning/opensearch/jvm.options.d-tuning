@@ -1,0 +1,5 @@
+# OpenSearch — heap is HALF of RAM, never more than 30GB (compressed oops).
+-Xms8g
+-Xmx8g
+# index.translog.durability=async on high-write log indices;
+# refresh_interval=30s for the audit lake (not the 1s default).

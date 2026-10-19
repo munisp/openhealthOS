@@ -1,0 +1,52 @@
+# Observability plane — open source end to end (ADR-0040):
+# OpenTelemetry Collector + Prometheus + Alertmanager + Grafana.
+#
+#   docker compose -f infra/compose/platform.yaml \
+#                  -f infra/compose/observability.yaml up --build
+#
+# Every application service picks the plane up from env (see platform.yaml):
+#   OTEL_EXPORTER_OTLP_ENDPOINT=http://otel-collector:4318
+#   /metrics scraped via the collector's prometheus receiver.
+# Alerts route Prometheus -> Alertmanager -> notification-service
+# /alerts/intake -> the platform's own Matrix/SMS provider chain.
+
+services:
+  otel-collector:
+    image: ghcr.io/open-telemetry/opentelemetry-collector-releases/opentelemetry-collector-contrib:0.98.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ../observability/otel-collector-config.yaml:/etc/otelcol-contrib/config.yaml:ro
+      - spans-lake:/var/spans-lake
+    environment:
+      PG_OBSERVE_USER: postgres
+      PG_OBSERVE_PASSWORD: openhealth-dev
+    ports:
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "9464:9464"   # Prometheus re-export
+
+  prometheus:
+    image: prom/prometheus:v2.51.0
+    volumes:
+      - ../observability/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ../observability/rules:/etc/prometheus/rules:ro
+    ports: ["9091:9090"]
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    volumes:
+      - ../observability/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+    ports: ["9093:9093"]
+
+  grafana:
+    image: grafana/grafana:10.4.0
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: openhealth-dev
+      GF_USERS_ALLOW_SIGN_UP: "false"
+    volumes:
+      - ../observability/grafana/provisioning:/etc/grafana/provisioning:ro
+      - ../observability/grafana/dashboards:/var/lib/grafana/dashboards:ro
+    ports: ["3000:3000"]
+
+volumes:
+  spans-lake:

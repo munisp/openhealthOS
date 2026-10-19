@@ -1,0 +1,12 @@
+# Dapr — sidecar telemetry + throughput knobs.
+apiVersion: dapr.io/v1alpha1
+kind: Configuration
+metadata: { name: platform }
+spec:
+  tracing:
+    samplingRate: "1"
+    otlp:
+      endpointAddress: otel-collector:4317
+      isSecure: false
+  metric:
+    enabled: true

@@ -1,0 +1,14 @@
+# Permify — authz checks are on every request: cache hard, observe natively
+# (verified: native OTel tracer + meter blocks upstream).
+tracer:
+  exporter: otlp
+  endpoint: http://otel-collector:4317
+  enabled: true
+  insecure: true
+meter:
+  exporter: otlp
+  endpoint: http://otel-collector:4317
+  enabled: true
+  insecure: true
+  urlpath: /v1/metrics
+# storage: Postgres (already our plane); schema cache TTL 300s.

@@ -473,6 +473,14 @@ func main() {
 		},
 	})
 	handler = requestID(handler)
+	// Observability (ADR-0040): outermost layer — every request, including
+	// WAF rejections and auth failures, emits a span and RED metrics with
+	// per-tenant labels. /metrics stays scrape-only (no auth).
+	exp, mx := otelx.Instrument("api-gateway", os.Getenv)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", mx.Handler())
+	metricsMux.Handle("/", handler)
+	handler = otelx.MiddlewareMetrics("api-gateway", exp, mx, metricsMux)
 	log.Printf("OpenHealth OS api-gateway on %s (%d routes)", addr, len(g.routes))
-	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
+	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{MetricsPath: "/metrics-legacy"}))
 }
