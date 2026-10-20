@@ -20,3 +20,15 @@ require data localisation (NDPA 2023); Dapr sidecars for polyglot pub/sub;
 Temporal for durable claims workflows; Kubecost budgets per state plane
 ($2.50/facility/month guardrail); Prometheus/Grafana observability;
 Wazuh watches the fleet.
+
+## Network plane — Cilium/eBPF (ADR-0043)
+
+```
+cilium/values.yaml           helm values: kube-proxy replacement, default-deny
+                             enforcement, WireGuard pod-to-pod encryption,
+                             Hubble + ServiceMonitors into the plane Prometheus
+cilium/network-policies.yaml default-deny + per-workload allows mirroring the
+                             declared env-var dependencies (DATABASE_URL etc.)
+```
+
+Install at cluster build: `helm install cilium cilium/cilium -n kube-system -f cilium/values.yaml` (set `k8sServiceHost` per state), then `kubectl apply -f cilium/network-policies.yaml`. Edge nodes (docker-compose) do NOT run Cilium — see ADR-0043 for the honest boundary.

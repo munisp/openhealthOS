@@ -1,0 +1,172 @@
+# Cilium network policies — oh-state-example plane (ADR-0043).
+#
+# Doctrine: default-deny everything, then allow exactly the documented
+# flows. Every rule here mirrors a dependency already declared in the
+# service's env vars (SWITCH=..., DATABASE_URL=...): the network should
+# enforce the architecture, not trust it.
+#
+# L7 (HTTP) rules appear where a proxy-visible method/path boundary adds
+# real value (sync-ingest only accepts POST /ingest; the FHIR server
+# only accepts what consent allows). Everything else is L3/L4 — eBPF
+# enforcement at socket level, no sidecar, no iptables.
+
+# NOTE: Cilium denies any traffic not matched by an allow rule once a
+# policy selects an endpoint. The policy below selects EVERYTHING and
+# allows nothing — the baseline the rest of this file carves holes in.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: deny-all-ingress
+  namespace: oh-state-example
+spec:
+  description: "Deny all ingress not matched by a later allow rule."
+  endpointSelector: {}
+  ingress: []
+---
+# DNS: everyone may resolve (kube-dns only).
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: allow-dns-egress
+  namespace: oh-state-example
+spec:
+  endpointSelector: {}
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: kube-system
+            k8s:k8s-app: kube-dns
+      toPorts:
+        - ports:
+            - { port: "53", protocol: UDP }
+---
+# sync-ingest: the store-and-forward uplink terminator. Only POST /ingest
+# and /sync/merge from outside the namespace (edge nodes, via APISIX),
+# plus Prometheus scraping.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: sync-ingest-ingress
+  namespace: oh-state-example
+spec:
+  endpointSelector:
+    matchLabels:
+      app: sync-ingest
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: apisix
+            k8s:io.kubernetes.pod.namespace: oh-state-example
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+          rules:
+            http:
+              - { method: POST, path: "^/ingest$" }
+              - { method: POST, path: "^/sync/merge$" }
+              - { method: GET,  path: "^/healthz$" }
+    - fromEndpoints:
+        - matchLabels:
+            app: prometheus
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+          rules:
+            http:
+              - { method: GET, path: "^/metrics$" }
+---
+# claims-orchestrator: talks ONLY to the payment switch and the ledger
+# volume — no database, no egress. The fraud-gate subprocess is in-pod,
+# so the network correctly sees nothing.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: claims-orchestrator
+  namespace: oh-state-example
+spec:
+  endpointSelector:
+    matchLabels:
+      app: claims-orchestrator
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: apisix
+      toPorts:
+        - ports:
+            - { port: "8080", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: payment-switch-mock
+      toPorts:
+        - ports:
+            - { port: "9090", protocol: TCP }
+---
+# registry-service: needs Postgres, nothing else egress-side.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: registry-service
+  namespace: oh-state-example
+spec:
+  endpointSelector:
+    matchLabels:
+      app: registry-service
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            app: apisix
+      toPorts:
+        - ports:
+            - { port: "8081", protocol: TCP }
+  egress:
+    - toEndpoints:
+        - matchLabels:
+            app: postgres
+      toPorts:
+        - ports:
+            - { port: "5432", protocol: TCP }
+---
+# Postgres: accepts connections ONLY from workloads that declare a
+# DATABASE_URL. If a new service appears with DB creds but no rule,
+# the network refuses — drift is loud, not silent.
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: postgres-ingress
+  namespace: oh-state-example
+spec:
+  endpointSelector:
+    matchLabels:
+      app: postgres
+  ingress:
+    - fromEndpoints:
+        - matchLabels: { app: registry-service }
+        - matchLabels: { app: consent-service }
+        - matchLabels: { app: shr-service }
+        - matchLabels: { app: scheduling-service }
+      toPorts:
+        - ports:
+            - { port: "5432", protocol: TCP }
+---
+# Hubble relay + UI inside monitoring namespace; Prometheus scrapes the
+# hubble metrics endpoint. (Cross-namespace rules for the observability
+# plane.)
+apiVersion: cilium.io/v2
+kind: CiliumNetworkPolicy
+metadata:
+  name: hubble-observability
+  namespace: monitoring
+spec:
+  endpointSelector:
+    matchLabels:
+      k8s-app: hubble-relay
+  ingress:
+    - fromEndpoints:
+        - matchLabels:
+            k8s:io.kubernetes.pod.namespace: monitoring
+      toPorts:
+        - ports:
+            - { port: "4245", protocol: TCP }
+            - { port: "9965", protocol: TCP }  # hubble metrics

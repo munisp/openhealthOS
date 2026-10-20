@@ -9,14 +9,19 @@
 services:
   # The offline-first app itself: patients, encounters, tasks, claims queue.
   # Served on the facility LAN; PWAs install from here onto Android phones.
+  # Caddy ingress (ADR-0042): local-CA TLS, security headers, /api proxy.
   pwa:
-    image: nginx:1.27-alpine
+    image: caddy:2.8-alpine
     restart: unless-stopped
     volumes:
-      - ../../apps/pwa:/usr/share/nginx/html:ro
+      - ../../apps/pwa:/srv/pwa:ro
+      - ../edge/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy-data:/data        # local CA + certs (crash-safe store)
+      - caddy-logs:/var/log/caddy
     ports:
       - "80:80"
-    mem_limit: 64m
+      - "443:443"
+    mem_limit: 96m
 
   # Store-and-forward uplink: event outbox + CRDT replica -> state plane.
   sync-agent:
@@ -52,3 +57,5 @@ services:
 volumes:
   edge-outbox:
   edge-replica:
+  caddy-data:
+  caddy-logs:
