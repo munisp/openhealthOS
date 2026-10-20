@@ -37,7 +37,7 @@ func adherenceRig(t *testing.T) (*adherence, *captureProvider, *time.Time) {
 
 func TestAdherenceDailyNudgeOncePerDayInMorningWindow(t *testing.T) {
 	a, cp, clock := adherenceRig(t)
-	a.onPrescription("PT-1", "artemether-lumefantrine")
+	a.onPrescription("PT-1", "artemether-lumefantrine", "")
 
 	*clock = time.Date(2026, 10, 2, 9, 15, 0, 0, time.UTC)
 	a.tick()
@@ -59,7 +59,7 @@ func TestAdherenceDailyNudgeOncePerDayInMorningWindow(t *testing.T) {
 
 func TestAdherenceRefillReminderThenLapseEscalation(t *testing.T) {
 	a, cp, clock := adherenceRig(t)
-	a.onPrescription("PT-1", "amoxicillin")
+	a.onPrescription("PT-1", "amoxicillin", "")
 
 	// 4 days before run-out: nothing.
 	*clock = time.Date(2026, 10, 27, 10, 0, 0, 0, time.UTC)
@@ -92,7 +92,7 @@ func TestAdherenceRefillReminderThenLapseEscalation(t *testing.T) {
 
 func TestAdherenceDispensedStopsLapse(t *testing.T) {
 	a, cp, clock := adherenceRig(t)
-	a.onPrescription("PT-1", "amoxicillin")
+	a.onPrescription("PT-1", "amoxicillin", "")
 	a.onDispensed("PT-1", "amoxicillin")
 	*clock = time.Date(2026, 11, 10, 10, 0, 0, 0, time.UTC)
 	a.tick()
@@ -105,14 +105,30 @@ func TestAdherenceDispensedStopsLapse(t *testing.T) {
 
 func TestAdherenceRePrescriptionReArms(t *testing.T) {
 	a, _, clock := adherenceRig(t)
-	a.onPrescription("PT-1", "amoxicillin")
+	a.onPrescription("PT-1", "amoxicillin", "")
 	*clock = clock.Add(10 * 24 * time.Hour)
-	a.onPrescription("PT-1", "amoxicillin")
+	a.onPrescription("PT-1", "amoxicillin", "")
 	plans := a.plansFor("PT-1")
 	if len(plans) != 1 {
 		t.Fatalf("re-prescription must re-arm, not stack: %d plans", len(plans))
 	}
 	if plans[0].RefillDue.Before(clock.Add(29 * 24 * time.Hour)) {
 		t.Fatal("refill due must extend on re-arm")
+	}
+}
+
+func TestNudgePrefersDosageInstruction(t *testing.T) {
+	a, cp, clock := adherenceRig(t)
+	a.onPrescription("PT-1", "artemether-lumefantrine", "Take 2 tablet two times every day.")
+	*clock = time.Date(2026, 10, 2, 9, 15, 0, 0, time.UTC)
+	a.tick()
+	if len(cp.sent) != 1 {
+		t.Fatalf("want 1 nudge, got %+v", cp.sent)
+	}
+	if !strings.Contains(cp.sent[0].text, "Take 2 tablet two times every day.") {
+		t.Fatalf("nudge must carry the dosage instruction: %q", cp.sent[0].text)
+	}
+	if strings.Contains(cp.sent[0].text, "time for your medication") {
+		t.Fatal("instruction must replace the generic nudge, not append")
 	}
 }

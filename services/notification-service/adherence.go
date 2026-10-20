@@ -32,8 +32,12 @@ const (
 // adherencePlan tracks one prescribed course for one patient.
 type adherencePlan struct {
 	PatientID  string
-	Medication string
-	Started    time.Time
+	// Instruction is the patient-language dosage line (dosagetext,
+	// ADR-0049) carried from the prescription event, e.g. "Take 2 tablet
+	// two times every day." Empty falls back to the generic nudge.
+	Medication  string
+	Instruction string
+	Started     time.Time
 	RefillDue  time.Time
 	LastNudge  time.Time // last dose nudge (zero = never)
 	RefillSent bool
@@ -58,22 +62,26 @@ func newAdherence(svc *Service) *adherence {
 
 // onPrescription opens a plan. Idempotent per patient+medication: a
 // duplicate MedicationRequest re-arms the same plan instead of stacking.
-func (a *adherence) onPrescription(patientID, medication string) {
+func (a *adherence) onPrescription(patientID, medication, instruction string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	for _, p := range a.plans {
 		if p.PatientID == patientID && p.Medication == medication && !p.Dispensed {
 			p.RefillDue = a.now().Add(adherenceCourseDays * 24 * time.Hour)
 			p.RefillSent, p.Lapsed = false, false
+			if instruction != "" {
+				p.Instruction = instruction
+			}
 			return
 		}
 	}
 	now := a.now()
 	a.plans = append(a.plans, &adherencePlan{
-		PatientID:  patientID,
-		Medication: medication,
-		Started:    now,
-		RefillDue:  now.Add(adherenceCourseDays * 24 * time.Hour),
+		PatientID:   patientID,
+		Medication:  medication,
+		Instruction: instruction,
+		Started:     now,
+		RefillDue:   now.Add(adherenceCourseDays * 24 * time.Hour),
 	})
 }
 
@@ -119,8 +127,13 @@ func (a *adherence) tick() {
 			sub, err := a.svc.store.Subscription(p.PatientID)
 			if err == nil && sub.Phone != "" {
 				p.LastNudge = now
-				nudges = append(nudges, struct{ phone, text string }{
-					sub.Phone, fmt.Sprintf("OpenHealth: time for your medication (%s). Reply STOP to end reminders.", p.Medication)})
+				// Prefer the patient-language dosage line (ADR-0049) over
+				// the generic nudge — an instruction beats a reminder.
+				text := fmt.Sprintf("OpenHealth: time for your medication (%s). Reply STOP to end reminders.", p.Medication)
+				if p.Instruction != "" {
+					text = fmt.Sprintf("OpenHealth: %s (%s) Reply STOP to end reminders.", p.Instruction, p.Medication)
+				}
+				nudges = append(nudges, struct{ phone, text string }{sub.Phone, text})
 			}
 		}
 		// Refill reminder inside the lead window, once.

@@ -449,8 +449,9 @@ func (s *Service) HandleEvent(ev DomainEvent) (Notification, error) {
 	if ev.Type == "prescription" {
 		drug, _ := ev.Payload["drug_name"].(string)
 		pid, _ := ev.Payload["patient_id"].(string)
+		instruction, _ := ev.Payload["dosage_text"].(string) // dosagetext, ADR-0049
 		if pid != "" && drug != "" {
-			s.adherence.onPrescription(pid, drug)
+			s.adherence.onPrescription(pid, drug, instruction)
 		}
 	}
 	if ev.Type == "medication_dispensed" {
