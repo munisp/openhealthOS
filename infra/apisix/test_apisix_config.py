@@ -30,7 +30,7 @@ class TestApisixConfig(unittest.TestCase):
         cfg = load()
         # secrets must be env placeholders, never literals
         self.assertNotRegex(cfg, r"client_secret: [^{$\s]")
-        self.assertNotRegex(cfg, r"key: (?!consumer_name|consumer)[^{$\s]")
+        self.assertNotRegex(cfg, r"key: (?!consumer_name|remote_addr)[^{$\s]")
 
     def test_rate_limits_present_on_mutating_surfaces(self):
         cfg = load()
@@ -41,6 +41,16 @@ class TestApisixConfig(unittest.TestCase):
 
     def test_request_id_echoed(self):
         self.assertGreaterEqual(load().count("request-id"), 3)
+
+    def test_ddos_global_rules(self):
+        cfg = load()
+        for plugin in ["limit-req", "limit-conn", "ua-restriction", "client-control"]:
+            self.assertIn(plugin, cfg, f"missing DDoS control {plugin}")
+        self.assertIn("max_body_size: 1048576", cfg)
+
+    def test_ddos_keyed_per_ip_not_just_consumer(self):
+        # token-less floods must be capped before auth work
+        self.assertIn("key: remote_addr", load())
 
 if __name__ == "__main__":
     unittest.main()

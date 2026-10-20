@@ -15,6 +15,12 @@
 	admin off
 	auto_https disable_redirects # keep :80 for the LAN; phones roam onto it
 	local_certs
+
+	# HTTP/3 (QUIC, UDP 443) — ADR-0053: restores header-of-line-blocking-free
+	# uplink on lossy 3G; also restores the edge.yaml 443/udp mapping.
+	servers :443 {
+		protocols h1 h2 h3
+	}
 }
 
 :443, :80 {
@@ -28,6 +34,13 @@
 		Referrer-Policy "no-referrer"
 		Content-Security-Policy "default-src 'self'; connect-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'"
 		-Server
+	}
+	# ADR-0063: API responses carry PHI-adjacent metadata — never cached
+	# by any intermediary; request bodies capped so payload bombs die at
+	# the edge instead of pinning the sync-agent.
+	header /api/* Cache-Control "no-store"
+	request_body /api/* {
+		max_size 1MB
 	}
 
 	# Local edge APIs (same origin, no CORS): outbox status, telemetry.
@@ -54,7 +67,11 @@
 		file_server
 	}
 
-	tls internal
+	tls internal {
+		# ADR-0063: protocol floor — no TLS < 1.2; defeats downgrade MITM
+		# against captive-portal / proxy interference on hospital LANs.
+		protocols tls1.2 tls1.3
+	}
 
 	log {
 		output file /var/log/caddy/access.log {

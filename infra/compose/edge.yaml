@@ -21,6 +21,7 @@ services:
     ports:
       - "80:80"
       - "443:443"
+      - "443:443/udp"  # QUIC/HTTP3 (ADR-0053)
     mem_limit: 96m
 
   # Store-and-forward uplink: event outbox + CRDT replica -> state plane.

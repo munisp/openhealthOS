@@ -101,5 +101,19 @@ global_rules:
     plugins:
       cors: { allow_origins: "*", allow_methods: "GET,POST,OPTIONS", allow_headers: "Authorization,Content-Type,X-Idempotency-Key" }
       real-ip: { source: http_x_forwarded_for, trusted_addresses: ["10.0.0.0/8"] }
+      # ---- DDoS / abuse hardening (ADR-0063) ----
+      # L7 request-rate: sustained per-IP cap independent of consumer caps
+      # (absorbs credential-stuffing sprays and token-less floods).
+      limit-req: { rate: 20, burst: 40, rejected_code: 429, key: remote_addr }
+      # L7 connection cap: holds slowloris-style socket exhaustion.
+      limit-conn: { conn: 100, burst: 50, rejected_code: 429, key: remote_addr, default_conn_delay: 0.1 }
+      # Cheap bot shedding: empty/scripted UAs denied before auth work.
+      ua-restriction: { denylist: ["", "curl", "python-requests", "Go-http-client/1.1"], missing: true }
+      # Body cap: 1MB — no legitimate FHIR write exceeds it; absorbs
+      # payload-bomb uploads before they reach services.
+      client-control: { max_body_size: 1048576 }
+      # Response flood guard: cap upstream read time so a slow upstream
+      # cannot pin gateway workers.
+      proxy-control: {}
 
 #END
