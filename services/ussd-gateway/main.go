@@ -22,7 +22,8 @@ type EligibilityChecker interface {
 
 // Session holds one USSD dialog's position in the menu tree.
 type Session struct {
-	Step   string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient" | "benefits-member" | "wallet-nin" | "wallet-pay-facility" | "wallet-pay-amount"
+	MemberID string
+	Step     string // "menu" | "eligibility-member" | "enrol-member" | "feed-patient" | "benefits-member" | "wallet-nin" | "wallet-pay-facility" | "wallet-pay-amount"
 	Buffer string
 	Phone  string // msisdn from the telco — the patient's second factor
 }
@@ -36,6 +37,9 @@ type Gateway struct {
 	wallet   WalletReader // ADR-0030 citizen health wallet (nil = menu hides it)
 	payer    WalletPayer
 	benefits BenefitsReader // ADR-0031 benefit visibility (nil = menu hides it)
+	appts    AppointmentsBooker // ADR-0056 self-service (nil = menu hides it)
+	refills  RefillReminder
+	results  ResultsChecker
 }
 
 func NewGateway(c EligibilityChecker) *Gateway {
@@ -88,13 +92,16 @@ func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 	}
 	if text == "" {
 		s.Step = "menu"
-		return menu
+		return g.menuText()
 	}
 	parts := strings.Split(text, "*")
 	last := parts[len(parts)-1]
 
 	switch s.Step {
 	case "menu":
+		if out, handled := g.handleSelfService(s, sessionID, last); handled {
+			return out
+		}
 		switch last {
 		case "1":
 			s.Step = "eligibility-member"
@@ -125,6 +132,12 @@ func (g *Gateway) HandleWithPhone(sessionID, phone, text string) string {
 		default:
 			return "CON Invalid choice.\n" + strings.TrimPrefix(menu, "CON ")
 		}
+	case "appt-member", "appt-clinic", "refill-member", "results-member":
+		if out, handled := g.handleSelfService(s, sessionID, last); handled {
+			return out
+		}
+		delete(g.sessions, sessionID)
+		return "END Session error. Please redial."
 	case "eligibility-member":
 		delete(g.sessions, sessionID)
 		eligible, scheme, validUntil, err := g.checker.Check(last)

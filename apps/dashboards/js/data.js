@@ -174,6 +174,7 @@ export class DataSource {
       tickets: "/api/equipment/tickets",
       custody: "/api/equipment/custody",
       immig: "/api/kpi/immig",
+      anc: "/api/kpi/anc",
       payers: "/api/claims/payers/stats",
       kpi: "/api/kpi/plane",
       readiness: "/api/readiness/readiness",
@@ -505,5 +506,19 @@ export function demoData() {
       { child: "NG-0x19de", antigen: "Penta-2", due: "2026-10-14", days_late: 6, facility: "PHC-001", guardian_contact: "on-file" },
     ],
   };
-  return { facilities, events, overview, equipment, tickets, custody, immig, payers, kpi, readiness };
+  const anc = {
+    summary: { active_pregnancies: 412, contacts_due: 63, defaulters: 27, post_term: 3 },
+    contacts: [
+      { contact: 1, week: 12, done: 389, due: 410 },
+      { contact: 2, week: 20, done: 351, due: 398 },
+      { contact: 3, week: 26, done: 322, due: 371 },
+      { contact: 4, week: 30, done: 298, due: 340 },
+    ],
+    danger_signs: [
+      { sign: "severe_headache_blurred_vision", cases: 9, severity: "critical" },
+      { sign: "fever", cases: 21, severity: "major" },
+      { sign: "reduced_fetal_movement", cases: 6, severity: "major" },
+    ],
+  };
+  return { facilities, events, overview, equipment, tickets, custody, immig, anc, payers, kpi, readiness };
 }

@@ -5,7 +5,7 @@
 
 import { el } from "./dom.js";
 import { DataSource } from "./data.js";
-import { FacilityView, StateView, PayerView, MapView, EconomicsView, MLHealthView, ReadinessView, ImmunizationView, renderTicker } from "./views.js";
+import { FacilityView, StateView, PayerView, MapView, EconomicsView, MLHealthView, ReadinessView, ImmunizationView, MaternalView, renderTicker } from "./views.js";
 
 const REFRESH_MS = 30000;
 const ds = new DataSource();
@@ -36,6 +36,9 @@ function currentView() {
   if (h.startsWith("#/immig")) {
     return { name: "immig" };
   }
+  if (h.startsWith("#/maternal")) {
+    return { name: "maternal" };
+  }
   return { name: "state" };
 }
 
@@ -57,7 +60,8 @@ async function render() {
       (view.name === "map" && a.dataset.view === "map") ||
       (view.name === "economics" && a.dataset.view === "economics") ||
       (view.name === "mlhealth" && a.dataset.view === "mlhealth") ||
-      (view.name === "immig" && a.dataset.view === "immig"));
+      (view.name === "immig" && a.dataset.view === "immig") ||
+      (view.name === "maternal" && a.dataset.view === "maternal"));
   }
   const root = $("#board");
   root.innerHTML = "";
@@ -81,6 +85,7 @@ async function render() {
     : view.name === "mlhealth" ? MLHealthView(last)
     : view.name === "readiness" ? ReadinessView(last)
     : view.name === "immig" ? ImmunizationView(last)
+    : view.name === "maternal" ? MaternalView(last)
     : StateView(last));
   renderTicker($("#ticker-track"), last);
 

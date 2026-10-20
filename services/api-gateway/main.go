@@ -61,6 +61,9 @@ func DefaultRoutes(env func(string) string) []Route {
 		// Bulk Data $export (ADR-0054) must precede the /api/fhir catch-all:
 		// $export + bulkstatus + bulkfile all live on bulk-export-service.
 		{Prefix: "/api/fhir/$export", Service: "bulk-export-service", Upstream: up("BULK_EXPORT_URL", "http://bulk-export-service:8097"), ToPrefix: "/fhir/$export"},
+		// ADR-0056/57: CDS Hooks bus and terminology operations.
+		{Prefix: "/api/cds/", Service: "cds-service", Upstream: up("CDS_URL", "http://cds-service:8110"), ToPrefix: "/"},
+		{Prefix: "/api/terminology/", Service: "terminology-service", Upstream: up("TERMINOLOGY_URL", "http://terminology-service:8111"), ToPrefix: "/"},
 		{Prefix: "/api/fhir/bulkstatus/", Service: "bulk-export-service", Upstream: up("BULK_EXPORT_URL", "http://bulk-export-service:8097"), ToPrefix: "/fhir/bulkstatus/"},
 		{Prefix: "/api/fhir/bulkfile/", Service: "bulk-export-service", Upstream: up("BULK_EXPORT_URL", "http://bulk-export-service:8097"), ToPrefix: "/fhir/bulkfile/"},
 		{Prefix: "/api/fhir", Service: "shr-service", Upstream: up("SHR_URL", "http://shr-service:8085"), ToPrefix: "/fhir"},

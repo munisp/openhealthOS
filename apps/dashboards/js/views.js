@@ -694,6 +694,36 @@ export function ReadinessView(data) {
  * (ADR-0054). NPHCDA/WHO-DAK shape: coverage per EPI antigen, defaulter
  * outreach list (a late child is a CHW task, not a statistic), and the
  * population-scale FHIR export trigger for payers/regulators. */
+
+export function MaternalView(data) {
+  const anc = data.anc || { summary: {}, contacts: [], danger_signs: [] };
+  const page = el("div", { class: "page" });
+  const sum = anc.summary;
+  page.append(el("div", { class: "section-label" }, "Maternal health — ANC contacts, defaulters, danger signs"));
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(String(sum.active_pregnancies ?? 0), "Active pregnancies"),
+    kpi(String(sum.contacts_due ?? 0), "Contacts due", { kind: "warn" }),
+    kpi(String(sum.defaulters ?? 0), "Defaulters (>14d late)", { kind: sum.defaulters > 20 ? "crit" : "warn" }),
+    kpi(String(sum.post_term ?? 0), "Post-term (>42w)", { kind: sum.post_term > 0 ? "crit" : "good" })));
+  const card = el("div", { class: "card" }, el("div", { class: "card-title" }, "WHO 8-contact completion"));
+  for (const c of anc.contacts) {
+    card.append(el("div", { class: "hbar-row" },
+      el("span", {}, `Contact ${c.contact} (wk ${c.week})`),
+      hbar(c.due ? c.done / c.due : 0),
+      el("span", { class: "mono" }, `${c.done}/${c.due}`)));
+  }
+  page.append(card);
+  if (anc.danger_signs.length) {
+    const dc = el("div", { class: "card" }, el("div", { class: "card-title" }, "Danger-sign triage this month"));
+    for (const d of anc.danger_signs) {
+      dc.append(el("div", { class: `alert-card ${d.severity === "critical" ? "crit" : "warn"}` },
+        el("b", {}, d.sign.replaceAll("_", " ")), el("span", {}, ` — ${d.cases} cases`)));
+    }
+    page.append(dc);
+  }
+  return page;
+}
+
 export function ImmunizationView(data) {
   const immig = data.immig || { coverage: [], defaulters: [] };
   const page = el("div", { class: "page" });

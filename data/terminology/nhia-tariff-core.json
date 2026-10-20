@@ -1,0 +1,47 @@
+{
+ "url": "https://nhia.gov.ng/tariff",
+ "name": "NHIA tariff codes (core set)",
+ "version": "2026.1",
+ "concepts": [
+  {
+   "code": "CONS-GEN",
+   "display": "General outpatient consultation",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "CONS-SPEC",
+   "display": "Specialist consultation",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "MAT-NVD",
+   "display": "Normal vaginal delivery",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "MAT-CS",
+   "display": "Caesarean section",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "MAL-RDT",
+   "display": "Malaria rapid diagnostic test",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "MAL-ACT",
+   "display": "Uncomplicated malaria treatment (ACT)",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "IMM-ROUTINE",
+   "display": "Routine immunization session",
+   "system": "https://nhia.gov.ng/tariff"
+  },
+  {
+   "code": "LAB-FBC",
+   "display": "Full blood count",
+   "system": "https://nhia.gov.ng/tariff"
+  }
+ ]
+}

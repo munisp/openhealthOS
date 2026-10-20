@@ -1,0 +1,47 @@
+{
+ "url": "https://nafdac.gov.ng/drug-codes",
+ "name": "NAFDAC registered products (core formulary)",
+ "version": "2026.1",
+ "concepts": [
+  {
+   "code": "NG-AMOX500",
+   "display": "Amoxicillin capsule 500mg",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-ACT-AL",
+   "display": "Artemether/Lumefantrine tablet 20/120mg",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-PARA500",
+   "display": "Paracetamol tablet 500mg",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-AMLO5",
+   "display": "Amlodipine tablet 5mg",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-METF500",
+   "display": "Metformin tablet 500mg",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-OXYTOCIN",
+   "display": "Oxytocin injection 10IU/ml",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-MGSO4",
+   "display": "Magnesium sulfate injection 50%",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  },
+  {
+   "code": "NG-SALB100",
+   "display": "Salbutamol inhaler 100mcg",
+   "system": "https://nafdac.gov.ng/drug-codes"
+  }
+ ]
+}

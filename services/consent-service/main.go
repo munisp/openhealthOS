@@ -192,7 +192,10 @@ type ConsentService interface {
 	ForPatient(patientID string) []Consent
 }
 
-type server struct{ m ConsentService }
+type server struct {
+	m  ConsentService
+	px ProxyService
+}
 
 func writeJSON(w http.ResponseWriter, code int, v any) {
 	w.Header().Set("Content-Type", "application/json")
@@ -272,6 +275,7 @@ func (s server) routes() *http.ServeMux {
 		sort.Slice(audit, func(i, j int) bool { return i < j }) // insertion order
 		writeJSON(w, 200, audit)
 	})
+	proxyServer{s.px}.routes(mux)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }

@@ -35,7 +35,7 @@ func main() {
 	} else {
 		log.Print("consent storage: in-memory (set DATABASE_URL for postgres)")
 	}
-	s := server{m: svc}
+	s := server{m: svc, px: NewProxyManager(key)}
 	log.Printf("OpenHealth OS consent-service on %s (HIE-CM pattern)", addr)
 	handler := http.Handler(s.routes())
 	authV, authErr := authz.RequireFromEnv(os.Getenv)

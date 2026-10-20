@@ -13,6 +13,7 @@
 package main
 
 import (
+	"os"
 	"bytes"
 	"encoding/json"
 	"errors"
@@ -295,6 +296,12 @@ func (s server) routes() *http.ServeMux {
 	// IPS document + SMART Health Links (ADR-0054) — patient-self or
 	// consented access, same gates as $everything.
 	newIPSHandler(s.store, "").routes(mux)
+	consentBase := os.Getenv("OH_CONSENT_BASE")
+	selfID := os.Getenv("OH_FACILITY_ID")
+	if selfID == "" {
+		selfID = "OHF-LOCAL"
+	}
+	newFederationHandler(s.store, HTTPConsentChecker{BaseURL: consentBase}, selfID, federationPeersFromEnv()).routes(mux)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }
