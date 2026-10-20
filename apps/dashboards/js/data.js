@@ -172,6 +172,7 @@ export class DataSource {
       facilities: "/api/registry/facilities",
       equipment: "/api/equipment/equipment",
       tickets: "/api/equipment/tickets",
+      custody: "/api/equipment/custody",
       payers: "/api/claims/payers/stats",
       kpi: "/api/kpi/plane",
       readiness: "/api/readiness/readiness",
@@ -383,6 +384,11 @@ export function demoData() {
     { id: `${f.id}-solar`, facility: f.id, kind: "solar array", status: Math.random() < 0.85 ? "working" : "down", telemetry: { battery_soc_pct: 30 + Math.random() * 70 } },
     { id: `${f.id}-tank`, facility: f.id, kind: "water tank", status: "working", telemetry: { water_tank_pct: 15 + Math.random() * 85 } },
   ]);
+  const custody = [
+    { at: new Date(now - 3600000).toISOString(), asset: "HOS-001-autoclave", facility: "HOS-001", action: "transfer", actor: "tech.musa", location: "theatre-2", notes: "Moved for theatre list" },
+    { at: new Date(now - 7200000).toISOString(), asset: "PHC-003-solar", facility: "PHC-003", action: "maintenance_flag", actor: "nurse.amina", location: "plant-room", notes: "Inverter trips under load" },
+    { at: new Date(now - 90000000).toISOString(), asset: "PHC-005-fridge", facility: "PHC-005", action: "locate", actor: "stocktake.sweep", location: "cold-room", notes: "" },
+  ];
   const tickets = [
     { id: "TK-101", facility: "PHC-005", equipment: "cold-chain fridge", status: "open", opened: new Date(now - 2 * 86400000).toISOString(), note: "Compressor fault — temp drifting" },
     { id: "TK-102", facility: "PHC-003", equipment: "solar inverter", status: "assigned", opened: new Date(now - 86400000).toISOString(), note: "Inverter trips under load" },
@@ -482,5 +488,5 @@ export function demoData() {
         computed_at: new Date(now).toISOString() },
     ],
   };
-  return { facilities, events, overview, equipment, tickets, payers, kpi, readiness };
+  return { facilities, events, overview, equipment, tickets, custody, payers, kpi, readiness };
 }

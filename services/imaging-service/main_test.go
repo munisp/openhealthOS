@@ -15,6 +15,8 @@ func newTestServer(t *testing.T, pacs *httptest.Server) server {
 		pacs:     NewPACSClient(pacs.URL),
 		worklist: NewWorklist(),
 		videos:   NewVideoQueue(nil),
+		mwl:      NewMWL(time.Now),
+		devices:  NewDeviceIngest("", time.Now),
 		now:      time.Now,
 	}
 }

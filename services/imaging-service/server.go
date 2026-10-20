@@ -18,6 +18,8 @@ type server struct {
 	pacs     *PACSClient
 	worklist *Worklist
 	videos   *VideoQueue
+	mwl      *MWL
+	devices  *DeviceIngest
 	now      func() time.Time
 }
 
@@ -47,6 +49,76 @@ func (s server) routes(mux *http.ServeMux) {
 	mux.HandleFunc("POST /videos", s.enqueueVideo)
 	mux.HandleFunc("GET /videos/{id}", s.videoStatus)
 	mux.HandleFunc("POST /videos/{id}/update", s.updateVideo) // worker callback
+	// Modality worklist — devices pull today's scheduled procedures (ADR-0052).
+	mux.HandleFunc("GET /mwl", s.queryMWL)
+	mux.HandleFunc("POST /mwl", s.scheduleMWL)
+	mux.HandleFunc("POST /mwl/{id}/status", s.advanceMWL)
+	// Point-of-care device ingest → FHIR Observation → SHR (fail-soft).
+	mux.HandleFunc("POST /devices/readings", s.ingestReading)
+	mux.HandleFunc("GET /devices/stats", s.deviceStats)
+}
+
+// --------------------------------------------------------------- MWL / devices
+
+func (s server) queryMWL(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	activeOnly := q.Get("active") == "true"
+	writeJSON(w, 200, map[string]any{
+		"items": s.mwl.Query(q.Get("modality"), q.Get("station"), q.Get("date"), activeOnly),
+	})
+}
+
+func (s server) scheduleMWL(w http.ResponseWriter, r *http.Request) {
+	var it WorklistItem
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&it); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad json"})
+		return
+	}
+	it, err := s.mwl.Schedule(it)
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 201, it)
+}
+
+func (s server) advanceMWL(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Status string `json:"status"`
+		Actor  string `json:"actor"`
+	}
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&body); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad json"})
+		return
+	}
+	it, err := s.mwl.Advance(r.PathValue("id"), body.Status, body.Actor)
+	if errors.Is(err, errMWLNotFound) {
+		writeJSON(w, 404, map[string]string{"error": err.Error()})
+		return
+	}
+	if err != nil {
+		writeJSON(w, 409, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 200, it)
+}
+
+func (s server) ingestReading(w http.ResponseWriter, r *http.Request) {
+	var dr DeviceReading
+	if err := json.NewDecoder(io.LimitReader(r.Body, 1<<20)).Decode(&dr); err != nil {
+		writeJSON(w, 400, map[string]string{"error": "bad json"})
+		return
+	}
+	ob, forwarded, err := s.devices.Ingest(dr)
+	if err != nil {
+		writeJSON(w, 400, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, 202, map[string]any{"observation": ob, "forwarded": forwarded})
+}
+
+func (s server) deviceStats(w http.ResponseWriter, r *http.Request) {
+	writeJSON(w, 200, s.devices.Stats())
 }
 
 // --------------------------------------------------------------- PACS seam
@@ -288,6 +360,8 @@ func main() {
 		pacs:     NewPACSClient(orthanc),
 		worklist: NewWorklist(),
 		videos:   NewVideoQueue(nil), // queue-dir sink wired in deploy
+		mwl:      NewMWL(time.Now),
+		devices:  NewDeviceIngest(os.Getenv("SHR_URL"), time.Now),
 		now:      time.Now,
 	}
 	mux := http.NewServeMux()

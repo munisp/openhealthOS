@@ -134,7 +134,22 @@ export function FacilityView(data, facilityId) {
       el("div", { class: "alert-ts" }, `opened ${new Date(t.opened).toLocaleString()}`)));
   }
 
-  page.append(el("div", { class: "grid-2" }, infra, activity), tk);
+  // asset custody spine (ADR-0052): every signed-tag scan, newest first.
+  const custody = (data.custody || []).filter((c) => c.facility === f.id)
+    .sort((a, b) => Date.parse(b.at) - Date.parse(a.at)).slice(0, 8);
+  const cd = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Asset custody — who had it last (signed-tag scans)"));
+  if (!custody.length) cd.append(el("div", { class: "empty" }, "No scans yet — mint tags, then sweep with a barcode scanner."));
+  for (const c of custody) {
+    cd.append(el("div", { class: `alert-card ${c.action === "maintenance_flag" ? "warn" : "ok"}` },
+      el("div", { class: "alert-head" },
+        el("span", { class: `sev-${c.action === "maintenance_flag" ? "warn" : "ok"}` }, c.action),
+        el("span", { class: "mono" }, c.asset)),
+      el("div", { class: "alert-msg" }, `${c.actor}${c.location ? " → " + c.location : ""}${c.notes ? " — " + c.notes : ""}${c.stale_tag ? " (stale tag — re-label)" : ""}`),
+      el("div", { class: "alert-ts" }, new Date(c.at).toLocaleString())));
+  }
+
+  page.append(el("div", { class: "grid-2" }, infra, activity), tk, cd);
   return page;
 }
 

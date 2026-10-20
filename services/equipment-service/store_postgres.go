@@ -273,3 +273,91 @@ func (p *PostgresService) AutoResolve(ticketID string) error {
 	}
 	return tx.Commit(ctx)
 }
+
+// --------------------------------------------------------- tags & custody (ADR-0052)
+
+// Now reports wall time — the Postgres store has no injected clock.
+func (p *PostgresService) Now() time.Time { return time.Now() }
+
+// Scan verifies the signed tag, updates equipment.location, and appends an
+// immutable custody_events row — all in one transaction so the location can
+// never drift from its evidence.
+func (p *PostgresService) Scan(tag, action, actor, location, notes string) (CustodyEvent, error) {
+	now := time.Now()
+	t, err := VerifyTag(tag, now)
+	if err != nil {
+		return CustodyEvent{}, err
+	}
+	if !scanActions[action] {
+		return CustodyEvent{}, fmt.Errorf("unknown action %q", action)
+	}
+	if actor == "" {
+		return CustodyEvent{}, errors.New("actor required — the audit names who")
+	}
+	ctx, cancel := pgCtx()
+	defer cancel()
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return CustodyEvent{}, err
+	}
+	defer tx.Rollback(ctx)
+	var status string
+	err = tx.QueryRow(ctx, "SELECT status FROM equipment WHERE id=$1 FOR UPDATE", t.Asset).Scan(&status)
+	if err == pgx.ErrNoRows {
+		return CustodyEvent{}, ErrNotFound
+	}
+	if err != nil {
+		return CustodyEvent{}, err
+	}
+	if location != "" {
+		if _, err := tx.Exec(ctx, "UPDATE equipment SET location=$1 WHERE id=$2", location, t.Asset); err != nil {
+			return CustodyEvent{}, err
+		}
+	}
+	if action == "maintenance_flag" && status == "working" {
+		if _, err := tx.Exec(ctx, "UPDATE equipment SET status='in-maintenance' WHERE id=$1", t.Asset); err != nil {
+			return CustodyEvent{}, err
+		}
+	}
+	ev := CustodyEvent{
+		At: now.UTC().Format(time.RFC3339), Asset: t.Asset,
+		Facility: t.Facility, Action: action, Actor: actor,
+		Location: location, Notes: notes, StaleTag: t.Stale,
+	}
+	if _, err := tx.Exec(ctx,
+		`INSERT INTO custody_events (asset_id, facility, action, actor, location, notes, stale_tag, scanned_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		ev.Asset, ev.Facility, ev.Action, ev.Actor, ev.Location, ev.Notes, ev.StaleTag, now); err != nil {
+		return CustodyEvent{}, err
+	}
+	return ev, tx.Commit(ctx)
+}
+
+// CustodyLog reads the audit spine, newest first; assetID "" = all assets.
+func (p *PostgresService) CustodyLog(assetID string) []CustodyEvent {
+	ctx, cancel := pgCtx()
+	defer cancel()
+	q := `SELECT scanned_at, asset_id, facility, action, actor, location, notes, stale_tag
+	      FROM custody_events`
+	args := []any{}
+	if assetID != "" {
+		q += " WHERE asset_id=$1"
+		args = append(args, assetID)
+	}
+	q += " ORDER BY scanned_at DESC, id DESC LIMIT 500"
+	rows, err := p.pool.Query(ctx, q, args...)
+	if err != nil {
+		return []CustodyEvent{}
+	}
+	defer rows.Close()
+	out := []CustodyEvent{}
+	for rows.Next() {
+		var ev CustodyEvent
+		var at time.Time
+		if rows.Scan(&at, &ev.Asset, &ev.Facility, &ev.Action, &ev.Actor, &ev.Location, &ev.Notes, &ev.StaleTag) == nil {
+			ev.At = at.UTC().Format(time.RFC3339)
+			out = append(out, ev)
+		}
+	}
+	return out
+}

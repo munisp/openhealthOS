@@ -27,6 +27,7 @@ type Equipment struct {
 	Status   string `json:"status"` // working | down | in-maintenance | condemned
 	Donated  bool   `json:"donated"`
 	IntakeAt string `json:"intake_at"`
+	Location string `json:"location,omitempty"` // ward/room — set by tag scans (ADR-0052)
 }
 
 // Ticket is one maintenance work order.
@@ -62,6 +63,7 @@ type Service struct {
 	equip   map[string]*Equipment
 	tickets map[string]*Ticket
 	techs   map[string]*Technician
+	custody []CustodyEvent // scan audit spine (ADR-0052)
 	seq     int
 	now     func() time.Time
 }
@@ -234,7 +236,14 @@ type EquipmentService interface {
 	AutoResolve(ticketID string) error
 	GetEquipment(id string) (Equipment, error)
 	ListTickets(status string) []Ticket
+	// ADR-0052: signed tag scans + custody spine.
+	Scan(tag, action, actor, location, notes string) (CustodyEvent, error)
+	CustodyLog(assetID string) []CustodyEvent
+	Now() time.Time
 }
+
+// Now exposes the service clock (tests pin it).
+func (s *Service) Now() time.Time { return s.now() }
 
 var _ EquipmentService = (*Service)(nil)
 
@@ -337,6 +346,51 @@ func (s server) routes() *http.ServeMux {
 		}
 	})
 	readingRoute(mux, s.svc)
+	// Asset tags + scans (ADR-0052): print a signed QR for an asset,
+	// then scan it to locate / transfer / flag maintenance. The tag is
+	// HMAC-verified offline; every scan lands on the custody spine.
+	mux.HandleFunc("POST /equipment/{id}/tag", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		eq, err := s.svc.GetEquipment(id)
+		if err != nil {
+			http.Error(w, `{"error":"unknown equipment"}`, http.StatusNotFound)
+			return
+		}
+		tag, err := MintTag(eq.Facility, eq.ID, s.svc.Now())
+		if err != nil {
+			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusServiceUnavailable)
+			return
+		}
+		writeJSON(w, 201, map[string]string{"equipment_id": id, "tag": tag})
+	})
+	mux.HandleFunc("POST /scan", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Tag      string `json:"tag"`
+			Action   string `json:"action"`
+			Actor    string `json:"actor"`
+			Location string `json:"location"`
+			Notes    string `json:"notes"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			http.Error(w, `{"error":"bad json"}`, http.StatusBadRequest)
+			return
+		}
+		ev, err := s.svc.Scan(body.Tag, body.Action, body.Actor, body.Location, body.Notes)
+		if err != nil {
+			code := http.StatusBadRequest
+			if errors.Is(err, ErrTagDisabled) {
+				code = http.StatusServiceUnavailable
+			} else if errors.Is(err, ErrNotFound) {
+				code = http.StatusNotFound
+			}
+			http.Error(w, `{"error":"`+err.Error()+`"}`, code)
+			return
+		}
+		writeJSON(w, 200, ev)
+	})
+	mux.HandleFunc("GET /custody", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, 200, map[string]any{"events": s.svc.CustodyLog(r.URL.Query().Get("asset"))})
+	})
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }

@@ -82,6 +82,16 @@ test("demoData is internally consistent", () => {
   }
 });
 
+test("demoData custody spine is well-formed (ADR-0052)", () => {
+  const d = demoData();
+  assert.ok(Array.isArray(d.custody) && d.custody.length > 0);
+  for (const c of d.custody) {
+    assert.ok(c.asset && c.actor && c.action && c.at, `bad custody event ${JSON.stringify(c)}`);
+    assert.ok(["locate", "transfer", "maintenance_flag", "check_in"].includes(c.action), `bad action ${c.action}`);
+    assert.ok(d.facilities.some((f) => f.id === c.facility), `orphan custody ${c.asset}`);
+  }
+});
+
 /* ---------- payer board transforms (ADR-0012) ---------- */
 
 test("payerRows: rates, shares, unmapped visibility", async () => {
