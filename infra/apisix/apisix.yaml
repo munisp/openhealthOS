@@ -1,0 +1,105 @@
+# APISIX declarative config (standalone mode — no etcd; offline-doctrine
+# friendly: reload from this file, no control-plane dependency) — ADR-0062.
+# APISIX is Apache-2.0; composed, never forked (ADR-0005).
+#
+# Boundary: APISIX fronts ONLY north-south third-party traffic at the state
+# plane. Facility-edge internal routing stays on Caddy + the Go api-gateway
+# (ADR-0042); they answer different questions and run in different places.
+
+upstreams:
+  - id: claims-gw
+    type: roundrobin
+    nodes: { "claims-orchestrator:8080": 1 }
+  - id: fhir-shr
+    type: roundrobin
+    nodes: { "shr-service:8080": 1 }
+  - id: cds
+    type: roundrobin
+    nodes: { "cds-service:8110": 1 }
+  - id: terminology
+    type: roundrobin
+    nodes: { "terminology-service:8111": 1 }
+  - id: bulk
+    type: roundrobin
+    nodes: { "bulk-export-service:8097": 1 }
+  - id: api-gw-internal   # everything already proxied by the Go gateway
+    type: roundrobin
+    nodes: { "api-gateway:8080": 1 }
+
+routes:
+  # ---- payer / insurer: claims gateway ----
+  - uri: /api/claims/*
+    upstream_id: claims-gw
+    plugins:
+      openid-connect:              # SMART Backend Services via Keycloak
+        discovery: ${KEYCLOAK_DISCOVERY}
+        client_id: apisix-gateway
+        client_secret: ${APISIX_OIDC_SECRET}
+        bearer_only: true          # machine tokens only; no login flow here
+      proxy-rewrite: { regex_uri: ["^/api/claims/(.*)", "/claims/$1"] }
+      limit-count: { count: 600, time_window: 60, rejected_code: 429, key: consumer_name }
+      request-id: { include_in_response: true }
+      prometheus: {}
+  # ---- labs / pharmacies / vendors: FHIR resource APIs ----
+  - uri: /api/fhir/$export
+    upstream_id: bulk
+    plugins:
+      openid-connect: { discovery: ${KEYCLOAK_DISCOVERY}, client_id: apisix-gateway, client_secret: ${APISIX_OIDC_SECRET}, bearer_only: true }
+      limit-count: { count: 10, time_window: 60, rejected_code: 429, key: consumer_name }
+      request-id: { include_in_response: true }
+      prometheus: {}
+  - uri: /api/fhir/bulk*
+    upstream_id: bulk
+    plugins:
+      openid-connect: { discovery: ${KEYCLOAK_DISCOVERY}, client_id: apisix-gateway, client_secret: ${APISIX_OIDC_SECRET}, bearer_only: true }
+      prometheus: {}
+  - uri: /api/fhir/*
+    upstream_id: fhir-shr
+    plugins:
+      openid-connect: { discovery: ${KEYCLOAK_DISCOVERY}, client_id: apisix-gateway, client_secret: ${APISIX_OIDC_SECRET}, bearer_only: true }
+      limit-count: { count: 300, time_window: 60, rejected_code: 429, key: consumer_name }
+      request-id: { include_in_response: true }
+      prometheus: {}
+  # ---- CDS hooks bus ----
+  - uri: /api/cds/*
+    upstream_id: cds
+    plugins:
+      openid-connect: { discovery: ${KEYCLOAK_DISCOVERY}, client_id: apisix-gateway, client_secret: ${APISIX_OIDC_SECRET}, bearer_only: true }
+      proxy-rewrite: { regex_uri: ["^/api/cds/(.*)", "/$1"] }
+      limit-count: { count: 300, time_window: 60, rejected_code: 429, key: consumer_name }
+      prometheus: {}
+  # ---- terminology validation ----
+  - uri: /api/terminology/*
+    upstream_id: terminology
+    plugins:
+      openid-connect: { discovery: ${KEYCLOAK_DISCOVERY}, client_id: apisix-gateway, client_secret: ${APISIX_OIDC_SECRET}, bearer_only: true }
+      proxy-rewrite: { regex_uri: ["^/api/terminology/(.*)", "/$1"] }
+      limit-count: { count: 600, time_window: 60, rejected_code: 429, key: consumer_name }
+      prometheus: {}
+  # ---- catch-all: internal Go gateway (backwards compatibility during
+  # migration; removed once integrators move to the explicit routes) ----
+  - uri: /api/*
+    upstream_id: api-gw-internal
+    priority: -1
+    plugins:
+      openid-connect: { discovery: ${KEYCLOAK_DISCOVERY}, client_id: apisix-gateway, client_secret: ${APISIX_OIDC_SECRET}, bearer_only: true }
+      prometheus: {}
+
+# Consumers: one per onboarded third party (integration guide §2). Secrets
+# are env-injected at deploy; NEVER committed. Scope enforcement: consumer
+# groups map to Keycloak client profiles; a consumer without the payer group
+# hitting /api/claims/* gets 403 from the upstream claim checks as the
+# second line (defence in depth).
+consumers:
+  - username: example-payer        # replaced per deployment
+    plugins:
+      key-auth: { key: ${CONSUMER_KEY_EXAMPLE} }
+      limit-count: { count: 600, time_window: 60, rejected_code: 429 }
+
+global_rules:
+  - id: 1
+    plugins:
+      cors: { allow_origins: "*", allow_methods: "GET,POST,OPTIONS", allow_headers: "Authorization,Content-Type,X-Idempotency-Key" }
+      real-ip: { source: http_x_forwarded_for, trusted_addresses: ["10.0.0.0/8"] }
+
+#END

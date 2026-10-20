@@ -334,6 +334,20 @@ services:
 
   # Single public entry: all external traffic enters through the gateway;
   # per-service ports above are for development convenience only.
+  apisix:
+    image: apache/apisix:3.11.0-debian
+    environment:
+      APISIX_STAND_ALONE: "true"
+      KEYCLOAK_DISCOVERY: ${KEYCLOAK_DISCOVERY:-http://keycloak:8080/realms/openhealth/.well-known/openid-configuration}
+      APISIX_OIDC_SECRET: ${APISIX_OIDC_SECRET:?set per deployment}
+      CONSUMER_KEY_EXAMPLE: ${CONSUMER_KEY_EXAMPLE:-}
+    volumes:
+      - ../apisix/apisix.yaml:/usr/local/apisix/conf/apisix.yaml:ro
+    ports:
+      - "9180:9180"   # third-party ingress (TLS terminator in front in prod)
+    depends_on: [claims-orchestrator, api-gateway]
+    restart: unless-stopped
+
   api-gateway:
     build:
       context: ../..

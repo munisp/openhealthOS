@@ -6,7 +6,8 @@ health-tech vendors, research/analytics consumers.
 
 ## 1. The integration model in one paragraph
 
-Third parties integrate over **FHIR R4 APIs at the state-plane gateway**,
+Third parties integrate over **FHIR R4 APIs at the state-plane gateway —
+Apache APISIX, standalone declarative mode (ADR-0062)**,
 authenticated with **SMART Backend Services (OAuth2 client_credentials)**,
 with **least-privilege scopes per stakeholder class**, **idempotency keys on
 every mutation**, and **sandbox-first onboarding**. The Python SDK
@@ -24,7 +25,10 @@ only door, which is what makes the security model auditable.
 3. **Sandbox**: synthetic tenant seeded by `synthseed` — realistic data,
    zero PHI. Conformance suite must pass before production credentials.
 4. **Production credentials** issued; mTLS optional at the gateway for
-   payer-class clients.
+   payer-class clients. Gateway behaviours you can rely on: `401` expired
+   token, `403` insufficient scope, `429` per-consumer rate limit (600/min
+   claims, 300/min FHIR, 10/min bulk), `X-Request-Id` echoed on every
+   response — quote it in support tickets.
 5. **Go-live checklist**: idempotency discipline demonstrated, error
    handling honest (no silent retries), rate limits accepted.
 
