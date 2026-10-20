@@ -52,7 +52,7 @@ func main() {
 		log.Print("oidc: enforcing bearer auth (claims carry facility attribution)")
 	}
 	log.Printf("OpenHealth OS shr-service on %s (FHIR store + consent enforcement)", addr)
-	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
+	log.Fatal(servex.InstrumentedListenAndServe("shr-service", os.Getenv, addr, handler))
 }
 
 // denyAll fails closed when no consent service is configured: a missing

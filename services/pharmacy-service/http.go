@@ -153,7 +153,7 @@ func main() {
 	}
 	log := func(msg string) { println("pharmacy-service:", msg) }
 	log("listening on " + addr)
-	if err := servex.ListenAndServe(addr, handler, servex.Options{}); err != nil {
+	if err := servex.InstrumentedListenAndServe("pharmacy-service", os.Getenv, addr, handler); err != nil {
 		panic(err)
 	}
 }

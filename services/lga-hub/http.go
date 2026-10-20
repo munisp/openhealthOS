@@ -261,7 +261,7 @@ func main() {
 		mode = "forwarding to " + h.upstream
 	}
 	log.Printf("lga-hub: %s listening on %s (%s)", hubID, addr, mode)
-	if err := servex.ListenAndServe(addr, handler, servex.Options{}); err != nil {
+	if err := servex.InstrumentedListenAndServe("lga-hub", os.Getenv, addr, handler); err != nil {
 		panic(err)
 	}
 }

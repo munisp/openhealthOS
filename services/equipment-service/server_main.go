@@ -41,5 +41,5 @@ func main() {
 		handler = authV.Middleware(handler)
 		log.Print("oidc: enforcing bearer auth")
 	}
-	log.Fatal(servex.ListenAndServe(addr, handler, servex.Options{}))
+	log.Fatal(servex.InstrumentedListenAndServe("equipment-service", os.Getenv, addr, handler))
 }

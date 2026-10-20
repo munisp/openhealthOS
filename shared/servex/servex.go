@@ -128,6 +128,21 @@ func (o Options) withDefaults() Options {
 	return o
 }
 
+// InstrumentedListenAndServe is ListenAndServe plus the ADR-0040
+// observability wiring: OTel traces, per-tenant RED metrics and a
+// Prometheus /metrics endpoint; the legacy JSON metrics endpoint moves to
+// /metrics-legacy. One line per service:
+//
+//	log.Fatal(servex.InstrumentedListenAndServe("my-service", os.Getenv, addr, handler))
+func InstrumentedListenAndServe(service string, env func(string) string, addr string, handler http.Handler) error {
+	exp, mx := otelx.Instrument(service, env)
+	metricsMux := http.NewServeMux()
+	metricsMux.Handle("/metrics", mx.Handler())
+	metricsMux.Handle("/", handler)
+	handler = otelx.MiddlewareMetrics(service, exp, mx, metricsMux)
+	return ListenAndServe(addr, handler, Options{MetricsPath: "/metrics-legacy"})
+}
+
 // ListenAndServe serves handler with timeouts, metrics and graceful
 // shutdown. Returns nil on a clean signal-driven stop.
 func ListenAndServe(addr string, handler http.Handler, opts Options) error {
