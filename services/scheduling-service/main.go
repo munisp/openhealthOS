@@ -114,6 +114,8 @@ type Store interface {
 	DayList(facilityID, date string) []Appointment
 	Waitlist(patientID, facilityID, service string, now time.Time) (WaitlistEntry, error)
 	WaitlistFor(facilityID, service string) []WaitlistEntry
+	// FacilityIDs enumerates facilities that have schedules (recommender).
+	FacilityIDs() []string
 }
 
 // ---------------------------------------------------------------- memory
@@ -262,6 +264,23 @@ func (m *MemoryStore) Slots(facilityID, service, from, to string) []Slot {
 
 // bookable enforces the booking window: not in the past, not beyond
 // BookingWindowDays ahead.
+
+// FacilityIDs lists every facility with at least one schedule.
+func (m *MemoryStore) FacilityIDs() []string {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range m.schedules {
+		if !seen[s.FacilityID] {
+			seen[s.FacilityID] = true
+			out = append(out, s.FacilityID)
+		}
+	}
+	sort.Strings(out)
+	return out
+}
+
 func bookable(sl *Slot, now time.Time) error {
 	st, err := time.Parse(time.RFC3339, sl.Start)
 	if err != nil {

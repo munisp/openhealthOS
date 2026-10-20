@@ -184,3 +184,28 @@ class FraudDetector:
                     if h.get("provider_id") == provider and _day(h.get("ts", "")) == day) + 1
         z = _z(today, list(by_day.values()))
         return z if z is not None and z >= self.cfg["z_threshold"] else None
+
+
+def main(argv=None) -> int:
+    """CLI: the claims-orchestrator pre-payment gate (innovation 7) shells
+    out exactly like the adjudicator does — claim + history JSON on stdin,
+    recommendation JSON on stdout. Rules are authoritative; PEND means a
+    human reviews before money moves, never an auto-deny."""
+    import argparse
+    import json as _json
+    import sys as _sys
+
+    ap = argparse.ArgumentParser(description="fraud scoring CLI")
+    ap.parse_args(argv)
+    req = _json.load(_sys.stdin)
+    det = FraudDetector(config=req.get("config"))
+    rec = det.analyze(req.get("claim", {}), req.get("history", []))
+    _json.dump({
+        "claim_id": rec.claim_id, "action": rec.action,
+        "reasons": rec.reasons, "score": rec.score, "detail": rec.detail,
+    }, _sys.stdout)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -109,6 +109,77 @@ def collect(path: str, sources: list[str]) -> int:
     return added
 
 
+
+# --- Merkle anchoring (innovation 10) ---------------------------------------
+#
+# The hash chain proves the log is internally consistent, but an attacker
+# with write access could rewrite the WHOLE chain and recompute every
+# link. Anchoring closes that: periodically fold the entry hashes into a
+# Merkle root and commit the root to an append-only anchors file (which
+# can be printed, emailed, or published off-box — a root you no longer
+# control the history of). Any later rewrite changes the root and is
+# caught by verify-anchor.
+
+
+def merkle_root(hashes: list[str]) -> str:
+    """Binary Merkle root over hex hashes; odd layers duplicate the last
+    leaf (standard Bitcoin-style rule). Empty set anchors GENESIS."""
+    if not hashes:
+        return GENESIS
+    layer = [bytes.fromhex(h) for h in hashes]
+    while len(layer) > 1:
+        if len(layer) % 2 == 1:
+            layer.append(layer[-1])
+        layer = [
+            hashlib.sha256(layer[i] + layer[i + 1]).digest()
+            for i in range(0, len(layer), 2)
+        ]
+    return layer[0].hex()
+
+
+def anchor(log_path: str, anchors_path: str) -> dict:
+    """Fold every entry hash in the log into one root and append it.
+
+    The anchor records how many entries it covers, so partial rewrites
+    after the fact are as detectable as content edits."""
+    entries = read_log(log_path)
+    count, problems = verify(log_path)
+    if problems:
+        raise SystemExit(f"refusing to anchor a broken chain: {problems[0]}")
+    root = merkle_root([e["hash"] for e in entries])
+    rec = {
+        "ts": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
+        "entries": count,
+        "root": root,
+    }
+    with open(anchors_path, "a") as fh:
+        fh.write(json.dumps(rec, sort_keys=True) + "\n")
+    return rec
+
+
+def verify_anchor(log_path: str, anchors_path: str) -> tuple[bool, str]:
+    """Recompute the root over the first N entries for each anchor and
+    confirm the log still matches every anchor on record."""
+    try:
+        with open(anchors_path) as fh:
+            anchors = [json.loads(l) for l in fh if l.strip()]
+    except FileNotFoundError:
+        return False, "no anchors on record"
+    entries = read_log(log_path)
+    # Content/chain integrity first: a tampered entry whose stale stored
+    # hash still matches the anchor must not pass.
+    _, problems = verify(log_path)
+    if problems:
+        return False, f"chain integrity failure: {problems[0]}"
+    for a in anchors:
+        n = a["entries"]
+        if len(entries) < n:
+            return False, f"anchor@{a['ts']}: log has {len(entries)} entries, anchor covers {n} (tail deleted)"
+        root = merkle_root([e["hash"] for e in entries[:n]])
+        if root != a["root"]:
+            return False, f"anchor@{a['ts']}: root mismatch over first {n} entries (history rewritten)"
+    return True, f"{len(anchors)} anchor(s) hold"
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="tamper-evident audit lake")
     sub = ap.add_subparsers(dest="cmd", required=True)
@@ -122,6 +193,12 @@ def main(argv=None) -> int:
     c.add_argument("--from", dest="sources", nargs="+", required=True)
     v = sub.add_parser("verify")
     v.add_argument("log")
+    an = sub.add_parser("anchor")
+    an.add_argument("log")
+    an.add_argument("anchors")
+    va = sub.add_parser("verify-anchor")
+    va.add_argument("log")
+    va.add_argument("anchors")
     args = ap.parse_args(argv)
 
     if args.cmd == "append":
@@ -131,6 +208,14 @@ def main(argv=None) -> int:
     if args.cmd == "collect":
         print(f"collected {collect(args.log, args.sources)} new events")
         return 0
+    if args.cmd == "anchor":
+        rec = anchor(args.log, args.anchors)
+        print(f"anchored {rec['entries']} entries root={rec['root'][:16]}…")
+        return 0
+    if args.cmd == "verify-anchor":
+        ok, msg = verify_anchor(args.log, args.anchors)
+        print(msg)
+        return 0 if ok else 1
     count, problems = verify(args.log)
     if problems:
         print(f"INTEGRITY FAILURE — {count} entries, {len(problems)} problems:")

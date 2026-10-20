@@ -61,6 +61,10 @@ type Linkage struct {
 type ClaimResponse struct {
 	ClaimID    string   `json:"claim_id"`
 	Decision   string   `json:"decision"`
+	// Fraud gate outcomes (innovation 7) — visible to the caller, never silent.
+	FraudScore   float64  `json:"fraud_score,omitempty"`
+	FraudReasons []string `json:"fraud_reasons,omitempty"`
+	FraudNote    string   `json:"fraud_note,omitempty"`
 	Reasons    []string `json:"reasons"`
 	Flags      []string `json:"flags"`
 	AllowedNGN int      `json:"allowed_ngn"`

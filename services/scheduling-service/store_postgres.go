@@ -438,6 +438,24 @@ func (p *PostgresStore) Waitlist(patientID, facilityID, service string, now time
 	return e, tx.Commit(ctx)
 }
 
+// FacilityIDs lists every facility with at least one schedule.
+func (p *PostgresStore) FacilityIDs() []string {
+	rows, err := p.pool.Query(context.Background(),
+		`SELECT DISTINCT facility_id FROM sched_schedules ORDER BY facility_id`)
+	if err != nil {
+		return nil
+	}
+	defer rows.Close()
+	var out []string
+	for rows.Next() {
+		var id string
+		if rows.Scan(&id) == nil {
+			out = append(out, id)
+		}
+	}
+	return out
+}
+
 func (p *PostgresStore) WaitlistFor(facilityID, service string) []WaitlistEntry {
 	q := `SELECT id, patient_id, facility_id, service, created_at FROM sched_waitlist WHERE facility_id=$1`
 	args := []any{facilityID}

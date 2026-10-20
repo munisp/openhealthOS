@@ -91,6 +91,59 @@ class Surveillance:
                                 f"{syn} ×{count} in {area} over {spec['window_days']}d"))
         return alerts
 
+    # --- adaptive baseline (innovation 3) --------------------------------
+    # Static thresholds miss what a baseline catches: a syndrome that is
+    # unusual FOR THIS AREA. Each (syndrome, area) cell keeps a trailing
+    # baseline of weekly totals; an alert fires when the current window's
+    # count exceeds mean + Z_SIGMA * stdev of the baseline. Cells with too
+    # little history fall back to the static threshold — honesty over
+    # sophistication.
+
+    Z_SIGMA = 3.0
+    BASELINE_WEEKS = 8
+    MIN_BASELINE_WEEKS = 4
+
+    def baseline_weeks(self, syn: str, area: str, today: datetime) -> list[int]:
+        """Trailing weekly totals for the cell, excluding the current week."""
+        days = self.buckets.get((syn, area), {})
+        out: list[int] = []
+        for w in range(1, self.BASELINE_WEEKS + 1):
+            lo = (today - timedelta(days=7 * (w + 1))).isoformat()[:10]
+            hi = (today - timedelta(days=7 * w)).isoformat()[:10]
+            out.append(sum(c for d, c in days.items() if lo < d <= hi))
+        return out
+
+    def evaluate_adaptive(self, today: datetime) -> list[Alert]:
+        """Z-score burst detection per (syndrome, area), on top of the
+        static thresholds. An area with a historically busy syndrome needs
+        a bigger surge to alert than a quiet one — alarm fatigue is the
+        enemy of surveillance."""
+        alerts: list[Alert] = []
+        for (syn, area), days in self.buckets.items():
+            spec = SYNDROMES[syn]
+            cutoff = (today - timedelta(days=spec["window_days"])).isoformat()[:10]
+            count = sum(c for d, c in days.items() if d >= cutoff)
+            base = self.baseline_weeks(syn, area, today)
+            history = [b for b in base if b > 0]
+            if len(history) < self.MIN_BASELINE_WEEKS:
+                continue  # static threshold path already covers new cells
+            mean = sum(history) / len(history)
+            var = sum((b - mean) ** 2 for b in history) / len(history)
+            sd = math.sqrt(var) or 1.0  # zero-variance baseline: any burst is news
+            z = (count - mean) / sd
+            if z < self.Z_SIGMA or count < spec["threshold"]:
+                continue
+            if count < K_ANONYMITY_FLOOR:
+                continue  # privacy floor is absolute — z-score never overrides it
+            key = (syn, area, cutoff, "adaptive")
+            if key in self.alerted:
+                continue
+            self.alerted.add(key)
+            alerts.append(Alert(syn, area, self._noisy(count), spec["window_days"], "alert",
+                                f"{syn} ×{count} in {area}: z={z:.1f} vs 8-week baseline "
+                                f"(mean {mean:.0f}) — adaptive burst"))
+        return alerts
+
     def _noisy(self, count: int) -> int:
         if self.dp_epsilon <= 0:
             return count

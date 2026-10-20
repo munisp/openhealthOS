@@ -70,6 +70,13 @@ func fhirToEvent(resourceType string, res map[string]any) (DomainEvent, bool) {
 			payload["drug_name"] = str(med, "text")
 		}
 		return DomainEvent{Type: "prescription", Payload: payload}, payload["patient_id"] != ""
+	case "MedicationDispense":
+		// Pharmacy hand-over: closes the adherence loop (innovation 2).
+		payload["patient_id"] = patientRefID(refOf(res, "subject"))
+		if med, ok := res["medicationCodeableConcept"].(map[string]any); ok {
+			payload["drug_name"] = str(med, "text")
+		}
+		return DomainEvent{Type: "medication_dispensed", Payload: payload}, payload["patient_id"] != ""
 	case "Appointment":
 		if parts, ok := res["participant"].([]any); ok {
 			for _, p := range parts {

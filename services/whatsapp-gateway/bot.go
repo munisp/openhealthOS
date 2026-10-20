@@ -158,6 +158,15 @@ func (s *service) Handle(ss *Session, text string) string {
 		return s.bindMatrix(ss, low, text)
 	}
 
+	// Danger signs short-circuit EVERYTHING (innovation 6): a patient
+	// describing an emergency mid-booking gets urgent guidance and a staff
+	// escalation, never the next menu prompt.
+	if sign, ok := detectDanger(text); ok {
+		s.escalateDanger(ss, sign, text)
+		ss.State = StateMenu
+		return ss.tr("danger_reply")
+	}
+
 	// Escape hatches first, from any state.
 	if low == "menu" || low == "hi" || low == "hello" || low == "start" || low == "sannu" || low == "ndewo" || low == "pẹlẹ" || low == "pele" {
 		ss.State = StateMenu

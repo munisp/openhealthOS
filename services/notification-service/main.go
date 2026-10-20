@@ -417,16 +417,19 @@ func naira(v any) string {
 
 // Service wires store + provider + rendering.
 type Service struct {
-	store    Store
-	provider SMSProvider
-	stepup   *stepUp
-	now      func() time.Time
-	seq      int
-	mu       sync.Mutex
+	store     Store
+	provider  SMSProvider
+	stepup    *stepUp
+	adherence *adherence
+	now       func() time.Time
+	seq       int
+	mu        sync.Mutex
 }
 
 func NewService(store Store, provider SMSProvider) *Service {
-	return &Service{store: store, provider: provider, stepup: newStepUp(), now: time.Now}
+	s := &Service{store: store, provider: provider, stepup: newStepUp(), now: time.Now}
+	s.adherence = newAdherence(s)
+	return s
 }
 
 func (s *Service) nextID() string {
@@ -440,6 +443,23 @@ func (s *Service) nextID() string {
 // Unknown types are ignored (ok=false). Patients without a subscription
 // are skipped with ErrNoPhone — we never guess numbers.
 func (s *Service) HandleEvent(ev DomainEvent) (Notification, error) {
+	// Adherence guardian (innovation 2): prescriptions open plans,
+	// dispensing closes them — regardless of whether the event renders
+	// a patient-facing message.
+	if ev.Type == "prescription" {
+		drug, _ := ev.Payload["drug_name"].(string)
+		pid, _ := ev.Payload["patient_id"].(string)
+		if pid != "" && drug != "" {
+			s.adherence.onPrescription(pid, drug)
+		}
+	}
+	if ev.Type == "medication_dispensed" {
+		drug, _ := ev.Payload["drug_name"].(string)
+		pid, _ := ev.Payload["patient_id"].(string)
+		if pid != "" {
+			s.adherence.onDispensed(pid, drug)
+		}
+	}
 	kind, text, ok := renderMessage(ev)
 	if !ok {
 		return Notification{}, nil

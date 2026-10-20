@@ -133,6 +133,7 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /schedules", s.listSchedules)
 	mux.HandleFunc("POST /slots/generate", s.generate)
 	mux.HandleFunc("GET /slots", s.listSlots)
+	mux.HandleFunc("GET /slots/recommend", s.recommendSlots) // smart slot recommender (innovation 4)
 	mux.HandleFunc("POST /appointments", s.book)
 	mux.HandleFunc("GET /appointments", s.listAppointments)
 	mux.HandleFunc("GET /appointments/{id}", s.getAppointment)

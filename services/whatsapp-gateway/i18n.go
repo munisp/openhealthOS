@@ -23,6 +23,7 @@ var LangNames = []struct{ Code, Name string }{
 // msgs[lang][key]; % verbs follow fmt.Sprintf.
 var msgs = map[string]map[string]string{
 	"en": {
+		"danger_reply":       "This sounds urgent. If you are in danger, go to your nearest health facility NOW or call the clinic line. I have alerted the care team — a nurse will reach out to you shortly.",
 		"mx_welcome":        "Welcome to OpenHealth. To protect your record, this channel verifies you once: reply with your patient ID (it is on your patient card, e.g. OH-KD-0001).",
 		"mx_ask_id":         "Reply with your patient ID (e.g. OH-KD-0001) — or the ID and your registered phone in one message.",
 		"mx_ask_phone":      "Now the phone number you registered with (e.g. 08012345678).",
@@ -80,6 +81,7 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "Language set to %s.",
 	},
 	"pcm": {
+		"danger_reply":       "Dis one na urgent matter. If you dey in danger, go the nearest clinic NOW or call dem. I don alert the care team — nurse go reach you soon.",
 		"mx_welcome":        "Welcome to OpenHealth. To protect your record, we go verify you once: reply wit your patient ID (e dey your patient card, e.g. OH-KD-0001).",
 		"mx_ask_id":         "Reply wit your patient ID (e.g. OH-KD-0001) — or the ID plus the phone wey you register, for one message.",
 		"mx_ask_phone":      "Now the phone number wey you register wit (e.g. 08012345678).",
@@ -137,6 +139,7 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "Language don change to %s.",
 	},
 	"ha": {
+		"danger_reply":       "Wannan na gaggawa. Idan kana cikin hadari, je asibiti mafi kusa NAN YAYI ko kira asibitin. Na sanar da kula da lafiya — ma'aikacin lafiya zai tuntube ka nan ba da jimawa ba.",
 		"mx_welcome":        "Barka da zuwa OpenHealth. Don kare bayananka, wannan tashar za ta tabbatar da kai sau ɗaya: amsa da ID ɗin majiyyaci (yana katin majiyyaci, misali OH-KD-0001).",
 		"mx_ask_id":         "Amsa da ID ɗin majiyyaci (misali OH-KD-0001) — ko ID da wayar da ka yi rajista a saƙo ɗaya.",
 		"mx_ask_phone":      "Yanzu lambar wayar da ka yi rajista da ita (misali 08012345678).",
@@ -194,6 +197,7 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "An canza harshe zuwa %s.",
 	},
 	"yo": {
+		"danger_reply":       "Eyi jẹ́ pàtàkì. Tí o bá wà nínú ewu, lọ sí ilé-iwòsàn tó súnmọ̀ RÁRÁ tàbí kí o pe ilé-iwòsàn. Mo ti jẹ́ kí àwọn oníṣẹ́ ìlera mọ̀ — àwọn yóò kan sí ẹ lẹ́kùnrẹ́rẹ́.",
 		"mx_welcome":        "Káàbọ̀ sí OpenHealth. Láti dáàbò bo àkòsílẹ̀ rẹ, a ó jẹ́rìí ẹ ẹ́ẹkan: fìdáhùn pẹlu ID àrùn rẹ (ó wà lórí káàdì àrùn, bíi OH-KD-0001).",
 		"mx_ask_id":         "Fìdáhùn pẹlu ID àrùn rẹ (bíi OH-KD-0001) — tàbí ID àti nọ́ńbà fóònù tí o forúkọsílẹ̀ pẹ̀lú nínú ìfìránṣẹ́ kan ṣoṣo.",
 		"mx_ask_phone":      "Níṣinyí nọ́ńbà fóònù tí o forúkọsílẹ̀ pẹ̀lú (bíi 08012345678).",
@@ -251,6 +255,7 @@ var msgs = map[string]map[string]string{
 		"lang_set":          "A ti yí èdè padà sí %s.",
 	},
 	"ig": {
+		"danger_reply":       "Nke a bụ mberede. Ọ bụrụ na ị nọ n'ịrịnsí, gaa ụlọ ọgwụ kacha nso UGBU A ma ọ bụ kpọọ ụlọ ọgwụ. Ekwela m ndị na-elekọta ahụike — nọọsị ga-akpọtụ gị n'oge na-adịghị anya.",
 		"mx_welcome":        "Nnọọ na OpenHealth. Iji chebe ndekọ gị, ọwa a ga-akwadò gị otu ugboro: zaa ID onye ọrịa gị (ọ nọ na kaadị onye ọrịa, dị ka OH-KD-0001).",
 		"mx_ask_id":         "Zaa ID onye ọrịa gị (dị ka OH-KD-0001) — ma ọ bụ ID na ekwentị ị debanyere n'otu ozi.",
 		"mx_ask_phone":      "Ugbu a, nọmba ekwentị ị debanyere (dị ka 08012345678).",

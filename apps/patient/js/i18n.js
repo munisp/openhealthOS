@@ -41,6 +41,8 @@ const STRINGS = {
     rec_immunizations: "Immunisations", rec_conditions: "Conditions", rec_allergies: "Allergies",
     rec_telehealth: "Phone & video consults", rec_none: "Nothing here yet",    tab_care: "Care", due_title: "Your next visit",
     tab_wellness: "Wellness",
+    tab_timeline: "Timeline", timeline_empty: "Notin dey here yet — your visits, results and medicine go show here",
+    tab_timeline: "Timeline", timeline_empty: "No history yet — your visits, results and prescriptions will appear here",
     wl_plan: "Your prevention plan", wl_plan_ok: "Nothing overdue — keep it up.",
     wl_plan_none: "No prevention plan yet — it builds as your record grows.",
     wl_risk: "Heart risk", wl_risk_note: "Risk estimate by {model} — a guide for prevention, not a diagnosis.",

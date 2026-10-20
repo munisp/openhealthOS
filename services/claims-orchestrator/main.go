@@ -66,6 +66,8 @@ func main() {
 		Store:       store,
 		Audit:       audit,
 		Poster:      poster,
+		Fraud:       fraudScorerFromEnv(env),
+		FraudHoldAt: fraudHoldThreshold(env),
 	}
 	mux := http.NewServeMux()
 	mux.Handle("/claims", h)

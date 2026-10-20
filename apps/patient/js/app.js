@@ -26,6 +26,8 @@ const state = {
   loading: false,
   tab: "updates",    // "updates" | "record" | "care"
   record: null,      // { record: <FHIR bundle>, consults: [...], complete } last good fetch
+  timeline: null,    // Patient 360: merged chronological feed (ADR-0041)
+  timelineLoading: false,
   recordAt: null,
   recordLoading: false,
   coverage: null,    // last good eligibility payload
@@ -195,6 +197,52 @@ async function fetchRecord() {
   return resp.json();
 }
 
+/* Patient 360 timeline (innovation 1): one chronological feed of
+ * appointments, results, prescriptions, imaging, consults. Elevated — the
+ * same step-up gate as the record. */
+async function fetchTimeline() {
+  const path = `/portal/timeline?patient_id=${encodeURIComponent(state.patientId)}&phone=${encodeURIComponent(state.phone)}`;
+  const resp = await elevatedFetch(apiBase(), path, { patientId: state.patientId, phone: state.phone });
+  if (!resp.ok) throw new Error(String(resp.status));
+  return resp.json();
+}
+
+function loadTimeline() {
+  state.timelineLoading = true; render();
+  fetchTimeline()
+    .then((d) => { state.timeline = d; })
+    .catch(() => { state.timeline = { complete: false, items: [] }; })
+    .finally(() => { state.timelineLoading = false; render(); });
+}
+
+function TimelineView() {
+  const wrap = el("div", { class: "view" }, Tabs(),
+    el("div", { class: "feed-head" },
+      el("h2", {}, t("tab_timeline")),
+      el("button", { class: "btn btn-outline btn-refresh", onclick: loadTimeline }, t("refresh"))));
+  if (state.timelineLoading) {
+    wrap.append(el("div", { class: "empty" }, t("loading") || "…"));
+    return wrap;
+  }
+  const items = state.timeline?.items || [];
+  if (!items.length) {
+    wrap.append(el("div", { class: "empty" }, t("timeline_empty")));
+    return wrap;
+  }
+  if (state.timeline && !state.timeline.complete) {
+    wrap.append(el("div", { class: "banner banner-show" }, t("offline")));
+  }
+  const list = el("ul", { class: "timeline" });
+  for (const it of items) {
+    list.append(el("li", { class: "timeline-item" },
+      el("span", { class: `badge badge-${it.kind}` }, it.kind),
+      el("span", { class: "timeline-summary" }, it.summary),
+      el("span", { class: "meta" }, it.ts ? new Date(it.ts).toLocaleString() : "")));
+  }
+  wrap.append(list);
+  return wrap;
+}
+
 function saveRecordLocal() {
   try {
     localStorage.setItem(REC_CACHE_KEY, JSON.stringify({
@@ -292,12 +340,13 @@ function Tabs() {
       if (tab === "record" && !state.record && navigator.onLine) loadRecord();
       if (tab === "care" && state.appts === null && navigator.onLine) loadCare();
       if (tab === "wellness" && !state.wellness && navigator.onLine) loadWellness();
+      if (tab === "timeline" && !state.timeline && navigator.onLine) loadTimeline();
       render();
     },
   }, t(key));
   return el("div", { class: "tabs", role: "tablist" },
     mk("updates", "tab_updates"), mk("record", "tab_record"), mk("care", "tab_care"),
-    mk("wellness", "tab_wellness"));
+    mk("timeline", "tab_timeline"), mk("wellness", "tab_wellness"));
 }
 
 function FeedView() {
@@ -331,7 +380,7 @@ function FeedView() {
         onclick: () => {
           state.patientId = state.phone = state.feed = state.updatedAt = null;
           state.record = state.recordAt = null;
-          state.coverage = state.appts = state.consents = state.claims = null;
+          state.coverage = state.appts = state.consents = state.claims = state.timeline = null;
           state.tab = "updates";
           try { localStorage.removeItem(LS_KEY); } catch { /* ignore */ }
           try { localStorage.removeItem(REC_CACHE_KEY); } catch { /* ignore */ }
@@ -1120,6 +1169,7 @@ function render() {
     ? (state.tab === "record" ? RecordView()
       : state.tab === "care" ? CareView()
       : state.tab === "wellness" ? WellnessView()
+      : state.tab === "timeline" ? TimelineView()
       : FeedView())
     : SignInView());
   const b = $("#offline-banner");

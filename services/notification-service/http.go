@@ -193,7 +193,8 @@ func (s server) routes() *http.ServeMux {
 	registerPortalRecord(mux, s)   // elevated endpoints require the gate
 	// Self-service rail (ADR-0017): booking, coverage, messages, consents.
 	registerPortalActions(mux, s.svc)
-	registerAlertsIntake(mux, s.svc) // alert rail: Alertmanager -> provider chain (ADR-0040)
+	registerAlertsIntake(mux, s.svc)
+	registerTimeline(mux, s)         // Patient 360 longitudinal feed (innovation 1) // alert rail: Alertmanager -> provider chain (ADR-0040)
 	// Passkey unlock (ADR-0017): PORTAL_RP_ID / PORTAL_ORIGINS bind the
 	// relying party; defaults are the dev gateway.
 	passkeyAPI{Store: s.svc.store, Subs: s.svc.store, Jar: newChallengeJar(),
@@ -238,6 +239,7 @@ func main() {
 			if sent+failed > 0 {
 				log.Printf("notification-service: drained sent=%d failed=%d", sent, failed)
 			}
+			svc.adherence.tick() // dose nudges, refill reminders, lapse escalations
 		}
 	}()
 

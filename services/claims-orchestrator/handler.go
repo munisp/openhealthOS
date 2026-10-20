@@ -26,6 +26,10 @@ type claimsHandler struct {
 	Store       *DecisionStore
 	Audit       *AuditChain
 	Poster      eventPoster
+	// Fraud gate (innovation 7): scores APPROVEs before money moves.
+	// nil scorer = gate off (FRAUD_HOOK=off on the edge).
+	Fraud       FraudScorer
+	FraudHoldAt float64 // default 0.7 when zero and Fraud set
 }
 
 func (h claimsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -71,6 +75,35 @@ func (h claimsHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		Reasons: dec.Reasons, Flags: dec.Flags,
 		AllowedNGN: dec.AllowedNGN, CopayNGN: dec.CopayNGN, PayableNGN: dec.PayableNGN,
 		Linkage: dec.Linkage,
+	}
+	// Pre-payment fraud gate (innovation 7): an APPROVE about to move money
+	// is scored first. Hot claims pend for human review — the scorer never
+	// denies. A slow/dead scorer fails OPEN with an audit note: payment
+	// continuity outranks one review, and the batch sweep still sees it.
+	if dec.Decision == "APPROVE" && dec.PayableNGN > 0 && h.Fraud != nil {
+		claimMap := map[string]any{
+			"claim_id": c.ClaimID, "member_id": c.MemberID, "provider_id": c.ProviderID,
+			"amount_ngn": dec.PayableNGN, "tariff_code": firstCode(c), "ts": c.ServiceDate,
+		}
+		verdict, err := h.Fraud.Score(claimMap, historyForScoring(h.Store, c.ProviderID))
+		holdAt := h.FraudHoldAt
+		if holdAt == 0 {
+			holdAt = 0.7
+		}
+		if err != nil {
+			resp.FraudNote = "scorer unavailable — paid under fail-open policy; batch sweep will review"
+			if h.Audit != nil {
+				auditErr("fraud_gate_failopen", h.Audit.Append("claims-orchestrator", "fraud_gate_failopen", c.ClaimID, map[string]any{"error": err.Error()}))
+			}
+		} else if verdict.Score >= holdAt || verdict.Action == "PEND" {
+			dec.Decision = "PEND_REVIEW"
+			resp.FraudScore = verdict.Score
+			resp.FraudReasons = verdict.Reasons
+			resp.Decision = dec.Decision
+			if h.Audit != nil {
+				auditErr("fraud_hold", h.Audit.Append("claims-orchestrator", "fraud_hold", c.ClaimID, map[string]any{"score": verdict.Score, "reasons": verdict.Reasons}))
+			}
+		}
 	}
 	// Only APPROVE with a payable amount moves money. PEND queues for human
 	// review; DENY is an auditable terminal state. Zero unaccounted outcomes.
