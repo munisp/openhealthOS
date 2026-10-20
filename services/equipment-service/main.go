@@ -356,7 +356,12 @@ func (s server) routes() *http.ServeMux {
 			http.Error(w, `{"error":"unknown equipment"}`, http.StatusNotFound)
 			return
 		}
-		tag, err := MintTag(eq.Facility, eq.ID, s.svc.Now())
+		// Prefer v2 keyring tags when OH_QR_KEYS is configured; fall back
+		// to legacy v1 single-secret tags so existing deployments keep working.
+		tag, err := MintTagV2(eq.Facility, eq.ID, s.svc.Now())
+		if err != nil {
+			tag, err = MintTag(eq.Facility, eq.ID, s.svc.Now())
+		}
 		if err != nil {
 			http.Error(w, `{"error":"`+err.Error()+`"}`, http.StatusServiceUnavailable)
 			return

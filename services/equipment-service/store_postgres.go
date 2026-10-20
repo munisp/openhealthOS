@@ -284,7 +284,7 @@ func (p *PostgresService) Now() time.Time { return time.Now() }
 // never drift from its evidence.
 func (p *PostgresService) Scan(tag, action, actor, location, notes string) (CustodyEvent, error) {
 	now := time.Now()
-	t, err := VerifyTag(tag, now)
+	t, err := VerifyTagAny(tag, now)
 	if err != nil {
 		return CustodyEvent{}, err
 	}

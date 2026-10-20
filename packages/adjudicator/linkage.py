@@ -39,7 +39,10 @@ FIXTURE_ENCOUNTERS = [
      "facility_id": "PHC-007", "date": "2026-10-01", "presence": "card"},
 ]
 
-PRESENCE_RANK = {"self": 0, "card": 1, "biometric": 2}
+# qr-day (ADR-0055): the patient scanned the facility's daily presence QR
+# with their own authenticated phone — device-bound, day-rotating proof,
+# ranked with card presence.
+PRESENCE_RANK = {"self": 0, "card": 1, "qr-day": 1, "biometric": 2}
 
 
 # In-process cache keyed by (path, mtime): production adjudication is

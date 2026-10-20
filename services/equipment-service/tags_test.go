@@ -5,6 +5,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"strings"
 	"testing"
 	"time"
 )
@@ -91,5 +93,57 @@ func TestScanUnknownAssetRejected(t *testing.T) {
 	tag, _ := MintTag("KDH-01", "GHOST-1", svc.now())
 	if _, err := svc.Scan(tag, "locate", "a", "", ""); err != ErrNotFound {
 		t.Fatalf("unknown asset: %v", err)
+	}
+}
+
+func TestV2KeyringRotationAndRevocation(t *testing.T) {
+	t.Setenv("OH_QR_KEYS", `{"k2025":"old-secret-0000000001","k2026":"new-secret-0000000002"}`)
+	t.Setenv("OH_QR_ACTIVE", "k2026")
+	now := time.Unix(1792497600, 0)
+	tag, err := MintTagV2("KDH-01", "MRI-03", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasPrefix(tag, "OHAST2.k2026.") {
+		t.Fatalf("tag: %s", tag)
+	}
+	at, err := VerifyTagAny(tag, now)
+	if err != nil || at.Asset != "MRI-03" {
+		t.Fatalf("verify: %v %+v", err, at)
+	}
+	// tag minted under the OLD key still verifies after rotation
+	old := "OHAST2.k2025.KDH-01.MRI-03.1792497600." + tagSig([]byte("old-secret-0000000001"), "OHAST2.k2025.KDH-01.MRI-03.1792497600")
+	if _, err := VerifyTagAny(old, now); err != nil {
+		t.Fatalf("rotated key must still verify: %v", err)
+	}
+	// unknown kid rejected
+	if _, err := VerifyTagAny(strings.Replace(tag, "k2026", "k9999", 1), now); err == nil {
+		t.Fatal("unknown kid must be rejected")
+	}
+	// tampered asset rejected
+	if _, err := VerifyTagAny(strings.Replace(tag, "MRI-03", "MRI-04", 1), now); err != ErrTagBadSig {
+		t.Fatalf("tamper: %v", err)
+	}
+	// revocation hard-rejects a validly-signed tag
+	body := strings.Join(strings.Split(tag, ".")[:5], ".")
+	f, _ := os.CreateTemp(t.TempDir(), "revoked-*.jsonl")
+	f.WriteString(`{"body":"` + body + `"}` + "\n")
+	f.Close()
+	t.Setenv("OH_QR_REVOKED", f.Name())
+	revokedCache.path = "" // reset cache for test
+	if _, err := VerifyTagAny(tag, now); err == nil || !strings.Contains(err.Error(), "revoked") {
+		t.Fatalf("revoked tag must hard-reject: %v", err)
+	}
+}
+
+func TestV1TagsStillVerify(t *testing.T) {
+	t.Setenv("OH_ASSET_SECRET", "test-secret-key-123456")
+	now := time.Unix(1792497600, 0)
+	tag, err := MintTag("F1", "EQ-1", now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := VerifyTagAny(tag, now); err != nil {
+		t.Fatalf("legacy v1 tag must keep verifying: %v", err)
 	}
 }
