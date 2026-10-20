@@ -535,18 +535,42 @@ export function EconomicsView(data) {
         `Catchments — ${cs.members.toLocaleString()} members · ${cs.over15km} beyond 15km${cs.unassigned ? ` · ${cs.unassigned} without coordinates` : ""}`));
     const ct = el("table", { class: "matrix" },
       el("tr", {},
-        el("th", {}, "Facility"), el("th", {}, "Assigned"), el("th", {}, "Mean km"),
+        el("th", {}, "Facility"), el("th", {}, "Assigned"), el("th", {}, "Load"),
+        el("th", {}, "Mean km"), el("th", {}, "Mean travel"),
         el("th", {}, "P90 km"), el("th", {}, ">15km")));
     for (const r of crows) {
-      ct.append(el("tr", { class: r.over_15km > 0 ? "warn" : "" },
+      const sat = r.saturation_pct;
+      ct.append(el("tr", { class: (sat != null && sat >= 90) || r.over_15km > 0 ? "warn" : "" },
         el("td", {}, r.name),
         el("td", { class: "mono" }, String(r.assigned)),
+        el("td", { class: `mono ${sat != null && sat >= 90 ? "warn" : ""}` },
+          sat == null ? "—" : `${sat}%`),
         el("td", { class: "mono" }, r.mean_km == null ? "—" : String(r.mean_km)),
+        el("td", { class: "mono" }, r.mean_travel_min == null ? "—" : `${r.mean_travel_min} min`),
         el("td", { class: "mono" }, r.p90_km == null ? "—" : String(r.p90_km)),
         el("td", { class: `mono ${r.over_15km ? "warn" : "ok"}` }, String(r.over_15km))));
     }
     cp.append(ct);
     page.append(cp);
+  }
+
+  // Coverage gaps (ADR-0051): who the network forgets entirely.
+  const gaps = k?.sections?.coverage_gaps;
+  if (gaps && gaps.status === "ok" && gaps.gap_members > 0) {
+    const gp = el("div", { class: "panel" },
+      el("div", { class: "panel-title" },
+        `Coverage gaps — ${gaps.gap_members.toLocaleString()} members (${gaps.gap_share_pct}%) beyond ${gaps.threshold_km}km or ${gaps.max_minutes} min`),
+      el("div", { class: "kpi-sub" },
+        "These members' NEAREST facility is too far to reach. Siting a new PHC " +
+        "in the worst LGA below serves more people than expanding any existing site."));
+    const gt = el("table", { class: "matrix" },
+      el("tr", {}, el("th", {}, "LGA"), el("th", {}, "Unserved members")));
+    for (const [lga, n] of Object.entries(gaps.by_lga || {}).slice(0, 10)) {
+      gt.append(el("tr", { class: "crit" },
+        el("td", {}, lga), el("td", { class: "mono" }, String(n))));
+    }
+    gp.append(gt);
+    page.append(gp);
   }
   return page;
 }

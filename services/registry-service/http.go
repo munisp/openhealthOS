@@ -44,9 +44,24 @@ func (s server) facilitiesNear(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, `{"error":"valid lat and lng are required (radius_km<=500, limit<=500)"}`, http.StatusBadRequest)
 		return
 	}
+	level, amenity := r.URL.Query().Get("level"), r.URL.Query().Get("amenity")
+	engine := "haversine"
+	var results []FacilityDistance
+	// PostGIS first (ADR-0051): GiST-indexed ST_DWithin + KNN when the
+	// store is Postgres with migration 0016 applied; any miss degrades
+	// to the in-memory haversine path — same JSON contract.
+	if pg, isPG := s.store.(*PostgresStore); isPG {
+		if res, ok := pg.NearbyPostGIS(r.Context(), lat, lng, radius, level, amenity, limit); ok {
+			results, engine = res, "postgis"
+		}
+	}
+	if results == nil {
+		results = NearbyFacilities(s.store.ListFacilities(), lat, lng, radius, level, amenity, limit)
+	}
 	writeJSON(w, 200, map[string]any{
 		"query":   map[string]any{"lat": lat, "lng": lng, "radius_km": radius},
-		"results": NearbyFacilities(s.store.ListFacilities(), lat, lng, radius, r.URL.Query().Get("level"), r.URL.Query().Get("amenity"), limit),
+		"engine":  engine, // honest about which path answered — ops can see the fallback
+		"results": results,
 	})
 }
 

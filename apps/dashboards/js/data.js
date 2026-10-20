@@ -447,11 +447,17 @@ export function demoData() {
       catchments: {
         status: "ok", members: 4200, unassigned: 96, over_15km_total: 268,
         facilities: [
-          { facility: "HOS-001", name: "General Hospital Ikeja", assigned: 1180, mean_km: 4.2, p90_km: 9.8, over_15km: 41 },
-          { facility: "PHC-004", name: "Nsukka PHC", assigned: 880, mean_km: 6.1, p90_km: 13.4, over_15km: 88 },
-          { facility: "PHC-001", name: "Kawo PHC", assigned: 812, mean_km: 5.4, p90_km: 12.1, over_15km: 62 },
-          { facility: "PHC-005", name: "Sabon Gari PHC", assigned: 704, mean_km: 7.9, p90_km: 16.2, over_15km: 77 },
+          { facility: "HOS-001", name: "General Hospital Ikeja", assigned: 1180, capacity: 1500, saturation_pct: 78.7, mean_km: 4.2, mean_travel_min: 14.8, p90_km: 9.8, over_15km: 41 },
+          { facility: "PHC-004", name: "Nsukka PHC", assigned: 880, capacity: 420, saturation_pct: 209.5, mean_km: 6.1, mean_travel_min: 18.2, p90_km: 13.4, over_15km: 88 },
+          { facility: "PHC-001", name: "Kawo PHC", assigned: 812, capacity: 360, saturation_pct: 225.6, mean_km: 5.4, mean_travel_min: 16.4, p90_km: 12.1, over_15km: 62 },
+          { facility: "PHC-005", name: "Sabon Gari PHC", assigned: 704, capacity: 300, saturation_pct: 234.7, mean_km: 7.9, mean_travel_min: 21.6, p90_km: 16.2, over_15km: 77 },
         ],
+        overflow: 96
+      },
+      coverage_gaps: {
+        status: "ok", gap_members: 214, gap_share_pct: 5.1, threshold_km: 15, max_minutes: 120,
+        by_lga: { "Zaria": 88, "Nsukka": 74, "Ondo West": 52 },
+        points: []
       },
       ml_health: {
         status: "ok",

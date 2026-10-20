@@ -178,6 +178,119 @@ def assign_catchments(members, facilities):
             "over_15km_total": sum(r["over_15km"] for r in rows)}
 
 
+# ------------------------------------------------------- geo intelligence
+# (ADR-0051): three upgrades that turn "nearest" into "right".
+
+# Nigeria travel-time model: distance is not time. A straight-line km on
+# a Lagos arterial and on a rural track are different journeys. Speed by
+# road class (km/h); the ROAD_FACTOR from packages/routing converts
+# haversine to road distance when no graph is available.
+ROAD_FACTOR = 1.4
+ROAD_SPEED_KMH = {"urban": 22.0, "periurban": 35.0, "rural": 28.0}
+WALK_SPEED_KMH = 4.5  # catchment walking standard (WHO access studies)
+
+
+def travel_minutes(dist_km: float, road_class: str = "rural",
+                   walk_threshold_km: float = 2.0) -> float:
+    """Door-to-facility minutes: walk under threshold, else motorised at
+    the road-class speed over road-factored distance."""
+    if dist_km <= walk_threshold_km:
+        return dist_km / WALK_SPEED_KMH * 60
+    road_km = dist_km * ROAD_FACTOR
+    return road_km / ROAD_SPEED_KMH.get(road_class, ROAD_SPEED_KMH["rural"]) * 60
+
+
+def assign_catchments_capacity(members, facilities, capacity_per_bed_day: float = 30.0):
+    """Capacity-aware assignment: a member goes to the nearest facility
+    THAT STILL HAS HEADROOM. Capacity proxy: beds x capacity_per_bed_day
+    (monthly outpatient equivalents); a zero-capacity facility takes
+    nobody. Overloaded facilities push overflow to their next-nearest —
+    which is exactly the referral-steering question managers ask.
+
+    Returns assign_catchments' shape plus overflow and saturation, so
+    dashboards read one contract.
+    """
+    geo = [f for f in facilities
+           if f.get("latitude") is not None and f.get("longitude") is not None]
+    if not geo:
+        return _nodata("catchments", "no facilities with coordinates")
+    cap = {f["id"]: max(1, int(f.get("beds", 0) or 0)) * capacity_per_bed_day for f in geo}
+    per_fac = {f["id"]: {"assigned": 0, "distances_km": []} for f in geo}
+    unassigned = overflow = 0
+    for m in members:
+        lat, lng = m.get("latitude"), m.get("longitude")
+        if lat is None or lng is None:
+            unassigned += 1
+            continue
+        ranked = sorted(geo, key=lambda f: _haversine_km(lat, lng, f["latitude"], f["longitude"]))
+        chosen, chose_d, spilled = None, None, False
+        for i, f in enumerate(ranked):
+            d = _haversine_km(lat, lng, f["latitude"], f["longitude"])
+            if per_fac[f["id"]]["assigned"] < cap[f["id"]]:
+                chosen, chose_d = f, d
+                spilled = i > 0
+                break
+        if chosen is None:  # every facility saturated — nearest, flagged
+            chosen, chose_d, spilled = ranked[0], _haversine_km(
+                lat, lng, ranked[0]["latitude"], ranked[0]["longitude"]), True
+        per_fac[chosen["id"]]["assigned"] += 1
+        per_fac[chosen["id"]]["distances_km"].append(chose_d)
+        if spilled:
+            overflow += 1
+
+    rows = []
+    for f in geo:
+        rec = per_fac[f["id"]]
+        ds = sorted(rec["distances_km"])
+        c = cap[f["id"]]
+        rows.append({
+            "facility": f["id"], "name": f.get("name", f["id"]),
+            "assigned": rec["assigned"], "capacity": c,
+            "saturation_pct": round(100 * rec["assigned"] / c, 1),
+            "mean_km": round(sum(ds) / len(ds), 2) if ds else None,
+            "p90_km": round(ds[int(0.9 * (len(ds) - 1))], 2) if ds else None,
+            "over_15km": sum(1 for d in ds if d > 15),
+            "mean_travel_min": round(sum(travel_minutes(d) for d in ds) / len(ds), 1) if ds else None,
+        })
+    rows.sort(key=lambda r: -r["assigned"])
+    return {"status": "ok", "members": len(members), "unassigned": unassigned,
+            "overflow": overflow, "facilities": rows,
+            "over_15km_total": sum(r["over_15km"] for r in rows)}
+
+
+def coverage_gaps(members, facilities, threshold_km: float = 15.0,
+                  road_class: str = "rural", max_minutes: float = 120.0):
+    """Who is unserved? Members whose nearest facility is beyond the
+    distance OR travel-time line. This is the equity question: the
+    catchment table says how loaded facilities are; THIS says who the
+    network forgets entirely. Returns clusterable points so planners can
+    site new PHCs where the gaps actually are."""
+    geo = [f for f in facilities
+           if f.get("latitude") is not None and f.get("longitude") is not None]
+    if not geo:
+        return _nodata("coverage_gaps", "no facilities with coordinates")
+    gaps = []
+    for m in members:
+        lat, lng = m.get("latitude"), m.get("longitude")
+        if lat is None or lng is None:
+            continue
+        d = min(_haversine_km(lat, lng, f["latitude"], f["longitude"]) for f in geo)
+        mins = travel_minutes(d, road_class)
+        if d > threshold_km or mins > max_minutes:
+            gaps.append({"latitude": lat, "longitude": lng,
+                         "nearest_km": round(d, 2),
+                         "travel_min": round(mins, 1),
+                         "state": m.get("state", ""), "lga": m.get("lga", "")})
+    by_lga: dict[str, int] = {}
+    for g in gaps:
+        by_lga[g["lga"] or "unknown"] = by_lga.get(g["lga"] or "unknown", 0) + 1
+    return {"status": "ok", "gap_members": len(gaps),
+            "gap_share_pct": round(100 * len(gaps) / len(members), 2) if members else None,
+            "threshold_km": threshold_km, "max_minutes": max_minutes,
+            "by_lga": dict(sorted(by_lga.items(), key=lambda kv: -kv[1])),
+            "points": gaps[:5000]}  # cap: planners cluster, they don't eyeball 1M dots
+
+
 # ---------------------------------------------------------------- ml health
 def _registry_models(registry_dir):
     """Champion versions + holdout metrics straight from the file registry —
@@ -242,10 +355,15 @@ def build_plane(lakehouse_dir=None, facilities_path=None, members_path=None,
                 encounters_path, enrollees_path, claims_path, capitation_kobo),
             "panel_risk": panel_risk(enrollees_path),
             "catchments": (
-                assign_catchments(_read_jsonl(members_path), _read_json(facilities_path))
+                assign_catchments_capacity(_read_jsonl(members_path), _read_json(facilities_path))
                 if members_path and facilities_path
                 and os.path.exists(members_path) and os.path.exists(facilities_path)
                 else _nodata("catchments", "no members/facilities export")),
+            "coverage_gaps": (
+                coverage_gaps(_read_jsonl(members_path), _read_json(facilities_path))
+                if members_path and facilities_path
+                and os.path.exists(members_path) and os.path.exists(facilities_path)
+                else _nodata("coverage_gaps", "no members/facilities export")),
             "ml_health": ml_health(registry_dir, claims_reference_path, claims_path),
         },
     }

@@ -19,7 +19,9 @@ services:
   # Duplicated from the infra plane so this plane boots standalone; in a
   # single-project deployment, share one postgres instead.
   postgres:
-    image: postgres:16-alpine
+    # PostGIS variant (ADR-0051): same Postgres 16, plus the spatial
+    # extension migration 0016 enables. API-compatible drop-in.
+    image: postgis/postgis:16-3.4-alpine
     environment:
       POSTGRES_PASSWORD: openhealth-dev
       POSTGRES_DB: openhealth
@@ -53,7 +55,10 @@ services:
       sh -c "D=postgresql://postgres:openhealth-dev@postgres:5432/openhealth;
              for m in 0001_init 0002_telehealth_equipment 0003_pharmacy
                       0003_sync_docs 0004_notifications 0005_registry_kyc
-                      0006_wallet_idempotency; do
+                      0006_wallet_idempotency 0007_facility_capacity_geo
+                      0008_fts 0009_rebac 0010_scheduling 0011_biometrics
+                      0012_passkeys 0013_ipd 0014_provider_fts 0015_dispatch
+                      0016_postgis; do
                psql \"$D\" -v ON_ERROR_STOP=1 -f /migrations/$m.sql || exit 1;
              done"
 
