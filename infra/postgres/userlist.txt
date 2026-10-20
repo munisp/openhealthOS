@@ -1,0 +1,7 @@
+;; SCRAM verifiers, never plaintext. Generate with:
+;;   psql -c "SELECT rolpassword FROM pg_authid WHERE rolname='postgres'"
+;; The placeholder below matches the dev compose password (openhealth-dev)
+;; and MUST be replaced from the live pg_authid row in any real deployment.
+"postgres" "SCRAM-SHA-256$REPLACE_FROM_PG_AUTHID"
+"pgbouncer_admin" "SCRAM-SHA-256$REPLACE_FROM_PG_AUTHID"
+"pgbouncer_stats" "SCRAM-SHA-256$REPLACE_FROM_PG_AUTHID"

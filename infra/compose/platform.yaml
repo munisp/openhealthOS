@@ -29,6 +29,21 @@ services:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
 
+  # Connection pooler (ADR-0044): all services point DATABASE_URL here
+  # instead of postgres:5432. Transaction mode; ~25 real backends serve
+  # every pool. Postgres itself keeps direct port 15432 for migrations
+  # and psql access only.
+  pgbouncer:
+    image: pgbouncer/pgbouncer:1.23
+    restart: unless-stopped
+    depends_on:
+      postgres: { condition: service_healthy }
+    volumes:
+      - ../postgres/pgbouncer.ini:/etc/pgbouncer/pgbouncer.ini:ro
+      - ../postgres/userlist.txt:/etc/pgbouncer/userlist.txt:ro
+    ports: ["6432:6432"]
+    mem_limit: 64m
+
   migrate:
     image: postgres:16-alpine
     depends_on:
@@ -83,7 +98,7 @@ services:
       args: { MODULE: registry-service }
     environment:
       LISTEN: ":8081"
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
     ports: ["18081:8081"]
     depends_on: [migrate]
 
@@ -95,7 +110,7 @@ services:
     environment:
       LISTEN: ":8082"
       CONSENT_HMAC_KEY: dev-only-not-secret
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
     ports: ["18082:8082"]
     depends_on: [migrate]
 
@@ -107,7 +122,7 @@ services:
     environment:
       LISTEN: ":8085"
       CONSENT_URL: http://consent-service:8082
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
       # OIDC_ISSUER: http://keycloak:8080/realms/openhealth  # uncomment after realm setup
     ports: ["18085:8085"]
     depends_on: [consent-service, migrate]
@@ -140,7 +155,7 @@ services:
       LISTEN: ":8084"
       LEDGER_DATA_DIR: /var/lib/openhealth/ledger
       # Money-movement idempotency (0006): retries answered from the record.
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
     volumes: ["ledger-wallet:/var/lib/openhealth/ledger"]
     ports: ["18084:8084"]
     depends_on: [migrate]
@@ -164,7 +179,7 @@ services:
       args: { MODULE: scheduling-service }
     environment:
       LISTEN: ":8092"
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
       NOTIFY_URL: http://notification-service:8089
       ELIGIBILITY_URL: http://claims-orchestrator:8080
     ports: ["18092:8092"]
@@ -177,7 +192,7 @@ services:
       args: { MODULE: dispatch-service }
     environment:
       LISTEN: ":8093"
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
       REGISTRY_URL: http://registry-service:8081
       NOTIFY_URL: http://notification-service:8089
     ports: ["18093:8093"]
@@ -231,7 +246,7 @@ services:
       args: { MODULE: ipd-service }
     environment:
       LISTEN: ":8098"
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
       SHR_URL: http://shr-service:8085
       NOTIFY_URL: http://notification-service:8089
     ports: ["18098:8098"]
@@ -287,7 +302,7 @@ services:
       args: { MODULE: sync-ingest }
     environment:
       LISTEN: ":8443"
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
     ports: ["18443:8443"]
     depends_on: [migrate]
 
@@ -337,7 +352,7 @@ services:
       args: { MODULE: notification-service }
     environment:
       LISTEN: ":8089"
-      DATABASE_URL: postgres://postgres:openhealth-dev@postgres:5432/openhealth
+      DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
       # SMS_WEBHOOK_URL: https://aggregator.example/send
     ports: ["18089:8089"]
     depends_on: [migrate]
