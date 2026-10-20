@@ -94,7 +94,49 @@ edge with national-gateway-only uplink.**
 | **Regulator (licensing)** | T1/T0 tenant | Accreditation module: inspection checklists, A–D grading, licence renewals — the same data facilities already produce |
 | **NIMC** | External dependency | NIN verification adapter consumes their API; fail-soft cached attestations when unreachable |
 
-## 7. Other stakeholders
+## 7. Insurance companies (private HMOs / health insurers)
+
+**Model: T1 tenant (primary) with an optional T0 analytics seat; no T2 edge
+of their own — their "edges" are the accredited facilities already on the
+platform.**
+
+Under the NHIA 2022 Act every insurer operates under state schemes; the
+platform gives each insurer an isolated tenant on the state plane, and an
+aggregate-only seat at national level if they operate across states.
+
+### What the insurer runs / consumes
+
+| Function | Platform surface | Notes |
+|---|---|---|
+| Enrolment & member master | registry-service tenant scope + `membercard` OHMEM1 QRs | Members verify offline at any provider; NIN adapter attestation where available |
+| Benefit design | packages/benefits scheme maps | Benefit visibility reaches members via USSD/PWA ("What does my cover include?") |
+| Pre-authorization | consent-gated rules in claims-orchestrator | Auto-approve rules as data; manual review queue with SLA timers |
+| Claims intake | NHIA-FFS envelope (packages/nhia) or direct FHIR Claim from facility edges | Per-claim validation, deterministic submission hash for reconciliation |
+| Adjudication | adjudicator pipeline on the insurer's tariff map | Approval-gated; presence ladder (`qr-day`/biometric) hardens against ghost claims |
+| Fraud & integrity | frauddetect/fraudml + scan forensics | Impossible-travel, scan-burst, duplicate-billing findings arrive as auditor questions |
+| Payment | payrails -> bank/wallet disbursement, ledger double-entry | Provider statements reconcile against the submission hash |
+| Quality / value-based care | chronicreg gold + immig coverage aggregates | Capitation quality adjustments computed from k-anonymised cascades, never row data |
+| Member services | wallet (ADR-0030), USSD self-service, WhatsApp/Matrix rails | Balance, benefits, appointment booking without a call centre |
+
+### Deployment shape
+
+- **Single-state insurer**: one T1 tenant on that state plane.
+- **Multi-state insurer**: one tenant per state plane (data residency),
+  plus T0 aggregate seat for portfolio analytics across states.
+- **Data they NEVER get**: row-level PHI of non-members; members' clinical
+  detail beyond what a claim line requires; anything below the k=5 floor.
+- **Data they MUST produce**: tariff maps (versioned, staleness-flagged per
+  ADR-0031), adjudication SLAs, denial reasons in the shared code set.
+
+### Connectivity & offline posture
+
+Insurer staff work from the dashboards/PWA (T3) — no offline requirement of
+their own; their offline story is inherited: a member at a rural PHC with no
+signal still proves coverage via the signed QR card, and the claim arrives
+when the facility edge next syncs.
+
+## 8. Other stakeholders
+
 
 - **HMOs / payers (private)**: T1 tenant; their scheme map + tariffs in the
   adjudicator; benefit visibility to members via USSD/PWA.
@@ -123,6 +165,7 @@ edge with national-gateway-only uplink.**
 | Pharmacy | | | opt. lite | ✓ primary | QR/dispensing queue offline |
 | Fed/State agencies | ✓ / operator | ✓ | | dashboards | n/a (aggregate) |
 | CHW / patient | | | | ✓ | PWA offline-first |
+| Insurer/HMO | seat (agg) | ✓ tenant | — | ✓ dashboards/PWA | inherited via member QR |
 
 ## Rules that never bend
 
