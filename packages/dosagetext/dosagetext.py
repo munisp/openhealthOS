@@ -124,10 +124,11 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="FHIR Dosage → human text")
     sub = ap.add_subparsers(dest="cmd", required=True)
     r = sub.add_parser("render")
-    r.add_argument("dosage")
+    r.add_argument("dosage", help="path to Dosage JSON, or '-' for stdin")
     r.add_argument("--lang", default="en", choices=SUPPORTED)
     args = ap.parse_args(argv)
-    print(render(json.load(open(args.dosage)), args.lang))
+    src = sys.stdin.read() if args.dosage == "-" else open(args.dosage).read()
+    print(render(json.loads(src), args.lang))
     return 0
 
 

@@ -185,6 +185,27 @@ services:
     ports: ["18092:8092"]
     depends_on: [migrate, claims-orchestrator]
 
+  # ADR-0041 innovations, fully wired (ADR-0050).
+  facility-readiness:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: facility-readiness }
+    environment:
+      ADDR: ":8093"
+    ports: ["18093:8093"]
+
+  referral-service:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.go-service
+      args: { MODULE: referral-service }
+    environment:
+      ADDR: ":8094"
+      NOTIFY_URL: http://notification-service:8089
+    ports: ["18094:8094"]
+    depends_on: [notification-service]
+
   dispatch-service:
     build:
       context: ../..
@@ -353,6 +374,11 @@ services:
     environment:
       LISTEN: ":8089"
       DATABASE_URL: postgres://postgres:openhealth-dev@pgbouncer:6432/openhealth
+      # Timeline/escalation legs (ADR-0050):
+      TELEHEALTH_URL: http://telehealth-service:8087
+      REFERRAL_URL: http://referral-service:8094
+      # HUC_ADMIN_URL: http://huc-admin:8083   # howUdeyChat care rooms
+      # DOSAGE_LANG: en                        # dosagetext patient language
       # SMS_WEBHOOK_URL: https://aggregator.example/send
     ports: ["18089:8089"]
     depends_on: [migrate]

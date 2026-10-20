@@ -2,7 +2,7 @@
  * precached shell, API traffic never cached (the feed comes from the
  * network and falls back to the app's localStorage last-known copy). */
 
-const CACHE = "openhealth-patient-v6"; // v6: Patient 360 timeline tab (ADR-0041)
+const CACHE = "openhealth-patient-v7"; // v6: Patient 360 timeline tab (ADR-0041)
 const SHELL = [
   "./",
   "./index.html",

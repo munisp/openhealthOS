@@ -12,6 +12,13 @@ func timelineRig(t *testing.T, teleHandler http.HandlerFunc) (*Service, *http.Se
 	tele := httptest.NewServer(teleHandler)
 	t.Cleanup(tele.Close)
 	t.Setenv("TELEHEALTH_URL", tele.URL)
+	// Referral leg: stubbed empty by default; tests that exercise it
+	// override REFERRAL_URL themselves.
+	ref := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"referrals":[]}`))
+	}))
+	t.Cleanup(ref.Close)
+	t.Setenv("REFERRAL_URL", ref.URL)
 
 	svc := NewService(NewMemoryStore(), &LogProvider{})
 	svc.stepup.randomPct = 0
@@ -85,5 +92,44 @@ func TestTimelineFailSoftWhenTelehealthDark(t *testing.T) {
 	rec, tl := getTimeline(t, mux, elevate(t, svc, "PT-1"))
 	if rec.Code != 200 || tl.Complete {
 		t.Fatalf("dark leg must degrade to complete=false, got %d %+v", rec.Code, tl)
+	}
+}
+
+func TestTimelineReferralLegMerges(t *testing.T) {
+	svc, mux := timelineRig(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[]`))
+	})
+	ref := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`{"referrals":[
+			{"id":"REF-1","patient_id":"PT-1","to_facility":"GEN-1","status":"ACCEPTED","created_at":"2026-10-19T08:00:00Z","updated_at":"2026-10-19T12:00:00Z"},
+			{"id":"REF-2","patient_id":"PT-OTHER","to_facility":"GEN-2","status":"OPEN","created_at":"2026-10-19T09:00:00Z"}
+		]}`))
+	}))
+	t.Cleanup(ref.Close)
+	t.Setenv("REFERRAL_URL", ref.URL)
+
+	rec, tl := getTimeline(t, mux, elevate(t, svc, "PT-1"))
+	if rec.Code != 200 || !tl.Complete {
+		t.Fatalf("code=%d complete=%v", rec.Code, tl.Complete)
+	}
+	var refs []TimelineItem
+	for _, it := range tl.Items {
+		if it.Kind == "referral" {
+			refs = append(refs, it)
+		}
+	}
+	if len(refs) != 1 || refs[0].State != "ACCEPTED" || refs[0].Summary != "referral to GEN-1" {
+		t.Fatalf("referral leg: %+v", refs)
+	}
+}
+
+func TestTimelineReferralLegFailSoft(t *testing.T) {
+	svc, mux := timelineRig(t, func(w http.ResponseWriter, r *http.Request) {
+		w.Write([]byte(`[]`))
+	})
+	t.Setenv("REFERRAL_URL", "http://127.0.0.1:1") // dead
+	_, tl := getTimeline(t, mux, elevate(t, svc, "PT-1"))
+	if tl.Complete {
+		t.Fatal("dead referral leg must mark the feed incomplete, not fail it")
 	}
 }

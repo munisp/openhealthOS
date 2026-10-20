@@ -1,6 +1,6 @@
 /* Service worker — dashboards shell is precache-first; API reads are
  * never cached here (IndexedDB last-known cache in data.js owns that). */
-const CACHE = "openhealth-dash-v3"; // v3: economics + ML-health boards (ADR-0033)
+const CACHE = "openhealth-dash-v4"; // v4: readiness board (ADR-0041/0050)
 const SHELL = [
   "./", "./index.html", "./css/dash.css",
   "./js/app.js", "./js/dom.js", "./js/data.js", "./js/charts.js", "./js/views.js",

@@ -92,3 +92,61 @@ class TestConvert(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestMedplumMode(unittest.TestCase):
+    """Medplum targeting: /fhir/R4 base + client-credentials token fetch.
+    Uses a stub HTTP server so the contract is tested, not assumed."""
+
+    def test_medplum_load_flow(self):
+        import threading
+        from http.server import BaseHTTPRequestHandler, HTTPServer
+
+        seen = {"token_calls": 0, "puts": [], "auth": []}
+
+        class Stub(BaseHTTPRequestHandler):
+            def do_POST(self):
+                if self.path == "/oauth2/token":
+                    seen["token_calls"] += 1
+                    body = json.loads(self.rfile.read(int(self.headers["Content-Length"])))
+                    assert body["grant_type"] == "client_credentials"
+                    assert body["client_id"] == "test-client"
+                    out = json.dumps({"access_token": "tok-123"}).encode()
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(out)
+                else:
+                    self.send_error(404)
+
+            def do_PUT(self):
+                seen["puts"].append(self.path)
+                seen["auth"].append(self.headers.get("Authorization"))
+                self.rfile.read(int(self.headers["Content-Length"]))
+                self.send_response(200)
+                self.end_headers()
+
+            def log_message(self, *a):
+                pass
+
+        srv = HTTPServer(("127.0.0.1", 0), Stub)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        base = f"http://127.0.0.1:{srv.server_port}"
+
+        d = tempfile.mkdtemp()
+        profiles = os.path.join(d, "profiles.jsonl")
+        with open(profiles, "w") as fh:
+            fh.write(json.dumps(PROFILE) + "\n")
+        out = os.path.join(d, "bundles")
+        synthseed.convert(profiles, out, "PHC-DEMO", None)
+
+        os.environ["MEDPLUM_CLIENT_ID"] = "test-client"
+        os.environ["MEDPLUM_CLIENT_SECRET"] = "test-secret"
+        try:
+            n = synthseed.load(out, base, None, medplum=True)
+        finally:
+            srv.shutdown()
+        self.assertEqual(seen["token_calls"], 1)
+        self.assertEqual(n, len(seen["puts"]))
+        self.assertTrue(all(p.startswith("/fhir/R4/") for p in seen["puts"]), seen["puts"])
+        self.assertTrue(all(a == "Bearer tok-123" for a in seen["auth"]))

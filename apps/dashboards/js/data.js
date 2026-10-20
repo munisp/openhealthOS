@@ -174,6 +174,7 @@ export class DataSource {
       tickets: "/api/equipment/tickets",
       payers: "/api/claims/payers/stats",
       kpi: "/api/kpi/plane",
+      readiness: "/api/readiness/readiness",
     };
     const out = {};
     let anyLive = false;
@@ -462,5 +463,18 @@ export function demoData() {
       },
     },
   };
-  return { facilities, events, overview, equipment, tickets, payers, kpi };
+  const readiness = {
+    facilities: [
+      { facility_id: "PHC-001", score: 82.5, grade: "READY",
+        components: { coldchain_temp: { score: 95, readings: 240, good: 228 }, power: { score: 70, readings: 1440, good: 1008 }, water: { score: 100, readings: 48, good: 48 } },
+        computed_at: new Date(now).toISOString() },
+      { facility_id: "PHC-004", score: 47.2, grade: "NOT_READY",
+        components: { coldchain_temp: { score: 40, readings: 240, good: 96 }, power: { score: 55, readings: 1440, good: 792 }, water: { score: 50, readings: 48, good: 24 } },
+        computed_at: new Date(now).toISOString() },
+      { facility_id: "PHC-002", score: -1, grade: "UNKNOWN",
+        components: { coldchain_temp: { score: -1, readings: 0, good: 0 }, power: { score: -1, readings: 0, good: 0 }, water: { score: -1, readings: 0, good: 0 } },
+        computed_at: new Date(now).toISOString() },
+    ],
+  };
+  return { facilities, events, overview, equipment, tickets, payers, kpi, readiness };
 }

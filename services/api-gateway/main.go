@@ -68,6 +68,9 @@ func DefaultRoutes(env func(string) string) []Route {
 		// reachable through the gateway; per-service ports are a
 		// development convenience, never the public contract.
 		{Prefix: "/api/scheduling", Service: "scheduling-service", Upstream: up("SCHEDULING_URL", "http://scheduling-service:8092"), Strip: true},
+		// ADR-0041 innovations: readiness index + closed-loop referrals.
+		{Prefix: "/api/readiness", Service: "facility-readiness", Upstream: up("READINESS_URL", "http://facility-readiness:8093"), Strip: true},
+		{Prefix: "/api/referrals", Service: "referral-service", Upstream: up("REFERRAL_URL", "http://referral-service:8094"), Strip: true},
 		{Prefix: "/api/dispatch", Service: "dispatch-service", Upstream: up("DISPATCH_URL", "http://dispatch-service:8093"), Strip: true},
 		{Prefix: "/api/telemed", Service: "telemed-service", Upstream: up("TELEMED_URL", "http://telemed-service:8094"), Strip: true},
 		{Prefix: "/api/media", Service: "media-service", Upstream: up("MEDIA_URL", "http://media-service:8095"), Strip: true},

@@ -235,7 +235,7 @@ function TimelineView() {
   const list = el("ul", { class: "timeline" });
   for (const it of items) {
     list.append(el("li", { class: "timeline-item" },
-      el("span", { class: `badge badge-${it.kind}` }, it.kind),
+      el("span", { class: `badge badge-${it.kind}` }, t("kind_" + it.kind) || it.kind),
       el("span", { class: "timeline-summary" }, it.summary),
       el("span", { class: "meta" }, it.ts ? new Date(it.ts).toLocaleString() : "")));
   }

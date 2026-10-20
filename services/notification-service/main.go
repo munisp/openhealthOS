@@ -298,9 +298,16 @@ func renderMessage(ev DomainEvent) (kind, text string, ok bool) {
 		return "lab_ready", fmt.Sprintf("OpenHealth: your test result is ready at %s. Please come with your card.",
 			facility), true
 	case "prescription":
+		// ADR-0049: when the dosage line rendered, it rides the pickup
+		// message — the patient hears HOW to take it at the same moment
+		// they hear it's ready.
+		dosage := str("dosage_text")
 		if drug := str("drug_name"); drug != "" {
-			return "pickup", fmt.Sprintf("OpenHealth: your medication (%s) is ready for pickup at %s pharmacy.",
-				drug, facility), true
+			msg := fmt.Sprintf("OpenHealth: your medication (%s) is ready for pickup at %s pharmacy.", drug, facility)
+			if dosage != "" {
+				msg = fmt.Sprintf("%s %s", msg, dosage)
+			}
+			return "pickup", msg, true
 		}
 		return "pickup", fmt.Sprintf("OpenHealth: your medication is ready for pickup at %s pharmacy.",
 			facility), true
@@ -460,6 +467,11 @@ func (s *Service) HandleEvent(ev DomainEvent) (Notification, error) {
 		if pid != "" {
 			s.adherence.onDispensed(pid, drug)
 		}
+	}
+	// Referral SLA breach (innovation 9): clinical escalation — the
+	// patient's howUdeyChat care room + ops contacts — not a patient SMS.
+	if ev.Type == "referral_breached" {
+		s.handleReferralBreach(ev)
 	}
 	kind, text, ok := renderMessage(ev)
 	if !ok {

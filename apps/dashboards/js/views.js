@@ -602,3 +602,51 @@ export function MLHealthView(data) {
   }
   return page;
 }
+
+/* Readiness board (ADR-0041 innovation 8): can this facility actually
+ * deliver care today? Cold chain, power and water roll up into one
+ * graded score per facility — referral routers and LGA managers read
+ * the same truth. UNKNOWN is shown honestly, never as zero. */
+export function ReadinessView(data) {
+  const page = el("div", { class: "page" });
+  page.append(el("div", { class: "section-label" }, "Facility readiness"));
+  const facilities = (data.readiness && data.readiness.facilities) || [];
+  if (!facilities.length) {
+    page.append(noDataPanel("Facility readiness"));
+    return page;
+  }
+  const gradeKind = { READY: "ok", DEGRADED: "warn", NOT_READY: "crit", UNKNOWN: "" };
+  const ready = facilities.filter((f) => f.grade === "READY").length;
+  const dark = facilities.filter((f) => f.grade === "NOT_READY").length;
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(`${ready}/${facilities.length}`, "facilities READY", { kind: dark ? "warn" : "ok" }),
+    kpi(String(dark), "NOT_READY right now", { kind: dark ? "crit" : "ok",
+      sub: "steer referrals away until resolved" }),
+    kpi(String(facilities.filter((f) => f.grade === "UNKNOWN").length), "no telemetry yet",
+      { sub: "sensors not reporting — score withheld, not zero" })));
+
+  const t = el("table", { class: "matrix" },
+    el("tr", {},
+      el("th", {}, "Facility"), el("th", {}, "Grade"), el("th", {}, "Score"),
+      el("th", {}, "Cold chain"), el("th", {}, "Power"), el("th", {}, "Water")));
+  const fmt = (c) => (c && c.score >= 0 ? `${Math.round(c.score)}% (${c.readings} readings)` : "no sensor");
+  for (const f of facilities.slice().sort((a, b) => a.score - b.score)) {
+    t.append(el("tr", { class: gradeKind[f.grade] || "" },
+      el("td", { class: "mono" }, f.facility_id),
+      el("td", {}, el("span", { class: `status-dot ${gradeKind[f.grade] || ""}`, style: "display:inline-block" }),
+        ` ${f.grade}`),
+      el("td", { class: "mono" }, f.score >= 0 ? f.score.toFixed(1) : "—"),
+      el("td", {}, fmt(f.components?.coldchain_temp)),
+      el("td", {}, fmt(f.components?.power)),
+      el("td", {}, fmt(f.components?.water))));
+  }
+  page.append(el("h2", {}, "Readiness by facility (worst first)"), t);
+  page.append(el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "How this score works"),
+    el("div", { class: "kpi-sub" },
+      "Cold chain 45% (WHO EPI 2–8°C) · power uptime 35% · water 20%. " +
+      "A missing sensor redistributes weight to what IS measured — a facility " +
+      "is never penalised for a sensor it doesn't have, and no data at all " +
+      "is UNKNOWN, never a reassuring zero.")));
+  return page;
+}

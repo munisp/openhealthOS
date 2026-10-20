@@ -5,7 +5,7 @@
 
 import { el } from "./dom.js";
 import { DataSource } from "./data.js";
-import { FacilityView, StateView, PayerView, MapView, EconomicsView, MLHealthView, renderTicker } from "./views.js";
+import { FacilityView, StateView, PayerView, MapView, EconomicsView, MLHealthView, ReadinessView, renderTicker } from "./views.js";
 
 const REFRESH_MS = 30000;
 const ds = new DataSource();
@@ -29,6 +29,9 @@ function currentView() {
   }
   if (h.startsWith("#/mlhealth")) {
     return { name: "mlhealth" };
+  }
+  if (h.startsWith("#/readiness")) {
+    return { name: "readiness" };
   }
   return { name: "state" };
 }
@@ -72,6 +75,7 @@ async function render() {
     : view.name === "map" ? MapView(last, view.id)
     : view.name === "economics" ? EconomicsView(last)
     : view.name === "mlhealth" ? MLHealthView(last)
+    : view.name === "readiness" ? ReadinessView(last)
     : StateView(last));
   renderTicker($("#ticker-track"), last);
 

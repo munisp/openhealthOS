@@ -178,9 +178,33 @@ def convert(profiles_path: str, out_dir: str, facility: str, limit: int | None) 
     return n
 
 
-def load(out_dir: str, shr: str, token: str | None) -> int:
-    """PUT each resource to the SHR's FHIR endpoint. Fail-loud on the
-    first error: a half-seeded demo is worse than none."""
+def medplum_token(base: str, client_id: str, client_secret: str) -> str:
+    """Medplum OAuth2 client-credentials → access token. Medplum is the
+    production FHIR core (ADR-0010); its API lives at {base}/fhir/R4."""
+    body = json.dumps({
+        "grant_type": "client_credentials",
+        "client_id": client_id,
+        "client_secret": client_secret,
+    }).encode()
+    req = urllib.request.Request(f"{base.rstrip('/')}/oauth2/token",
+                                 data=body,
+                                 headers={"Content-Type": "application/json"})
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        return json.loads(resp.read())["access_token"]
+
+
+def load(out_dir: str, shr: str, token: str | None,
+         medplum: bool = False) -> int:
+    """PUT each resource to the FHIR endpoint. --medplum targets a Medplum
+    server ({base}/fhir/R4/..., client-credentials auth via
+    MEDPLUM_CLIENT_ID / MEDPLUM_CLIENT_SECRET); otherwise the lightweight
+    shr-service envelope. Fail-loud on the first error: a half-seeded
+    demo is worse than none."""
+    base = shr.rstrip("/")
+    fhir_base = f"{base}/fhir/R4" if medplum else f"{base}/fhir"
+    if medplum and not token:
+        token = medplum_token(base, os.environ["MEDPLUM_CLIENT_ID"],
+                              os.environ["MEDPLUM_CLIENT_SECRET"])
     loaded = 0
     for name in sorted(os.listdir(out_dir)):
         if not name.endswith(".json"):
@@ -189,7 +213,7 @@ def load(out_dir: str, shr: str, token: str | None) -> int:
         for entry in bundle["entry"]:
             r = entry["resource"]
             req = urllib.request.Request(
-                f"{shr.rstrip('/')}/fhir/{r['resourceType']}/{r['id']}",
+                f"{fhir_base}/{r['resourceType']}/{r['id']}",
                 data=json.dumps(r).encode(), method="PUT",
                 headers={"Content-Type": "application/fhir+json"})
             if token:
@@ -211,15 +235,17 @@ def main(argv=None) -> int:
     c.add_argument("--limit", type=int)
     l = sub.add_parser("load")
     l.add_argument("out_dir")
-    l.add_argument("--shr", required=True)
+    l.add_argument("--shr", required=True, help="base URL of shr-service or Medplum")
     l.add_argument("--token", default=os.environ.get("SHR_TOKEN"))
+    l.add_argument("--medplum", action="store_true",
+                   help="target Medplum (/fhir/R4, client-credentials via env)")
     args = ap.parse_args(argv)
 
     if args.cmd == "convert":
         n = convert(args.profiles, args.out_dir, args.facility, args.limit)
         print(f"converted {n} patients → {args.out_dir}")
         return 0
-    n = load(args.out_dir, args.shr, args.token)
+    n = load(args.out_dir, args.shr, args.token, medplum=args.medplum)
     print(f"loaded {n} resources into {args.shr}")
     return 0
 

@@ -100,3 +100,42 @@ func TestFHIRInboxNoSubscriptionSkips(t *testing.T) {
 		t.Fatalf("nothing enqueued, got %d", got)
 	}
 }
+
+func TestFHIRInboxMedicationRequestRendersDosageText(t *testing.T) {
+	svc := NewService(NewMemoryStore(), &LogProvider{})
+	_ = svc.store.PutSubscription(Subscription{PatientID: "PT-7", Phone: "+234807", Facility: "PHC-1"})
+	mux := http.NewServeMux()
+	registerFHIRInbox(mux, svc)
+	mr := `{"resourceType":"MedicationRequest","medicationCodeableConcept":{"text":"Coartem"},
+		"subject":{"reference":"Patient/PT-7"},
+		"dosageInstruction":[{"timing":{"repeat":{"frequency":2,"period":1,"periodUnit":"d"}},
+			"doseAndRate":[{"doseQuantity":{"value":2,"unit":"tablet"}}]}]}`
+	rec := httptest.NewRecorder()
+	mux.ServeHTTP(rec, httptest.NewRequest(http.MethodPost, "/fhir/inbox", strings.NewReader(mr)))
+	if rec.Code != 201 {
+		t.Fatalf("medication request: %d %s", rec.Code, rec.Body)
+	}
+	// The adherence plan must carry the rendered instruction.
+	svc.adherence.mu.Lock()
+	var instr string
+	for _, p := range svc.adherence.plans {
+		if p.PatientID == "PT-7" {
+			instr = p.Instruction
+		}
+	}
+	svc.adherence.mu.Unlock()
+	if instr != "Take 2 tablet twice daily." {
+		t.Fatalf("dosage_text must render via dosagetext, got %q", instr)
+	}
+}
+
+func TestDosageTextFailsSoftWhenRendererMissing(t *testing.T) {
+	t.Setenv("DOSAGETEXT", "/nonexistent/dosagetext.py")
+	mr := map[string]any{"dosageInstruction": []any{map[string]any{
+		"timing": map[string]any{"repeat": map[string]any{"frequency": 2, "period": 1, "periodUnit": "d"}},
+		"doseAndRate": []any{map[string]any{"doseQuantity": map[string]any{"value": 2, "unit": "tablet"}}},
+	}}}
+	if got := dosageText(mr); got != "" {
+		t.Fatalf("missing renderer must fail soft, got %q", got)
+	}
+}

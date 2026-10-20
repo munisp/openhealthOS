@@ -16,6 +16,7 @@ package main
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sort"
 	"time"
@@ -73,6 +74,41 @@ func (s server) buildTimeline(ctx context.Context, patientID string) PortalTimel
 				}
 				tl.Items = append(tl.Items, TimelineItem{
 					TS: c.CreatedAt, Kind: "consult", Summary: summary, State: c.Status, Source: "telehealth",
+				})
+			}
+		}
+	}
+	// Referral leg (innovation 9): the closed-loop tracker is where the
+	// patient sees "referred → accepted → completed". Same fail-soft
+	// doctrine — a dark referral-service degrades completeness, never
+	// the feed.
+	refURL := envOr("REFERRAL_URL", "http://127.0.0.1:8094") + "/referrals"
+	raw, ok = fetchPortalLeg(ctx, refURL, nil, json.RawMessage(`{"referrals":[]}`))
+	if !ok {
+		tl.Complete = false
+	} else {
+		var out struct {
+			Referrals []struct {
+				PatientID string `json:"patient_id"`
+				ToFacility string `json:"to_facility"`
+				Status    string `json:"status"`
+				CreatedAt string `json:"created_at"`
+				UpdatedAt string `json:"updated_at"`
+			} `json:"referrals"`
+		}
+		if json.Unmarshal(raw, &out) == nil {
+			for _, r := range out.Referrals {
+				if r.PatientID != patientID {
+					continue
+				}
+				ts := r.UpdatedAt
+				if ts == "" {
+					ts = r.CreatedAt
+				}
+				tl.Items = append(tl.Items, TimelineItem{
+					TS: ts, Kind: "referral",
+					Summary: fmt.Sprintf("referral to %s", r.ToFacility),
+					State:   r.Status, Source: "referrals",
 				})
 			}
 		}

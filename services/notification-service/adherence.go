@@ -159,6 +159,11 @@ func (a *adherence) tick() {
 		}
 	}
 	for _, p := range lapses {
+		// Clinical escalation into the patient's howUdeyChat care room
+		// (fail-soft) in parallel with the ops SMS rail.
+		if sub, err := a.svc.store.Subscription(p.PatientID); err == nil && sub.Phone != "" {
+			escalateToCareRoom(sub.Phone, "", "adherence_lapse:"+p.Medication)
+		}
 		// Staff traffic via the alert rail (ops contacts), never the patient.
 		for _, c := range opsContactsFor("") {
 			text := fmt.Sprintf("[FIRING] AdherenceLapse (warning): patient %s has not collected %s — 3 days past refill due.", p.PatientID, p.Medication)

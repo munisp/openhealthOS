@@ -69,6 +69,13 @@ func fhirToEvent(resourceType string, res map[string]any) (DomainEvent, bool) {
 		if med, ok := res["medicationCodeableConcept"].(map[string]any); ok {
 			payload["drug_name"] = str(med, "text")
 		}
+		// ADR-0049: render the dosage instruction in the patient's
+		// language — the adherence nudge then carries HOW to take it,
+		// not just THAT to take it. Fail-soft: renderer problems leave
+		// the generic text standing.
+		if txt := dosageText(res); txt != "" {
+			payload["dosage_text"] = txt
+		}
 		return DomainEvent{Type: "prescription", Payload: payload}, payload["patient_id"] != ""
 	case "MedicationDispense":
 		// Pharmacy hand-over: closes the adherence loop (innovation 2).
