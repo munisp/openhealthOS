@@ -5,6 +5,7 @@
  */
 
 import { t } from "./i18n.js";
+import { verifyPayload, parseKeyring } from "./qrverify.js";
 import { materialize } from "./crdt.js";
 
 /* ---------- tiny DOM helper ---------- */
@@ -218,6 +219,63 @@ export function DashboardView(ctx) {
       stat(t("tasks_due"), d.tasksDue), stat(t("pending_events"), d.pendingEvents)));
 }
 
+
+/* QR verification — offline, zero-roundtrip (ADR-0055). Verification keys are
+ * provisioned to staff devices only (localStorage "oh-qr-keys", set by the MDM
+ * channel); without keys the card says so honestly rather than pretending.
+ * Server-side verifiers remain the system of record. */
+function qrVerifyCard() {
+  const ring = parseKeyring(localStorage.getItem("oh-qr-keys") || "");
+  const input = el("input", {
+    class: "input", type: "text",
+    placeholder: "OHMEM1.… / OHPRS1.… / OHAST2.…",
+  });
+  const out = el("div", { class: "task-sub", style: "margin-top:8px;" });
+  const verdict = (tag) => {
+    if (!ring) {
+      out.textContent = "⚠ Verification keys not provisioned on this device — staff devices only, via your facility admin.";
+      return;
+    }
+    const v = verifyPayload(String(tag).trim(), ring, { nowMs: Date.now() });
+    const head = v.ok ? `✔ Valid ${v.kind}` : `✖ ${v.reason || "invalid code"}`;
+    const detail = v.ok ? Object.entries(v.fields).map(([k, val]) => `${k}: ${val}`).join(" · ") : "";
+    const warn = v.warnings && v.warnings.length ? " (" + v.warnings.join("; ") + ")" : "";
+    out.textContent = head + (detail ? " — " + detail : "") + warn;
+  };
+  const children = [
+    el("div", { class: "field-label" }, "Verify a QR code"),
+    el("div", { class: "task-sub" },
+      "Offline verification of platform QR codes (member cards, presence, asset tags). Server records remain the system of record."),
+    input,
+    el("button", { class: "btn btn-primary btn-block", style: "margin-top:8px;", onclick: () => verdict(input.value) }, "Verify"),
+  ];
+  if ("BarcodeDetector" in window) {
+    children.push(el("button", {
+      class: "btn btn-outline btn-block", style: "margin-top:8px;",
+      onclick: async () => {
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({ video: { facingMode: "environment" } });
+          const video = document.createElement("video");
+          video.srcObject = stream; await video.play();
+          const det = new BarcodeDetector({ formats: ["qr_code"] });
+          out.textContent = "Point the camera at the code…";
+          const tick = async () => {
+            const codes = await det.detect(video);
+            if (codes.length) {
+              stream.getTracks().forEach((tr) => tr.stop());
+              input.value = codes[0].rawValue; verdict(input.value); return;
+            }
+            requestAnimationFrame(tick);
+          };
+          tick();
+        } catch { out.textContent = "Camera unavailable — paste the code text instead."; }
+      },
+    }, "Scan with camera"));
+  }
+  children.push(out);
+  return el("div", { class: "card" }, ...children);
+}
+
 export function SettingsView(ctx) {
   const sel = el("select", {
     class: "input",
@@ -234,6 +292,7 @@ export function SettingsView(ctx) {
     el("div", { class: "card" },
       el("div", { class: "field-label" }, t("facility")),
       el("div", {}, ctx.facility)),
+    qrVerifyCard(),
     el("button", { class: "btn btn-outline btn-block", onclick: () => ctx.navigate("#/dashboard") }, t("dashboard")),
     el("div", { class: "card about" },
       el("div", { class: "field-label" }, t("about")),

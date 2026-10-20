@@ -77,8 +77,16 @@ CI/audit hooks.
   workflow gaps with payload formats, not new crypto — all reuse the
   existing HMAC/keyring seam.
 - Custody data now generates alarms, not just evidence.
-- Limitations (honest): membercard/presenceqr are Python CLIs — PWA-side
-  JS verification (WebCrypto HMAC) is the next iteration for true
-  zero-roundtrip offline scanning in the browser; presence QR proves the
-  *phone* was there, and collusion (lending a logged-in phone) remains a
-  sampling-audit question, as designed.
+- Limitations (honest): presence QR proves the *phone* was there, and
+  collusion (lending a logged-in phone) remains a sampling-audit question,
+  as designed.
+
+- Iteration 2 (delivered): PWA-side verification landed — `apps/pwa/js/
+  qrverify.js` (WebCrypto HMAC-SHA256, never-throws `verifyPayload`,
+  keyring + revocation parsing, expiry/replay/staleness semantics for
+  OHMEM1/OHPRS1/OHAST1/OHAST2) and a "Verify a QR code" card in Settings
+  (paste input + BarcodeDetector camera path, feature-detected). Verified
+  byte-for-byte cross-language: Python-minted tags verify in the browser.
+  Key distribution stays honest: verification keys are provisioned only to
+  staff devices (`localStorage "oh-qr-keys"` via MDM), never patient
+  devices; server-side verifiers remain the system of record.
