@@ -87,6 +87,7 @@ def generate_claims(n: int, seed: int) -> list[dict]:
             claimed = int(claimed * rng.uniform(1.2, 2.0))
         claims.append({
             "claim_id": f"BENCH-{i:07d}",
+            "encounter_id": f"BENC-{i:07d}",  # linkage gate: money follows encounters
             "member_id": member,
             "provider_id": "PHC-BENCH",
             "service_date": SERVICE_DATE,
@@ -96,6 +97,55 @@ def generate_claims(n: int, seed: int) -> list[dict]:
             "_kind": kind,  # harness bookkeeping — stripped before scoring
         })
     return claims
+
+
+def generate_encounters(claims: list[dict]) -> list[dict]:
+    """The encounter evidence for a claim stream — one platform encounter
+    per claim, matching member/facility/date, with presence strength.
+    Money follows encounters (ADR-0018): a claim benchmark without
+    encounters measures a strawman that the linkage gate rightly pends."""
+    out: list[dict] = []
+    for i, c in enumerate(claims):
+        out.append({
+            "encounter_id": c["encounter_id"],
+            "patient_id": c["member_id"],
+            "facility_id": c["provider_id"],
+            "date": c["service_date"],
+            "presence": "biometric" if i % 2 == 0 else "card",
+        })
+    return out
+
+
+class _EncounterEnv:
+    """Point the adjudicator's encounter seam at a generated JSONL file
+    for the duration of a run; restore the previous env afterwards."""
+
+    def __init__(self, encounters: list[dict]):
+        self.encounters = encounters
+        self._prev: str | None = None
+        self._path = ""
+
+    def __enter__(self):
+        import os
+        import tempfile
+        fd, self._path = tempfile.mkstemp(prefix="bench-encounters-", suffix=".jsonl")
+        with os.fdopen(fd, "w") as fh:
+            for e in self.encounters:
+                fh.write(json.dumps(e) + "\n")
+        self._prev = os.environ.get("ENCOUNTER_FILE")
+        os.environ["ENCOUNTER_FILE"] = self._path
+        return self
+
+    def __exit__(self, *exc):
+        import os
+        if self._prev is None:
+            os.environ.pop("ENCOUNTER_FILE", None)
+        else:
+            os.environ["ENCOUNTER_FILE"] = self._prev
+        try:
+            os.unlink(self._path)
+        except OSError:
+            pass
 
 
 def check_invariants(decision: dict) -> list[str]:
@@ -117,16 +167,17 @@ def run(claims: list[dict]) -> dict:
     latencies_ms: list[float] = []
     distribution = {"APPROVE": 0, "PEND": 0, "DENY": 0}
     violations: list[str] = []
-    started = time.perf_counter()
-    for claim in claims:
-        claim.pop("_kind", None)
-        t0 = time.perf_counter()
-        decision = adjudicate(claim)
-        latencies_ms.append((time.perf_counter() - t0) * 1000)
-        distribution[decision["decision"]] += 1
-        for problem in check_invariants(decision):
-            violations.append(f"{claim['claim_id']}: {problem}")
-    wall_s = time.perf_counter() - started
+    with _EncounterEnv(generate_encounters(claims)):
+        started = time.perf_counter()
+        for claim in claims:
+            claim.pop("_kind", None)
+            t0 = time.perf_counter()
+            decision = adjudicate(claim)
+            latencies_ms.append((time.perf_counter() - t0) * 1000)
+            distribution[decision["decision"]] += 1
+            for problem in check_invariants(decision):
+                violations.append(f"{claim['claim_id']}: {problem}")
+        wall_s = time.perf_counter() - started
     latencies_ms.sort()
     n = len(claims)
 

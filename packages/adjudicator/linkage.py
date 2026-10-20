@@ -42,12 +42,27 @@ FIXTURE_ENCOUNTERS = [
 PRESENCE_RANK = {"self": 0, "card": 1, "biometric": 2}
 
 
+# In-process cache keyed by (path, mtime): production adjudication is
+# one-claim-per-subprocess so the cache lives for a single lookup, but
+# in-process callers (the million-claim benchmark, tests) would otherwise
+# re-read and re-parse the whole encounter log per claim — O(n²) IO.
+# mtime is part of the key, so a file that changes mid-run is re-read.
+_ENCOUNTER_CACHE: dict[str, tuple[float, list[dict]]] = {}
+
+
 def load_encounters(path: str | None = None) -> list[dict]:
     """JSONL encounter log; missing file is honest empty, malformed lines
     are skipped (a torn write at power loss must not break adjudication)."""
     path = path or os.environ.get("ENCOUNTER_FILE", "")
     if not path:
         return list(FIXTURE_ENCOUNTERS)
+    try:
+        mtime = os.path.getmtime(path)
+    except OSError:
+        return []
+    cached = _ENCOUNTER_CACHE.get(path)
+    if cached and cached[0] == mtime:
+        return cached[1]  # shared, read-only — callers must not mutate
     out: list[dict] = []
     try:
         with open(path, "r", encoding="utf-8") as fh:
@@ -63,7 +78,25 @@ def load_encounters(path: str | None = None) -> list[dict]:
                     out.append(row)
     except OSError:
         return []
-    return out
+    _ENCOUNTER_CACHE.clear()
+    _ENCOUNTER_CACHE[path] = (mtime, out)
+    _INDEX_CACHE.clear()
+    _INDEX_CACHE[id(out)] = {e["encounter_id"]: e for e in out}
+    return out  # shared, read-only — callers must not mutate
+
+
+# encounter_id → row, keyed by the identity of the cached list; rebuilt
+# only when the file changes (the cache above is the invalidation point).
+_INDEX_CACHE: dict[int, dict[str, dict]] = {}
+
+
+def _index(encounters: list[dict]) -> dict[str, dict]:
+    idx = _INDEX_CACHE.get(id(encounters))
+    if idx is None or len(idx) != len(encounters):
+        idx = {e["encounter_id"]: e for e in encounters}
+        _INDEX_CACHE.clear()
+        _INDEX_CACHE[id(encounters)] = idx
+    return idx
 
 
 def check_linkage(claim: dict, encounters: list[dict] | None = None) -> dict:
@@ -75,6 +108,7 @@ def check_linkage(claim: dict, encounters: list[dict] | None = None) -> dict:
     linked=False with an id that doesn't match is worse — a forged
     reference, which says someone knew the gate existed.
     """
+    indexed = encounters is None
     encounters = encounters if encounters is not None else load_encounters()
     enc_id = claim.get("encounter_id", "")
     member = claim.get("member_id", "")
@@ -86,7 +120,12 @@ def check_linkage(claim: dict, encounters: list[dict] | None = None) -> dict:
         flags.append("LINKAGE: no encounter reference — claim cannot prove the care happened")
         return {"linked": False, "presence": None, "flags": flags}
 
-    match = next((e for e in encounters if e["encounter_id"] == enc_id), None)
+    # Index when we loaded the log ourselves — a linear scan per claim is
+    # O(n²) across a national claim stream (the benchmark proved this).
+    if indexed:
+        match = _index(encounters).get(enc_id)
+    else:
+        match = next((e for e in encounters if e["encounter_id"] == enc_id), None)
     if match is None:
         flags.append(f"LINKAGE: encounter {enc_id} not on record — forged reference?")
         return {"linked": False, "presence": None, "flags": flags}
