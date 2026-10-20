@@ -37,6 +37,25 @@
         }
       ]
     }
+    ,
+    {
+      "name": "smart-patient-read",
+      "description": "SMART App Launch patient-level read scopes (IPA v1.0.0 — patient/*.read for the IPA support set)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" }
+    },
+    {
+      "name": "smart-system-read",
+      "description": "SMART Backend Services system-level read (bulk $export pipelines: system/Patient.read, system/Immunization.read, system/Observation.read, ...)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" }
+    },
+    {
+      "name": "smart-launch",
+      "description": "SMART launch context scopes: launch/patient + fhirUser + offline_access (patient PWA / howUdeyChat)",
+      "protocol": "openid-connect",
+      "attributes": { "include.in.token.scope": "true" }
+    }
   ],
   "defaultDefaultClientScopes": ["openid", "profile", "email", "facility"],
   "clients": [
@@ -56,6 +75,24 @@
       "serviceAccountsEnabled": true,
       "standardFlowEnabled": false,
       "secret": "change-me-in-production"
+    },
+    {
+      "clientId": "openhealth-patient",
+      "name": "Patient-facing client (PWA + howUdeyChat) — IPA conformance client",
+      "publicClient": true,
+      "standardFlowEnabled": true,
+      "directAccessGrantsEnabled": false,
+      "redirectUris": ["https://patient.openhealth.example/*", "openhealth-patient://callback"],
+      "attributes": { "pkce.code.challenge.method": "S256" },
+      "optionalClientScopes": ["smart-patient-read", "smart-launch"]
+    },
+    {
+      "clientId": "openhealth-bulk-export",
+      "name": "SMART Backend Services — bulk-export-service (client_credentials + RS384 JWT)",
+      "publicClient": false,
+      "serviceAccountsEnabled": true,
+      "standardFlowEnabled": false,
+      "optionalClientScopes": ["smart-system-read"]
     }
   ]
 }

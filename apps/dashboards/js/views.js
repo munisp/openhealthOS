@@ -689,3 +689,84 @@ export function ReadinessView(data) {
       "is UNKNOWN, never a reassuring zero.")));
   return page;
 }
+
+/* Immunization coverage + defaulter tracking + Bulk Data $export
+ * (ADR-0054). NPHCDA/WHO-DAK shape: coverage per EPI antigen, defaulter
+ * outreach list (a late child is a CHW task, not a statistic), and the
+ * population-scale FHIR export trigger for payers/regulators. */
+export function ImmunizationView(data) {
+  const immig = data.immig || { coverage: [], defaulters: [] };
+  const page = el("div", { class: "page" });
+
+  const totalGiven = immig.coverage.reduce((a, c) => a + c.given, 0);
+  const totalTarget = immig.coverage.reduce((a, c) => a + c.target, 0) || 1;
+  const pct = Math.round((100 * totalGiven) / totalTarget);
+  const overdue = immig.defaulters.length;
+
+  page.append(el("div", { class: "section-label" }, "Immunization — EPI coverage and defaulters"));
+  page.append(el("div", { class: "kpi-strip" },
+    kpi(`${pct}%`, "EPI coverage", { kind: pct >= 80 ? "ok" : "warn", sub: `${totalGiven}/${totalTarget} doses` }),
+    kpi(String(overdue), "defaulters (overdue)", { kind: overdue ? "warn" : "ok", sub: "children late for a dose" }),
+    kpi(String(immig.coverage.length), "antigens tracked", { sub: "Nigerian EPI schedule" })));
+
+  // coverage per antigen
+  const cov = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, `Coverage by antigen — period ${immig.period || "—"}`));
+  for (const c of immig.coverage) {
+    const p = Math.round((100 * c.given) / (c.target || 1));
+    cov.append(el("div", { style: "margin:6px 0" },
+      el("div", { class: "kpi-sub mono" }, `${c.antigen} — ${c.given}/${c.target} (${p}%)`),
+      hbar(c.given / (c.target || 1))));
+  }
+
+  // defaulter outreach list
+  const def = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "Defaulter outreach — assign to CHWs"));
+  if (!overdue) def.append(el("div", { class: "empty" }, "No defaulters — every child is on schedule."));
+  for (const d of immig.defaulters) {
+    def.append(el("div", { class: `alert-card ${d.days_late > 14 ? "crit" : "warn"}` },
+      el("div", { class: "alert-head" },
+        el("span", { class: `sev-${d.days_late > 14 ? "crit" : "warn"}` }, `${d.days_late}d late`),
+        el("span", { class: "mono" }, d.child)),
+      el("div", { class: "alert-msg" }, `${d.antigen} due ${d.due} · ${d.facility}`),
+      el("div", { class: "alert-ts" }, `guardian contact: ${d.guardian_contact}`)));
+  }
+
+  // Bulk Data $export (ADR-0054): kick an NDJSON export on the SHR and
+  // poll the job — the payer/regulator population-scale on-ramp.
+  const bx = el("div", { class: "panel" },
+    el("div", { class: "panel-title" }, "FHIR Bulk Data $export — NDJSON for payers / lakehouse"));
+  const status = el("div", { class: "kpi-sub mono" }, "idle — choose a type and kick an export");
+  const btn = el("button", { class: "syncbtn", onclick: async () => {
+    btn.disabled = true;
+    status.textContent = "kicking export…";
+    try {
+      const r = await fetch("/api/fhir/$export?_type=Immunization,Patient,Observation", { method: "GET" });
+      if (r.status !== 202) throw new Error(`kickoff ${r.status}`);
+      const loc = r.headers.get("Content-Location");
+      const { job } = await r.json();
+      status.textContent = `job ${job} running…`;
+      for (let i = 0; i < 30; i++) {
+        await new Promise((res) => setTimeout(res, 2000));
+        const sr = await fetch("/api/fhir" + loc.replace(/^\/fhir/, ""));
+        if (sr.status === 200) {
+          const m = await sr.json();
+          status.textContent = `complete — ${m.output.length} file(s): ${m.output.map((f) => f.type).join(", ")}`;
+          bx.append(el("div", { class: "alert-msg mono" },
+            m.output.map((f) => `/api/fhir${f.url.replace(/^\/fhir/, "")}`).join("  ")));
+          return;
+        }
+        if (sr.status >= 400) throw new Error(`status ${sr.status}`);
+      }
+      status.textContent = "still running after 60s — check the service";
+    } catch (e) {
+      status.textContent = `export unavailable: ${e.message} (bulk-export-service down?)`;
+    } finally {
+      btn.disabled = false;
+    }
+  } }, "⇩ export Immunization + Patient + Observation");
+  bx.append(btn, el("span", { style: "display:inline-block;width:8px" }), status);
+
+  page.append(el("div", { class: "grid-2" }, cov, def), bx);
+  return page;
+}

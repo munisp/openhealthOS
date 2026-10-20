@@ -455,7 +455,46 @@ function RecordView() {
     if (rows.length) wrap.append(RecordSection(t(labelKey), glyph, rows));
   }
   if (consults.length) wrap.append(RecordSection(t("rec_telehealth"), "☎", consults));
+  wrap.append(ShareSummaryCard());
   return wrap;
+}
+
+/* Share my summary — SMART Health Link (ADR-0054). The SHR encrypts the
+ * IPS with a key that exists only inside the link: the patient shows the
+ * link/QR to any clinician; the server never sees plaintext after minting.
+ * Offline-honest: no network, no link — the card says so, never fakes one. */
+function ShareSummaryCard() {
+  const card = el("div", { class: "card notif-card accent-info" },
+    el("div", { class: "notif-glyph" }, "⛓"),
+    el("div", { class: "notif-main" },
+      el("div", { class: "notif-kind" }, "Share my summary (SMART Health Link)"),
+      el("div", { class: "notif-text" },
+        "A time-limited encrypted link to your International Patient Summary — show it to any clinician, anywhere. It expires in 30 days.")));
+  const out = el("div", { class: "notif-meta" });
+  const btn = el("button", { class: "btn btn-outline", onclick: async () => {
+    if (!navigator.onLine) { out.textContent = "Offline — a share link needs the network once."; return; }
+    btn.disabled = true;
+    out.textContent = "Minting secure link…";
+    try {
+      const resp = await fetch(`${apiBase()}/shr/ips/${encodeURIComponent(state.patientId)}/shl`, {
+        headers: { "X-Patient-Self": state.patientId }, cache: "no-store",
+      });
+      if (!resp.ok) throw new Error(String(resp.status));
+      const { link } = await resp.json();
+      out.textContent = "";
+      const input = el("input", { class: "btn btn-outline", style: "width:100%;font-size:11px", readonly: true, value: link });
+      const copy = el("button", { class: "btn", onclick: () => {
+        navigator.clipboard?.writeText(link).then(() => { copy.textContent = "Copied"; });
+      } }, "Copy link");
+      out.append(input, copy);
+    } catch {
+      out.textContent = "Share service unavailable right now — your record stays on this phone regardless.";
+    } finally {
+      btn.disabled = false;
+    }
+  } }, "Create share link");
+  card.querySelector(".notif-main").append(btn, out);
+  return card;
 }
 
 /* ---------- facilities near me (ADR-0014) -------------------------------

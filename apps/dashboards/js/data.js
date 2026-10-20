@@ -173,6 +173,7 @@ export class DataSource {
       equipment: "/api/equipment/equipment",
       tickets: "/api/equipment/tickets",
       custody: "/api/equipment/custody",
+      immig: "/api/kpi/immig",
       payers: "/api/claims/payers/stats",
       kpi: "/api/kpi/plane",
       readiness: "/api/readiness/readiness",
@@ -488,5 +489,21 @@ export function demoData() {
         computed_at: new Date(now).toISOString() },
     ],
   };
-  return { facilities, events, overview, equipment, tickets, custody, payers, kpi, readiness };
+  // immunization coverage + defaulters (ADR-0054; NPHCDA/WHO-DAK shape)
+  const immig = {
+    period: "202610",
+    coverage: [
+      { antigen: "BCG", given: 412, target: 480 },
+      { antigen: "Penta-1", given: 388, target: 480 },
+      { antigen: "Penta-3", given: 301, target: 480 },
+      { antigen: "Measles-1", given: 265, target: 460 },
+      { antigen: "YellowFever", given: 259, target: 460 },
+    ],
+    defaulters: [
+      { child: "NG-0xa41f", antigen: "Penta-3", due: "2026-10-02", days_late: 18, facility: "PHC-003", guardian_contact: "on-file" },
+      { child: "NG-0x77bc", antigen: "Measles-1", due: "2026-09-20", days_late: 30, facility: "PHC-005", guardian_contact: "via CHW" },
+      { child: "NG-0x19de", antigen: "Penta-2", due: "2026-10-14", days_late: 6, facility: "PHC-001", guardian_contact: "on-file" },
+    ],
+  };
+  return { facilities, events, overview, equipment, tickets, custody, immig, payers, kpi, readiness };
 }

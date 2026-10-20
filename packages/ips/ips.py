@@ -104,3 +104,40 @@ def ips_summary(bundle: dict) -> dict:
         rtype = e.get("resource", {}).get("resourceType", "?")
         counts[rtype] = counts.get(rtype, 0) + 1
     return counts
+
+
+def main(argv=None):
+    """CLI: build an IPS from a JSON doc on stdin, or validate one.
+
+      echo '{"patient": {...}, "immunizations": [...]}' | python3 ips.py build
+      cat ips.json | python3 ips.py validate
+    """
+    import argparse
+    import json as _json
+    import sys as _sys
+
+    ap = argparse.ArgumentParser(prog="ips")
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sub.add_parser("build")
+    sub.add_parser("validate")
+    args = ap.parse_args(argv)
+    doc = _json.load(_sys.stdin)
+    if args.cmd == "build":
+        bundle = build_ips(
+            doc.get("patient", {}),
+            problems=doc.get("problems"), allergies=doc.get("allergies"),
+            medications=doc.get("medications"),
+            immunizations=doc.get("immunizations"),
+            observations=doc.get("observations"),
+            facility=doc.get("facility", ""))
+        _json.dump(bundle, _sys.stdout)
+        print()
+        return 0
+    errors = validate_ips(doc)
+    _json.dump({"valid": not errors, "errors": errors}, _sys.stdout, indent=2)
+    print()
+    return 0 if not errors else 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -292,6 +292,9 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("/audit", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, 200, s.store.Audit())
 	})
+	// IPS document + SMART Health Links (ADR-0054) — patient-self or
+	// consented access, same gates as $everything.
+	newIPSHandler(s.store, "").routes(mux)
 	mux.HandleFunc("/healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }
