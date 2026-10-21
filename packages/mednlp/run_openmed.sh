@@ -16,6 +16,12 @@ fi
 
 pip install -q "openmed[hf]"
 
+echo "== pin live-verified digests into the manifest =="
+# Fetches real LFS sha256s from the HF API, rewrites models-manifest.json
+# atomically, re-runs the release gate (must now pass), executes a fixture
+# note through the real models, and writes a verification report.
+python3 live_verify.py --manifest models-manifest.json
+
 echo "== PII de-identification, real model =="
 python3 - <<'PY'
 import openmed

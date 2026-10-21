@@ -88,5 +88,26 @@ platform, all fail-closed:
 - Adopted in part: the lakehouse silver plane enforces de-id at entry;
   the release train vets model artifacts; PHCs gain coding assist.
   Notes-derived analytics light up fully once models are live-verified.
-- Deferred: live model verify (network-gated), Hausa/Yorùbá/Igbo NER
-  fine-tuning, FHIR DocumentReference de-id pipeline.
+- Deferred-work implementation (this iteration):
+  * **Live verify tooling shipped** (`live_verify.py`, wired into
+    `run_openmed.sh`): fetches real LFS sha256 digests from the HF API,
+    validates 64-hex (defense in depth), atomically rewrites the
+    manifest with `verified_at` + repo revision, re-runs the gate, and
+    executes a fixture note through the real models, writing a
+    verification report. Verified honestly in this sandbox: exit 2,
+    manifest untouched, gate keeps refusing.
+  * **NG-language NER fine-tuning pipeline shipped**
+    (`packages/mednlp/ner/`): synthetic seed corpus in
+    English/Hausa/Yorùbá/Igbo (offset-validated, clearly marked as
+    bring-up data pending native-speaker review), BIO preparation with
+    offset-preserving tokenisation and deterministic splits, an
+    evaluator that scores ANY span detector on one metric — the
+    deterministic pattern pack's honest baseline on the seed corpus is
+    P 0.93 / R 0.69 / F1 0.80 (it nails format-invariant identifiers,
+    misses PERSON, as expected) — and a guarded `train.py` that refuses
+    to train on the unreviewed seed without `--bring-up` and exits 2
+    without gated weights.
+  * Remaining hard dependency: a network-reachable runner executes
+    `run_openmed.sh` (pins land, integration test flips to clean), then
+    corpus review enables real fine-tuning. FHIR DocumentReference de-id
+    pipeline remains deferred.
