@@ -1,0 +1,10 @@
+{
+  "comment": "ADR-0066 lakefeed topic contract. One topic per event family; keys are facility ids for per-facility ordering. Single partition at T1 scale; partitions scale at state/national tier.",
+  "topics": [
+    {"name": "lakefeed.clinical",  "partitions": 1, "key": "facility_id", "retention_hours": 168},
+    {"name": "lakefeed.claims",    "partitions": 1, "key": "facility_id", "retention_hours": 720},
+    {"name": "lakefeed.stock",     "partitions": 1, "key": "facility_id", "retention_hours": 168},
+    {"name": "lakefeed.adherence", "partitions": 1, "key": "facility_id", "retention_hours": 720},
+    {"name": "surveillance.signal","partitions": 1, "key": "facility_id", "retention_hours": 2160}
+  ]
+}
