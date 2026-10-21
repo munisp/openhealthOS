@@ -1,0 +1,12 @@
+{
+  "comment": "Model artefact registry for ADR-0065. Every model the platform ships must be registered here with an allowlisted licence and a sha256 pin. model_gate.vet() enforces this at release; OpenMed enforces the same hash at download. Fill in verified hashes at live verify (run_openmed.sh).",
+  "models": [
+    {
+      "id": "OpenMed/OpenMed-PII-SuperClinical-Small-44M-v1",
+      "purpose": "pii-deidentification",
+      "license": "Apache-2.0",
+      "sha256": "PENDING-LIVE-VERIFY",
+      "tier": "T0/T1-sidecar"
+    }
+  ]
+}
