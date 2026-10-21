@@ -65,19 +65,39 @@ def bronze(events: list[dict], out: str) -> int:
     return n
 
 
-def silver(events: list[dict], out: str) -> int:
-    """Canonical records: one silver table per entity-ish event type."""
+class FreeTextGateError(Exception):
+    """Free text tried to cross into silver without a de-id scrubber."""
+
+
+def silver(events: list[dict], out: str, scrub=None) -> int:
+    """Canonical records: one silver table per entity-ish event type.
+
+    Free-text doctrine (ADR-0065): an event declaring
+    ``free_text: [payload keys]`` carries narrative PHI. Those fields may
+    enter silver ONLY through a de-identification scrubber (packages/
+    mednlp.deid or the live OpenMed sidecar). No scrubber => raise, never
+    pass raw narrative into the analytical plane."""
     tables: dict[str, list[dict]] = defaultdict(list)
     for ev in events:
         etype = ev.get("type", "unknown")
         payload = ev.get("payload") or {}
+        fields = {k: v for k, v in payload.items()
+                  if isinstance(v, (str, int, float, bool))}
+        declared = ev.get("free_text") or []
+        if declared:
+            if scrub is None:
+                raise FreeTextGateError(
+                    f"event {ev.get('id', '?')} declares free_text {declared} "
+                    "but no scrubber was provided")
+            for k in declared:
+                if isinstance(fields.get(k), str):
+                    fields[k] = scrub(fields[k])
         rec = {
             "id": ev.get("id", ""),
             "facility": ev.get("facility", ""),
             "ts": ev.get("ts", ""),
             "type": etype,
-            **{k: v for k, v in payload.items()
-               if isinstance(v, (str, int, float, bool))},
+            **fields,
         }
         tables[etype].append(rec)
     n = 0
@@ -111,9 +131,9 @@ def gold(events: list[dict], out: str) -> dict:
     return agg
 
 
-def build(events: list[dict], out: str) -> dict:
+def build(events: list[dict], out: str, scrub=None) -> dict:
     nb = bronze(events, out)
-    ns = silver(events, out)
+    ns = silver(events, out, scrub=scrub)
     agg = gold(events, out)
     return {"bronze_rows": nb, "silver_rows": ns, "gold": agg,
             "format": "parquet" if HAVE_PARQUET else "jsonl"}

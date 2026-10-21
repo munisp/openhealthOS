@@ -82,5 +82,16 @@ def detect(text):
             spans.append({"start": m.start(), "end": m.end(),
                           "text": m.group(0), "label": p["entity_type"],
                           "score": round(score, 3)})
+    # Resolve overlaps: an 11-digit phone number also matches the bare
+    # ``\d{11}`` NIN pattern. Overlapping spans must never both reach the
+    # redactor — double replacement at the same coordinates eats clinical
+    # text. Keep the higher-scoring span (phone_ng out-scores a contextless
+    # NIN), drop the loser. Ties keep the earlier span.
     spans.sort(key=lambda s: s["start"])
-    return spans
+    kept = []
+    for s in sorted(spans, key=lambda s: -s["score"]):
+        if any(s["start"] < k["end"] and k["start"] < s["end"] for k in kept):
+            continue
+        kept.append(s)
+    kept.sort(key=lambda s: s["start"])
+    return kept

@@ -56,9 +56,37 @@ with NO model download.
    network is unavailable (it is, in this sandbox — HF is unreachable
    and OpenMed's own integrity check correctly refuses unverified bytes).
 
+## Integration (shipped; live-verify still pending)
+The parts that do not depend on model downloads are now wired into the
+platform, all fail-closed:
+1. **Silver free-text gate** (`packages/lakehouse/lakehouse.py`) —
+   `silver()`/`build()` take a `scrub` callable. Any event declaring
+   `free_text: [payload keys]` is REFUSED (FreeTextGateError) if no
+   scrubber is provided; otherwise declared keys are de-identified on
+   entry. Raw narrative can never reach the analytical plane silently.
+2. **Scrubber hook** (`packages/mednlp/silver_hook.py`) —
+   `make_scrubber()` wires the spike's de-id into the lakefeed today;
+   when the sidecar is live the same seam swaps to model-grade NER with
+   the pattern pack as high-precision fallback.
+3. **Release model gate** (`tools/release/sbom.py::model_gate`) — every
+   `**/models-manifest.json` in the repo is vetted at release time:
+   licence allowlist + 64-hex sha256 pins. The current manifest carries
+   `PENDING-LIVE-VERIFY` and the release gate correctly refuses it —
+   the integration test pins this refusal and flips to clean only after
+   live verification lands real hashes.
+4. **Sidecar** (`infra/compose/mednlp.yaml` +
+   `packages/mednlp/sidecar_server.py`) — T0/T1 loopback-only OpenMed
+   REST sidecar. Starts only where gated models are provisioned;
+   otherwise exits 2 loudly (verified in this sandbox) while the
+   silver gate keeps protecting the pipeline with the pattern pack.
+5. **Overlap resolution** (`ngpatterns.py`) — found by the integration
+   test: an 11-digit phone number also matches the bare-NIN pattern, and
+   double redaction at the same coordinates ate clinical text. Overlaps
+   now resolve to the highest-scoring span before redaction.
+
 ## Consequences
-- If adopted: lakehouse gains notes-derived analytics; PHCs gain coding
-  assist; the release train gains a model supply-chain gate.
+- Adopted in part: the lakehouse silver plane enforces de-id at entry;
+  the release train vets model artifacts; PHCs gain coding assist.
+  Notes-derived analytics light up fully once models are live-verified.
 - Deferred: live model verify (network-gated), Hausa/Yorùbá/Igbo NER
-  fine-tuning, FHIR DocumentReference de-id pipeline, OpenMed REST
-  sidecar in infra/compose (lands with live verify).
+  fine-tuning, FHIR DocumentReference de-id pipeline.

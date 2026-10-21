@@ -1,0 +1,45 @@
+# mednlp.yaml — OpenMed clinical-NLP sidecar (ADR-0065).
+#
+# Placement: T0/T1 facility sidecar only. Notes are de-identified at the
+# edge BEFORE anything reaches the lakefeed; raw narrative never leaves
+# the facility. Loopback-only by default — expose beyond localhost only
+# behind the platform mTLS gateway.
+#
+# HONEST PROVISIONING NOTE: this service starts and serves only where the
+# gated model artifacts have been provisioned (models-manifest.json with
+# 64-hex sha256 pins — the release SBOM model gate refuses unverified
+# pins). Where HuggingFace is unreachable, run packages/mednlp/run_openmed.sh
+# on a connected runner to fetch + verify models into the cache volume,
+# then ship the volume to the facility. Until live verify lands, the
+# deterministic Nigerian pattern pack (ngpatterns.py) carries de-id at
+# the silver gate; this sidecar upgrades detection quality, it is not on
+# the critical path.
+
+services:
+  mednlp:
+    image: python:3.12-slim
+    container_name: openhealth-mednlp
+    restart: unless-stopped
+    working_dir: /srv
+    volumes:
+      - mednlp-model-cache:/models
+      - ../../packages/mednlp:/srv/mednlp:ro
+    environment:
+      HF_HOME: /models
+      OPENMED_CACHE: /models
+      MEDNLP_MANIFEST: /srv/mednlp/models-manifest.json
+      MEDNLP_PORT: "8765"
+    command: >
+      sh -c "pip install --no-cache-dir -q 'openmed[hf]' &&
+             python /srv/mednlp/sidecar_server.py"
+    ports:
+      - "127.0.0.1:8765:8765"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,os;urllib.request.urlopen('http://127.0.0.1:'+os.environ.get('MEDNLP_PORT','8765')+'/healthz',timeout=3)"]
+      interval: 30s
+      timeout: 5s
+      retries: 5
+      start_period: 120s   # first boot downloads + verifies models
+
+volumes:
+  mednlp-model-cache:

@@ -33,6 +33,26 @@ def license_gate(licenses: dict) -> list[str]:
             bad.append(f"{dep}: {lic}")
     return bad
 
+def model_gate(root: str) -> list[str]:
+    """Model-artifact vetting (ADR-0065): if a models-manifest.json exists
+    anywhere in the tree, it MUST pass the mednlp gate. Returns failure
+    list (empty = clean). No manifest => no models => clean."""
+    import importlib.util
+    spec = importlib.util.spec_from_file_location(
+        "model_gate", os.path.join(root, "packages", "mednlp", "model_gate.py"))
+    if spec is None or spec.loader is None:
+        return ["model_gate module unavailable"]
+    mg = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mg)
+    failures = []
+    for manifest in glob.glob(os.path.join(root, "**", "models-manifest.json"),
+                              recursive=True):
+        try:
+            mg.vet(manifest)
+        except Exception as exc:  # fail-closed, same doctrine as licences
+            failures.append(f"{os.path.relpath(manifest, root)}: {exc}")
+    return failures
+
 def build_sbom(root: str) -> dict:
     deps = go_deps(root)
     return {"bomFormat": "CycloneDX", "specVersion": "1.5",
