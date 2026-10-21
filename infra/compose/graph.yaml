@@ -1,0 +1,22 @@
+# graph.yaml — Apache AGE evaluation service (ADR-0064 spike).
+# T0/T1 only. Official image, nothing vendored, nothing forked.
+# The facility edge (T2) and devices (T3) never see this service.
+services:
+  age:
+    image: apache/age:PG15_latest
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: openhealth
+      POSTGRES_PASSWORD: ${OH_AGE_DB_PASSWORD:?set via env, never committed}
+    volumes:
+      - age-data:/var/lib/postgresql/data
+    ports:
+      - "127.0.0.1:54329:5432"  # loopback only; never exposed to the LAN
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d openhealth"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
+volumes:
+  age-data:
