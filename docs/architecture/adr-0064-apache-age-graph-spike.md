@@ -58,6 +58,22 @@ Adoption gate: this ADR moves to Accepted only when `run_age.sh --verify`
 passes on a real AGE instance and a T1 operator signs off on the
 operational cost (one more extension to version and upgrade).
 
+## Spike outcome (iteration 2)
+- Live verify attempted in the build sandbox: `run_age.sh --verify` exited
+  honestly — no Docker available; the golden outputs remain the pinned
+  reference. The ADR stays at Spike until a live-capable runner confirms.
+- Added `lakefeed_bridge.py`: the operational graph is a **projection of
+  the silver layer** — one contract (ADR-0060), two projections (parquet
+  analytics + graph). Silver events in, graph nodes/edges/CSVs out;
+  unknown event types skipped honestly; partial JSONL lines never fatal.
+  The bridged synthetic graph reproduces the fraud-ring verdict exactly.
+- Added `sql_fallback.py`: recursive-CTE-free relational equivalents of
+  all three killer queries for T1 Postgres **without** AGE, with a
+  `parity_report()` that structurally pins thresholds and exclusions to
+  the reference engine — the fallback can never silently answer a
+  different question than the graph.
+- Suite: 17/17 green.
+
 ## Consequences
 - If adopted: NHIA fraud investigation, outbreak contact tracing, and
   referral commissioning gain a query surface a specialist can use directly.
