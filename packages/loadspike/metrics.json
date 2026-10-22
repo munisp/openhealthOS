@@ -1,0 +1,32 @@
+{
+  "stream": {
+    "bench": "stream",
+    "events": 200000,
+    "facilities": 8800,
+    "produce_eps": 1208298,
+    "consume_eps": 1795859,
+    "full_replay_s": 0.063,
+    "dedupe_overhead_eps": 3186280
+  },
+  "lakehouse": {
+    "bench": "lakehouse",
+    "events": 100000,
+    "build_s": 1.162,
+    "build_eps": 86039,
+    "silver_partitions": {
+      "type=stock_counted": 33333,
+      "type=claim_filed": 33333,
+      "type=encounter_held": 33334
+    },
+    "result_keys": [
+      "bronze_rows",
+      "format",
+      "gold",
+      "silver_rows"
+    ]
+  },
+  "mesh": {
+    "hop_eps": 19257,
+    "drain_eps": 21929
+  }
+}
