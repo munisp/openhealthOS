@@ -18,13 +18,16 @@ gates asserted and timings recorded (never asserted — hardware varies).
 | Lakehouse bronze→silver→gold | **86K events/s** | 100M-record national bronze rebuild ≈ 20 min single-core; parallel by partition in production |
 | Mesh hop (chain-MAC + verify + persist) | **19.3K hops/s** | ~1.7M mesh messages/hub/day sustained — 20× headroom over a busy LGA |
 | Mesh drain after partition | **21.9K entries/s** | A 6-hour outage's backlog at a busy PHC (~10K entries) flushes in < 1 s |
+| Mesh over the wire, TLS keep-alive | **6.2K hops/s** | Real TCP+TLS on loopback costs ~3× vs in-process; still 530M messages/hub/day |
+| Mesh over the wire, handshake per hop | **382 hops/s** | **16× penalty — keep-alive is a REQUIRED deployment setting, recorded as such** |
 
 ## Honest caveats (recorded, not hidden)
 - Reference-engine numbers (stream) model the CONTRACT, not a running
   Fluvio cluster; live cluster numbers land with ADR-0066 live verify.
-- Mesh numbers are in-process (no TLS, no network); the wire cost is
-  real and unmeasured here — but the crypto+fsync path, usually the
-  suspected bottleneck, is proven cheap.
+- Wire numbers are loopback TLS: real handshakes and HTTP framing, but
+  WAN latency/loss are NOT simulated — that needs the chaos harness.
+  The keep-alive finding (6.2K vs 382 hops/s) is protocol cost, not
+  latency, so it transfers to WAN conditions.
 - Lakehouse numbers are single-threaded Python; production parallelises
   by partition trivially.
 - NOT measured yet: NIN-binding service shard throughput, WhatsApp/telco
