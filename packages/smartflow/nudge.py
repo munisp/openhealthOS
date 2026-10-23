@@ -30,6 +30,7 @@ class NudgeRanker:
     def __init__(self):
         # (context, action) -> [accepts, shown]
         self._counts = {}
+        self.decision_log = []  # exploration decisions w/ propensities
 
     def record(self, context, action, accepted):
         """One observation: the nudge was shown; did the user take it?"""
@@ -60,3 +61,61 @@ class NudgeRanker:
         return {"context": context, "nudges": ready + learning,
                 "withdrawn": [s["action"] for s in scored
                               if s["state"] == "withdrawn"]}
+
+    def suggest_explore(self, context, candidates, epsilon=0.1, rng=None):
+        """Epsilon-greedy suggestion WITH propensity logging — the
+        exploration regime that makes offline policy evaluation
+        (policyeval) possible.
+
+        With probability epsilon, explores uniformly over non-withdrawn
+        candidates (propensity = epsilon/len(eligible)); otherwise takes
+        the argmax (propensity = 1 - epsilon [+ epsilon/len if the argmax
+        could also be reached by exploration — it can]). Every suggestion
+        appends a decision record to self.decision_log in exactly the
+        shape from_nudge_log consumes: {context, action, propensity}.
+        The reward (accepted/refused) is attached by record_outcome().
+
+        A platform that never explores cannot prove a better policy
+        exists; a platform that explores without logging propensities
+        cannot prove it honestly. This does both halves."""
+        import random as _random
+        r = rng or _random
+        scored = [self.score(context, a) for a in candidates]
+        eligible = [s for s in scored if s["state"] != "withdrawn"]
+        if not eligible:
+            return {"context": context, "nudge": None,
+                    "reason": "all candidates withdrawn"}
+        ready = sorted((s for s in eligible if s["state"] == "ready"),
+                       key=lambda s: -s["acceptance"])
+        best = ready[0]["action"] if ready else eligible[0]["action"]
+        if r.random() < epsilon:
+            pick = r.choice(eligible)["action"]
+            regime = "explore"
+        else:
+            pick, regime = best, "exploit"
+        # honest propensity: P(pick) = (1-eps)*1[pick==best] + eps/len
+        prop = epsilon / len(eligible)
+        if pick == best:
+            prop += (1 - epsilon)
+        rec = {"context": context, "action": pick,
+               "propensity": round(prop, 6), "regime": regime,
+               "accepted": None}
+        self.decision_log.append(rec)
+        return {"context": context, "nudge": pick, "regime": regime,
+                "propensity": rec["propensity"],
+                "log_index": len(self.decision_log) - 1}
+
+    def record_outcome(self, log_index, accepted):
+        """Attach the reward to a logged suggestion. Refuses to attach
+        twice — a reward that can be rewritten is not a reward."""
+        rec = self.decision_log[log_index]
+        if rec["accepted"] is not None:
+            raise ValueError("outcome already recorded — reward is final")
+        rec["accepted"] = bool(accepted)
+        self.record(rec["context"], rec["action"], accepted)
+
+    def decision_events(self):
+        """Completed decision log entries in policyeval's shape."""
+        return [{"context": r["context"], "action": r["action"],
+                 "propensity": r["propensity"], "reward": 1.0 if r["accepted"] else 0.0}
+                for r in self.decision_log if r["accepted"] is not None]
