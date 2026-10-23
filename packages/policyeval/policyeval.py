@@ -228,3 +228,30 @@ class PromotionLog:
                                      "role": role, "note": note})
                 return e
         raise EvalError(f"no such candidate: {fingerprint}")
+
+
+def from_batch_log(records: list[dict]) -> list[dict]:
+    """Batch-review observations -> decision events.
+    records: [{batch_kind, suggested, confirmed, propensity}] where
+    suggested is what the rule proposed (e.g. "suggested-approve") and
+    confirmed is whether the human ratified it. Reward = ratified.
+    The propensity is the probability the rule version in force produced
+    that suggestion — for deterministic rules it is 1.0, which makes the
+    log an INCUMBENT baseline only: deterministic logging cannot support
+    off-policy evaluation, and this adapter says so rather than pretend."""
+    out = []
+    for i, r in enumerate(records):
+        p = r.get("propensity")
+        if p is None:
+            raise EvalError(
+                f"batch record {i} has no propensity — refusing to guess "
+                "the rule's decision probability")
+        if p >= 1.0:
+            raise EvalError(
+                "deterministic batch rule (propensity 1.0): this log can "
+                "measure the incumbent but cannot evaluate alternatives — "
+                "exploration must exist BEFORE improvement can be proven")
+        out.append({"context": r["batch_kind"], "action": r["suggested"],
+                    "propensity": p,
+                    "reward": 1.0 if r.get("confirmed") else 0.0})
+    return out
