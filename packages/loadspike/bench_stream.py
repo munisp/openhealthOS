@@ -12,7 +12,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
                                 "..", "streamspike"))
-from spike import RefTopic, RefConsumer, per_key_order_ok  # noqa: E402
+from refstream import RefTopic, RefConsumer, per_key_order_ok  # noqa: E402
 
 N_FACILITIES = 8800  # PHC-scale: one T1 hub's worst case
 

@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from spike import (RefTopic, RefConsumer, per_key_order_ok, load_fixture,  # noqa: E402
+from refstream import (RefTopic, RefConsumer, per_key_order_ok, load_fixture,  # noqa: E402
                    build_stream)
 
 

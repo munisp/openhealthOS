@@ -5,7 +5,7 @@ import time
 import unittest
 from unittest.mock import patch
 
-from keyring_shared import TrustError
+from qr_keyring import TrustError
 from presenceqr import mint, scan, main
 
 RING = {"k2026": "presence-secret-0000001"}

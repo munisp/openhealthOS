@@ -6,7 +6,7 @@ import os
 import tempfile
 import unittest
 
-from dhis2 import (Mapping, data_value_set, export_batch,
+from dhis2map import (Mapping, data_value_set, export_batch,
                    measure_report_to_values, period_of,
                    surveillance_to_values)
 

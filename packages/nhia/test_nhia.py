@@ -1,5 +1,5 @@
 import json, subprocess, sys, os
-from nhia import build_submission
+from nhiaclaims import build_submission
 
 TARIFFS = {"CONS-GEN", "MAT-NVD", "MAL-RDT"}
 
@@ -37,7 +37,7 @@ def test_negative_amount():
     assert not out["conformant"]
 
 def test_cli_exit_code():
-    p = subprocess.run([sys.executable, "nhia.py"],
+    p = subprocess.run([sys.executable, "nhiaclaims.py"],
         input=json.dumps({"scheme": "NHIA-FFS", "facility_id": "F1", "period": "2026-10",
                           "claims": [{"member_id": "A"}]}),
         capture_output=True, text=True, cwd=os.path.dirname(__file__))

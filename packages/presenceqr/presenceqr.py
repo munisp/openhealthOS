@@ -31,7 +31,7 @@ import sys
 import time
 from datetime import datetime
 
-from keyring_shared import (PREFIX, RevokedError, TrustError, check_budget,
+from qr_keyring import (PREFIX, RevokedError, TrustError, check_budget,
                             load_keyring, load_revocations, sign,
                             verify_with_ring)
 
