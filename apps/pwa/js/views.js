@@ -193,6 +193,10 @@ export function SyncView(ctx) {
       stat(t("pending_docs"), s.totalDocs), stat(t("pending_events"), s.pendingEvents)),
     el("div", { class: "card stat-row" },
       stat(t("last_sync"), s.lastSync ? new Date(s.lastSync).toLocaleString() : t("never"))),
+    s.backoffArmed && s.nextRetryAt
+      ? el("div", { class: "card stat-row" },
+          stat(t("next_retry"), new Date(s.nextRetryAt).toLocaleTimeString()))
+      : null,
     el("button", {
       class: "btn btn-primary btn-block",
       onclick: async () => {

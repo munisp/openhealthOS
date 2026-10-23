@@ -4,6 +4,7 @@
 
 import { LocalDB } from "./db.js";
 import { SyncClient, materialize } from "./sync.js";
+import { SyncEngine } from "./syncengine.js";
 import { LANGUAGES, setLanguage, getLanguage, t } from "./i18n.js";
 import { el, TasksView, PatientsView, RegisterForm, EncounterView,
          SyncView, DashboardView, SettingsView, generateTasksFor } from "./views.js";
@@ -25,6 +26,7 @@ async function boot() {
   state.db = await LocalDB.init();
   const base = await state.db.getMeta("syncBase");
   state.sync = new SyncClient(state.db, base || defaultSyncBase());
+  state.engine = new SyncEngine(state.db, base || defaultSyncBase());
   state.language = (await state.db.getMeta("language")) || "en";
   setLanguage(state.language);
   if (!(await state.db.getMeta("seeded"))) await seedDemoData();
@@ -229,7 +231,11 @@ const ctx = {
     await state.db.saveReplica(r);
     await state.db.queueEvent("patient_updated", { patient_id: patientId, cohorts, allergies });
   },
-  async syncNow() { return state.sync.syncNow(); },
+  async syncNow() {
+    const drained = await state.engine.drainOutbox();
+    const merged = await state.sync.syncNow();
+    return { ok: drained.ok && merged.ok, ...merged, drained };
+  },
   get syncStatus() { return state._syncStatus || { pendingEvents: 0, totalDocs: 0, online: navigator.onLine }; },
   async setLanguage(code) {
     setLanguage(code);
@@ -246,6 +252,12 @@ async function refreshData() {
   ctx._tasks = docs.filter((d) => d.type === "Task" && d.status === "open")
     .sort((a, b) => a.due - b.due);
   state._syncStatus = await state.sync.status();
+  try {
+    const eng = await state.engine.status();
+    state._syncStatus.failCount = eng.failCount;
+    state._syncStatus.nextRetryAt = eng.nextRetryAt;
+    state._syncStatus.backoffArmed = !eng.due;
+  } catch { /* engine status is advisory only */ }
   if (state.activePatient) {
     state._timeline = buildTimeline(state.activePatient.id, docs);
   }
@@ -319,7 +331,9 @@ function toast(msg) {
 async function syncQuietly() {
   if (!navigator.onLine) return;
   try {
-    await state.sync.syncNow();
+    if (!(await state.engine.due())) return; // backoff armed — honest "not yet"
+    await state.engine.drainOutbox();        // chunked, per-chunk acked
+    await state.sync.syncNow();              // CRDT merge + any remainder
   } catch { /* queued — the next pass retries */ }
 }
 
