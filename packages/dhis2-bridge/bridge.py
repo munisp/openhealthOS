@@ -44,6 +44,64 @@ def aggregate(events: list[dict]) -> list[dict]:
     ]
 
 
+def aggregate_reported(events: list[dict]) -> tuple[list[dict], dict]:
+    """aggregate() with the platform doctrine restored: nothing drops
+    silently. Returns (values, drop_report) where drop_report names the
+    unmapped event types and the malformed events that were excluded —
+    a number the ministry cannot trace is worse than no number, but a
+    number that VANISHED is worst of all."""
+    counts: dict[tuple[str, str, str], int] = defaultdict(int)
+    unmapped: dict[str, int] = defaultdict(int)
+    malformed = 0
+    for ev in events:
+        de = DATA_ELEMENTS.get(ev.get("type", ""))
+        if not de:
+            if "type" in ev:
+                unmapped[ev["type"]] += 1
+            else:
+                malformed += 1
+            continue
+        if "facility" not in ev or "ts" not in ev:
+            malformed += 1
+            continue
+        counts[(ev["facility"], period_of(ev["ts"]), de)] += 1
+    values = [
+        {"orgUnit": fac, "period": per, "dataElement": de, "value": n}
+        for (fac, per, de), n in sorted(counts.items())
+    ]
+    return values, {"unmapped_event_types": dict(sorted(unmapped.items())),
+                    "malformed_events": malformed,
+                    "received": len(events), "aggregated": len(values)}
+
+
+def emit(events: list[dict], spool_path: str | None = None,
+         guard=None, dataset: str = "OH-PHC-MONTHLY") -> dict:
+    """The production emission path: aggregate with drop reporting,
+    render, check the resend guard, spool with per-line integrity.
+    Returns {payload, drops, resend} — resend in {new, duplicate,
+    supersede} when a guard is supplied (duplicates are NOT re-spooled;
+    a USB run that carries the same month twice double-counts nothing,
+    but it wastes the one trip)."""
+    import os
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "dhis2"))
+    from hardened import ResendGuard, spool_append  # deferred: py3.10 ok
+
+    values, drops = aggregate_reported(events)
+    payload = to_datavalueset(values, dataset)
+    resend = None
+    if guard is not None:
+        flat = {"dataValues": [
+            {"dataElement": dv["dataElement"], "period": s["period"],
+             "orgUnit": s["orgUnit"], "value": dv["value"]}
+            for s in payload["dataValueSets"] for dv in s["dataValues"]]}
+        resend = guard.check(flat)
+        if resend != "duplicate":
+            guard.record(flat)
+    if spool_path and resend != "duplicate":
+        spool_append(spool_path, payload)
+    return {"payload": payload, "drops": drops, "resend": resend}
+
+
 def to_datavalueset(values: list[dict], dataset: str = "OH-PHC-MONTHLY") -> dict:
     """Render aggregates as a DHIS2 dataValueSet payload."""
     by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
