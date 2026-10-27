@@ -60,6 +60,7 @@ HTN_FOLLOWUP_V1 = {
 }
 
 from ng_imnci import IMNCI_V1  # noqa: E402
+from ng_psbi import PSBI_V1  # noqa: E402
 
 PACKS = {"fever": FEVER_V1, "hypertension-followup": HTN_FOLLOWUP_V1,
-         "imnci-under5": IMNCI_V1}
+         "imnci-under5": IMNCI_V1, "psbi-young-infant": PSBI_V1}
