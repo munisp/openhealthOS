@@ -175,3 +175,45 @@ def _days_between(d1: str, d2: str) -> int:
     a = date.fromisoformat(d1)
     b = date.fromisoformat(d2)
     return (b - a).days
+
+
+# ------------------------------------------------- howUdeyChat seam (NDJSON)
+# The chat side (kiosk check-ins, monitor ladders) is JS; the graph is
+# here. The seam is append-only NDJSON lines — the same shape the
+# facility node's ingest path already speaks.
+
+def export_worklist_lines(graph: "ContactGraph", today: str) -> list[str]:
+    """One JSON line per tracer worklist — consumed by the chat side to
+    render today's visits/calls and arm the monitor ladders."""
+    import json as _json
+    tracers = sorted({r["tracer"] for r in graph.contacts.values()
+                      if r["tracer"]})
+    lines = []
+    for t in tracers:
+        wl = graph.worklist(t, today)
+        lines.append(_json.dumps({"kind": "trace-worklist", "day": today,
+                                  **wl}, sort_keys=True))
+    return lines
+
+
+def ingest_checkin_lines(graph: "ContactGraph", lines: list[str]) -> dict:
+    """Apply chat-side check-in events. Shape:
+    {"kind":"trace-checkin","contact":"C-01","day":"2026-10-22",
+     "symptomatic":false}
+    Unknown contacts and malformed lines are rejected loudly, line by
+    line — a bad line never silently passes, and never blocks good ones.
+    """
+    import json as _json
+    applied, rejected = 0, []
+    for i, line in enumerate(lines):
+        try:
+            ev = _json.loads(line)
+            if ev.get("kind") != "trace-checkin":
+                raise TraceError("wrong kind")
+            graph.checkin(ev["contact"], ev["day"],
+                          bool(ev.get("symptomatic")))
+            applied += 1
+        except (TraceError, KeyError, _json.JSONDecodeError,
+                TypeError) as exc:
+            rejected.append({"line": i, "reason": str(exc)})
+    return {"applied": applied, "rejected": rejected}

@@ -4,7 +4,7 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
-from contacttrace import ContactGraph, TraceError  # noqa: E402
+from contacttrace import ContactGraph, TraceError, export_worklist_lines, ingest_checkin_lines  # noqa: E402
 
 
 def seeded():
@@ -92,3 +92,27 @@ class TestGraph(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestChatSeam(unittest.TestCase):
+    def test_worklist_export_and_checkin_ingest_roundtrip(self):
+        import json
+        g = seeded()
+        g.checkin("C-01", "2026-10-09")
+        lines = export_worklist_lines(g, "2026-10-11")
+        wl = json.loads(lines[0])
+        self.assertEqual(wl["kind"], "trace-worklist")
+        self.assertIn("C-01", wl["overdue"])
+
+        evs = [json.dumps({"kind": "trace-checkin", "contact": "C-01",
+                           "day": "2026-10-11", "symptomatic": False}),
+               json.dumps({"kind": "trace-checkin", "contact": "C-03",
+                           "day": "2026-10-11", "symptomatic": True}),
+               "{broken json",
+               json.dumps({"kind": "trace-checkin", "contact": "C-99",
+                           "day": "2026-10-11"})]
+        out = ingest_checkin_lines(g, evs)
+        self.assertEqual(out["applied"], 2)
+        self.assertEqual(len(out["rejected"]), 2)
+        self.assertEqual(g.contacts["C-01"]["state"], "monitoring")
+        self.assertEqual(g.contacts["C-03"]["state"], "converted")
