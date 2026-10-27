@@ -54,6 +54,11 @@ class Session:
             self.done = True
             self.escalate = True
             self.escalation_reason = f"red-flag: {option_id}"
+            # a red-flagged option may still name its classification —
+            # record it so the escalation carries the protocol outcome
+            nxt = s["options"][option_id]
+            if isinstance(nxt, dict) and nxt.get("outcome"):
+                self.outcome = nxt["outcome"]
             self.path.append((self.step_id, option_id))
             return self._state(now)
         nxt = s["options"][option_id]

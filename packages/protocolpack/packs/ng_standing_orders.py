@@ -59,4 +59,7 @@ HTN_FOLLOWUP_V1 = {
     },
 }
 
-PACKS = {"fever": FEVER_V1, "hypertension-followup": HTN_FOLLOWUP_V1}
+from ng_imnci import IMNCI_V1  # noqa: E402
+
+PACKS = {"fever": FEVER_V1, "hypertension-followup": HTN_FOLLOWUP_V1,
+         "imnci-under5": IMNCI_V1}
