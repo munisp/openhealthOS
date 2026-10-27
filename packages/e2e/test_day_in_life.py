@@ -62,3 +62,11 @@ class TestPackGovernance(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestOutbreakComposition(unittest.TestCase):
+    def test_outbreak_scenario_composes(self):
+        from outbreak_day import run_outbreak
+        out = run_outbreak()
+        self.assertEqual(len(out["log"]), 10)
+        self.assertIn("Cases: 2", out["aar"])
