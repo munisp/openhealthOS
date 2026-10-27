@@ -1,143 +1,149 @@
-#!/usr/bin/env python3
-"""International Patient Summary (IPS) — FHIR R4 document builder
-(ADR-0013, innovation).
+"""ips.py — FHIR R4 International Patient Summary export.
 
-Builds a FHIR R4 `document` Bundle following the IPS profile's shape:
-a Composition with the required sections (problems, allergies, medications,
-immunizations, results) plus the patient — the summary a clinician anywhere
-can read at a glance. Offline-verifiable signing lives in tools/ipsqr; this
-module produces the clinical payload that gets signed.
+The IPS is the standard for exactly one scenario: a patient arrives
+unconscious at a hospital in another country and the receiving team
+knows nothing about them. It's a FHIR document Bundle — a Composition
+with required sections (medications, allergies, problems) and
+recommended ones (immunizations, history, vitals) — designed to be
+readable by any conformant EMR worldwide.
+
+Clean-room implementation of the publicly documented IPS structure
+(HL7 FHIR IPS IG, hl7.org/fhir/uv/ips — CC0-licensed spec structure;
+section codes are LOINC, freely usable).
+
+Doctrine:
+- REQUIRED SECTIONS ARE STRUCTURAL: medications, allergies, problems
+  must exist even when empty — with an explicit emptyReason
+  ("none-known" vs "withheld"). Absent data and unknown data are
+  different clinical facts; the bundle must say which.
+- WITHHELD IS HONEST: data excluded for privacy reasons is marked
+  "withheld-by-consent", never silently dropped.
+- EVERY BUNDLE IS FINGERPRINTED: sha256 over canonical JSON — the hash
+  is what the cross-border release binds to and what the receiving
+  side can verify.
+- IDENTIFIED BY DESIGN: unlike fhirguard (which de-identifies), the
+  IPS exists to travel WITH the patient — but generation alone never
+  releases anything. Release goes through xrelease.
 """
-from __future__ import annotations
 
-import uuid
+import hashlib
+import json
 
-REQUIRED_SECTIONS = ("problems", "allergies", "medications",
-                     "immunizations", "results")
+# LOINC section codes per the publicly documented IPS composition
+SECTIONS = {
+    "medications": {"code": "10160-0", "title": "History of Medication use",
+                    "required": True},
+    "allergies": {"code": "48765-2", "title": "Allergies and Intolerances",
+                  "required": True},
+    "problems": {"code": "11450-4", "title": "Problem List",
+                 "required": True},
+    "immunizations": {"code": "11369-6", "title": "History of Immunizations",
+                      "required": False},
+    "history-of-procedures": {"code": "47519-4",
+                              "title": "History of Procedures",
+                              "required": False},
+    "results": {"code": "30954-2", "title": "Relevant diagnostic tests",
+                "required": False},
+    "vitals": {"code": "8716-3", "title": "Vital Signs", "required": False},
+    "pregnancy": {"code": "10162-6", "title": "History of Pregnancies",
+                  "required": False},
+}
+EMPTY_REASONS = ("none-known", "withheld-by-consent", "not-collected")
 
 
-def _rid(prefix: str) -> str:
-    return f"urn:uuid:{prefix}-{uuid.uuid4().hex[:12]}"
+class IPSError(Exception):
+    pass
 
 
-def build_ips(patient: dict, problems: list[dict] | None = None,
-              allergies: list[dict] | None = None,
-              medications: list[dict] | None = None,
-              immunizations: list[dict] | None = None,
-              observations: list[dict] | None = None,
-              facility: str = "") -> dict:
-    """patient: {id, name, birth_date, gender}. Clinical lists are plain
-    dicts {code, display, ...}; they become minimal FHIR resources."""
-    patient_url = _rid("patient")
-    entries = [{
-        "fullUrl": patient_url,
-        "resource": {"resourceType": "Patient", "id": patient_url.split(":")[-1],
-                     "name": [{"text": patient.get("name", "")}],
-                     "birthDate": patient.get("birth_date", ""),
-                     "gender": patient.get("gender", "unknown")},
-    }]
+def build_ips(patient, *, sections, author, generated_day):
+    """patient: {id, name, birthDate, gender, country}
+    sections: {section_key: {"entries": [...]} or
+                            {"empty_reason": one of EMPTY_REASONS}}
+    Returns a FHIR R4 document Bundle. Fail-closed on bad shape."""
+    if not patient.get("id") or not patient.get("name"):
+        raise IPSError("patient id and name required — an anonymous IPS "
+                       "is useless at a foreign ED")
+    known = set(SECTIONS)
+    unknown = set(sections) - known
+    if unknown:
+        raise IPSError(f"unknown IPS sections: {sorted(unknown)}")
 
-    section_map = {
-        "problems": ("Condition", problems or []),
-        "allergies": ("AllergyIntolerance", allergies or []),
-        "medications": ("MedicationStatement", medications or []),
-        "immunizations": ("Immunization", immunizations or []),
-        "results": ("Observation", observations or []),
+    composition_sections = []
+    entries = []
+    for key, spec in SECTIONS.items():
+        data = sections.get(key)
+        if data is None:
+            if spec["required"]:
+                raise IPSError(
+                    f"required section '{key}' missing — if there is no "
+                    f"data, say so with empty_reason (none-known / "
+                    f"withheld-by-consent / not-collected)")
+            continue
+        sec = {"title": spec["title"],
+               "code": {"coding": [{"system": "http://loinc.org",
+                                    "code": spec["code"]}]}}
+        if data.get("empty_reason"):
+            if data["empty_reason"] not in EMPTY_REASONS:
+                raise IPSError(f"bad empty_reason: {data['empty_reason']}")
+            sec["emptyReason"] = {"coding": [{
+                "system": "http://terminology.hl7.org/CodeSystem/list-empty-reason",
+                "code": data["empty_reason"]}]}
+            if data["empty_reason"] == "withheld-by-consent":
+                sec["text"] = {"status": "generated", "div":
+                               "Data withheld at patient direction."}
+        else:
+            items = data.get("entries", [])
+            sec["entry"] = [f"urn:uuid:{patient['id']}-{key}-{i}"
+                            for i in range(len(items))]
+            for i, item in enumerate(items):
+                entries.append({
+                    "fullUrl": f"urn:uuid:{patient['id']}-{key}-{i}",
+                    "resource": dict(item, meta={"section": key})})
+        composition_sections.append(sec)
+
+    composition = {
+        "resourceType": "Composition",
+        "status": "final",
+        "type": {"coding": [{"system": "http://loinc.org",
+                             "code": "60591-5",
+                             "display": "Patient summary Document"}]},
+        "subject": {"reference": f"Patient/{patient['id']}"},
+        "date": str(generated_day),
+        "author": [{"display": author}],
+        "title": "International Patient Summary",
+        "section": composition_sections,
     }
-    sections = []
-    for key, (rtype, items) in section_map.items():
-        refs = []
-        for item in items:
-            url = _rid(key)
-            resource = {"resourceType": rtype, "id": url.split(":")[-1],
-                        "code": {"text": item.get("display", item.get("code", ""))},
-                        "subject": {"reference": patient_url}}
-            if rtype == "Observation":
-                resource["valueString"] = item.get("value", "")
-            entries.append({"fullUrl": url, "resource": resource})
-            refs.append({"reference": url})
-        sections.append({"title": key, "code": {"text": key}, "entry": refs})
-
-    comp_url = _rid("composition")
-    entries.insert(0, {
-        "fullUrl": comp_url,
-        "resource": {"resourceType": "Composition", "id": comp_url.split(":")[-1],
-                     "status": "final", "type": {"text": "International Patient Summary"},
-                     "title": f"IPS — {patient.get('name', 'patient')}",
-                     "subject": {"reference": patient_url},
-                     "author": [{"display": facility or "OpenHealth OS"}],
-                     "section": sections},
-    })
-    return {"resourceType": "Bundle", "type": "document", "entry": entries}
+    bundle = {
+        "resourceType": "Bundle",
+        "type": "document",
+        "entry": [{"fullUrl": f"urn:uuid:composition-{patient['id']}",
+                   "resource": composition},
+                  {"fullUrl": f"urn:uuid:patient-{patient['id']}",
+                   "resource": {"resourceType": "Patient",
+                                "id": patient["id"],
+                                "name": [{"text": patient["name"]}],
+                                "birthDate": patient.get("birthDate"),
+                                "gender": patient.get("gender")}}] + entries,
+    }
+    return bundle
 
 
-def validate_ips(bundle: dict) -> list[str]:
-    """Structural validation; returns [] when the IPS is well-formed."""
-    errors: list[str] = []
+def fingerprint(bundle):
+    """sha256 over canonical JSON — what xrelease binds to and the
+    receiving side verifies."""
+    blob = json.dumps(bundle, sort_keys=True, separators=(",", ":"))
+    return "sha256:" + hashlib.sha256(blob.encode()).hexdigest()
+
+
+def validate_ips(bundle):
+    """Cheap structural check for receiving-side confidence."""
+    problems = []
     if bundle.get("resourceType") != "Bundle" or bundle.get("type") != "document":
-        return ["not a FHIR document Bundle"]
-    entries = bundle.get("entry", [])
-    full_urls = {e.get("fullUrl") for e in entries}
-    comps = [e for e in entries if e.get("resource", {}).get("resourceType") == "Composition"]
-    if len(comps) != 1:
-        errors.append("exactly one Composition required")
-    if not any(e.get("resource", {}).get("resourceType") == "Patient" for e in entries):
-        errors.append("Patient entry required")
-    if comps:
-        comp = comps[0]["resource"]
-        titles = {s.get("title") for s in comp.get("section", [])}
-        for req in REQUIRED_SECTIONS:
-            if req not in titles:
-                errors.append(f"missing IPS section: {req}")
-        for ref in [comp.get("subject", {}).get("reference", "")] + [
-                r.get("reference", "") for s in comp.get("section", [])
-                for r in s.get("entry", [])]:
-            if ref and ref not in full_urls:
-                errors.append(f"dangling reference: {ref}")
-    return errors
-
-
-def ips_summary(bundle: dict) -> dict:
-    """Counts for the PWA summary card / QR preview screen."""
-    counts: dict[str, int] = {}
-    for e in bundle.get("entry", []):
-        rtype = e.get("resource", {}).get("resourceType", "?")
-        counts[rtype] = counts.get(rtype, 0) + 1
-    return counts
-
-
-def main(argv=None):
-    """CLI: build an IPS from a JSON doc on stdin, or validate one.
-
-      echo '{"patient": {...}, "immunizations": [...]}' | python3 ips.py build
-      cat ips.json | python3 ips.py validate
-    """
-    import argparse
-    import json as _json
-    import sys as _sys
-
-    ap = argparse.ArgumentParser(prog="ips")
-    sub = ap.add_subparsers(dest="cmd", required=True)
-    sub.add_parser("build")
-    sub.add_parser("validate")
-    args = ap.parse_args(argv)
-    doc = _json.load(_sys.stdin)
-    if args.cmd == "build":
-        bundle = build_ips(
-            doc.get("patient", {}),
-            problems=doc.get("problems"), allergies=doc.get("allergies"),
-            medications=doc.get("medications"),
-            immunizations=doc.get("immunizations"),
-            observations=doc.get("observations"),
-            facility=doc.get("facility", ""))
-        _json.dump(bundle, _sys.stdout)
-        print()
-        return 0
-    errors = validate_ips(doc)
-    _json.dump({"valid": not errors, "errors": errors}, _sys.stdout, indent=2)
-    print()
-    return 0 if not errors else 1
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+        problems.append("not a document bundle")
+        return {"valid": False, "problems": problems}
+    comp = bundle["entry"][0]["resource"]
+    titles = {s["title"] for s in comp.get("section", [])}
+    for key, spec in SECTIONS.items():
+        if spec["required"] and spec["title"] not in titles:
+            problems.append(f"missing required section: {key}")
+    return {"valid": not problems, "problems": problems}
