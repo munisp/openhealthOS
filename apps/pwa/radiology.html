@@ -1,0 +1,185 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Reading worklist — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f7f7f7; color:#09352e; }
+  header { background:#fff; border-bottom:1px solid rgba(0,0,0,.1); padding:12px 18px;
+           display:flex; align-items:center; gap:12px; flex-wrap:wrap; }
+  header h1 { font-size:1.05rem; margin:0; flex:1; }
+  main { display:grid; grid-template-columns: 380px 1fr; gap:14px; padding:14px;
+         max-width:1200px; margin:0 auto; }
+  @media (max-width: 800px) { main { grid-template-columns: 1fr; } }
+  .card { background:#fff; border-radius:var(--oh-radius-lg); padding:14px;
+          box-shadow:var(--oh-shadow-sm); border:1px solid var(--oh-card-border); }
+  .case { border-bottom:1px solid #eee; padding:10px 4px; cursor:pointer; }
+  .case:hover { background:#f4f8f5; }
+  .case.active { background:#eef2ff; border-radius:8px; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:var(--oh-radius-pill);
+          font-size:.75rem; font-weight:700; }
+  .red { background:#fdeceb; color:#b3261e; } .orange { background:#fff4d6; color:#8a5a00; }
+  .green { background:#e6f3ea; color:#007f24; } .blue { background:#e8f0fe; color:#2b5c9e; }
+  .muted { color:#54655f; font-size:.85rem; }
+  button { background:#007f24; color:#fff; border:none; border-radius:10px;
+           padding:10px 14px; font-weight:700; cursor:pointer; }
+  button.ghost { background:#eef2ff; color:#4f46e5; }
+  input, textarea, select { padding:9px 10px; border:1px solid #ddd; border-radius:10px;
+           font-size:.95rem; width:100%; box-sizing:border-box; margin-top:6px; }
+  .row { display:flex; gap:8px; margin-top:10px; flex-wrap:wrap; }
+  #stale { background:#fff4d6; color:#8a5a00; padding:6px 12px; border-radius:10px;
+           font-size:.8rem; display:none; }
+  .err { background:#fdeceb; color:#b3261e; padding:8px 12px; border-radius:10px;
+         font-size:.85rem; margin-top:8px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Reading worklist</h1>
+  <span class="pill blue" id="domainLabel">radiology</span>
+  <span class="muted" id="clock"></span>
+  <span id="stale"></span>
+</header>
+<main>
+  <section class="card">
+    <strong>My queue</strong>
+    <div class="row">
+      <input id="reader" placeholder="reader id (e.g. rad-1)" style="flex:1">
+      <select id="domain">
+        <option>radiology</option><option>pathology</option><option>ecg</option>
+        <option>obstetric-us</option><option>dr-screening</option>
+        <option>dermatology</option><option>cervix-screening</option>
+        <option>pharmacy-review</option><option>teleicu</option>
+      </select>
+      <button class="ghost" onclick="refresh()">Refresh</button>
+    </div>
+    <div class="muted" style="margin-top:6px">STAT first, then overdue-by-SLA. Never FIFO.</div>
+    <div id="list"></div>
+  </section>
+  <section class="card">
+    <strong id="caseTitle">Select a case</strong>
+    <div id="detail" class="muted" style="margin-top:8px">The reading session, the draft,
+      the verification — all audited. A report is a draft until you verify it.</div>
+    <div id="reportForm" style="display:none">
+      <textarea id="findings" rows="3" placeholder="Findings"></textarea>
+      <textarea id="impression" rows="2" placeholder="Impression"></textarea>
+      <input id="template" placeholder="report template version (e.g. cxr-v1)">
+      <input id="critical" placeholder="critical findings, comma-separated (or blank)">
+      <div class="row">
+        <button class="ghost" onclick="saveDraft()">Save draft</button>
+        <button onclick="verifyReport()">Verify &amp; sign</button>
+        <button class="ghost" onclick="secondOpinion()">Request second opinion</button>
+      </div>
+      <div class="err" id="err"></div>
+    </div>
+  </section>
+</main>
+<script>
+// Reading-service base — same origin via the api-gateway (/api/reading).
+const API = "/api/reading";
+let lastGood = null, current = null;
+const DAY = Math.floor(Date.now() / 86400000); // engine day = unix day
+document.getElementById("clock").textContent = new Date().toLocaleString();
+
+async function call(path, body) {
+  const opts = body ? {method:"POST", headers:{"Content-Type":"application/json"},
+                       body: JSON.stringify(body)} : {};
+  const r = await fetch(API + path, opts);
+  const data = await r.json().catch(() => ({}));
+  if (!r.ok) throw new Error(data.error || ("HTTP " + r.status));
+  return data;
+}
+
+function showErr(msg) {
+  const e = document.getElementById("err");
+  e.textContent = msg; e.style.display = "block";
+}
+
+async function refresh() {
+  const reader = document.getElementById("reader").value.trim();
+  const domain = document.getElementById("domain").value;
+  document.getElementById("domainLabel").textContent = domain;
+  if (!reader) return;
+  try {
+    const list = await call("/worklist?domain=" + domain +
+      "&reader_id=" + encodeURIComponent(reader) + "&day=" + DAY);
+    lastGood = {list, at: new Date()};
+    document.getElementById("stale").style.display = "none";
+    renderList(list);
+  } catch (e) {
+    // offline-honest: show last-known with a stamp, never fake liveness
+    const s = document.getElementById("stale");
+    s.style.display = "inline";
+    s.textContent = lastGood
+      ? "service unreachable — showing last-known data from " + lastGood.at.toLocaleTimeString()
+      : "service unreachable — no data yet";
+    if (lastGood) renderList(lastGood.list);
+  }
+}
+
+function renderList(list) {
+  const el = document.getElementById("list");
+  el.innerHTML = list.length ? "" : '<div class="muted" style="padding:10px 4px">Queue empty.</div>';
+  for (const c of list) {
+    const d = document.createElement("div");
+    d.className = "case" + (current === c.case_id ? " active" : "");
+    const pill = c.priority === "stat" ? "red" : (c.overdue ? "orange" : "green");
+    d.innerHTML = `<span class="pill ${pill}">${c.priority}${c.overdue ? " · OVERDUE" : ""}</span>
+      <strong>${c.case_id}</strong> <span class="muted">${c.scope} · ${c.question}</span>`;
+    d.onclick = () => select(c);
+    el.appendChild(d);
+  }
+}
+
+function select(c) {
+  current = c.case_id;
+  document.getElementById("caseTitle").textContent = c.case_id + " — " + c.question;
+  document.getElementById("detail").innerHTML =
+    `<span class="muted">facility ${c.facility} · referrer ${c.referrer} · ordered day
+     ${c.ordered_day} · SLA ${c.priority}</span>`;
+  document.getElementById("reportForm").style.display = "block";
+  document.getElementById("err").style.display = "none";
+  refresh();
+}
+
+async function saveDraft() {
+  try {
+    await call("/reports/draft", {
+      domain: document.getElementById("domain").value, case_id: current,
+      reader_id: document.getElementById("reader").value.trim(),
+      findings: document.getElementById("findings").value,
+      impression: document.getElementById("impression").value, day: DAY,
+      template_version: document.getElementById("template").value,
+      critical_findings: document.getElementById("critical").value
+        .split(",").map(s => s.trim()).filter(Boolean)});
+    document.getElementById("err").style.display = "none";
+  } catch (e) { showErr(e.message); }
+}
+
+async function verifyReport() {
+  try {
+    await call("/reports/verify", {
+      domain: document.getElementById("domain").value, case_id: current,
+      reader_id: document.getElementById("reader").value.trim(), day: DAY});
+    document.getElementById("detail").innerHTML =
+      '<span class="pill green">verified</span> <span class="muted">Signed reports notify the referrer. Drafts never do.</span>';
+    refresh();
+  } catch (e) { showErr(e.message); }
+}
+
+async function secondOpinion() {
+  const reason = prompt("Reason for second opinion (required):");
+  if (!reason) return;
+  try {
+    await call("/second-opinion", {
+      domain: document.getElementById("domain").value, case_id: current,
+      requested_by: document.getElementById("reader").value.trim(),
+      day: DAY, reason});
+  } catch (e) { showErr(e.message); }
+}
+</script>
+</body>
+</html>
