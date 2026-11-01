@@ -1,0 +1,65 @@
+# ADR-0068: dcm4chee-arc-light as the STATE/NATIONAL hub archive.
+#
+# Licence doctrine (LICENSING.md): dcm4chee-arc-light is MPL 1.1 and the
+# dcm4che library is tri-licensed MPL 1.1/GPL 2.0/LGPL 2.1 (we elect MPL).
+# MPL is weak file-level copyleft — but our rule is stricter than the
+# licence requires: this compose REFERENCES UPSTREAM IMAGES and talks
+# DICOMweb/DIMSE over the network. No source is vendored, no fork, no
+# patched build, no Java in this repository.
+#
+# Topology: Orthanc (GPLv3) stays the small EDGE archive at facilities;
+# dcm4chee (MPL) is the heavy HUB archive: full DICOMweb
+# (QIDO/WADO/STOW-RS), native DIMSE (C-STORE/C-FIND/C-MOVE/C-GET, MPPS,
+# storage commitment), HL7 v2 (ADT/ORM/ORU), IHE XDS-I, multi-AE routing.
+# Our governance layer (packages/pacs, packages/radiology) is
+# vendor-neutral and speaks the same DICOMweb contract to either.
+#
+# This is the MINIMUM UNSECURED profile for evaluation. Production MUST
+# use the secured variant per the upstream wiki
+# (https://github.com/dcm4che/dcm4chee-arc-light/wiki/Running-on-Docker):
+# image dcm4che/dcm4chee-arc-psql:5.35.2-secure-ui + dcm4che/keycloak,
+# TLS everywhere. The platform's imaging-service terminates auth at the
+# gateway either way; DICOMwebAdapter.access_token() takes a Keycloak
+# client-credentials token when the archive is secured.
+
+services:
+  ldap:                      # central AE config (DICOM PS3.15 Annex H)
+    image: dcm4che/slapd-dcm4chee:2.6.15-35.2
+    volumes:
+      - hub-ldap-data:/var/lib/openldap/openldap-data
+      - hub-ldap-config:/etc/openldap/slapd.d
+
+  db:
+    image: dcm4che/postgres-dcm4chee:16.13-35
+    environment:
+      POSTGRES_DB: pacsdb
+      POSTGRES_USER: pacs
+      POSTGRES_PASSWORD: ${PACS_HUB_DB_PASSWORD:?set me}
+    volumes:
+      - hub-db-data:/var/lib/postgresql/data
+
+  arc:                       # the archive itself (WildFly)
+    image: dcm4che/dcm4chee-arc-psql:5.35.2   # use :5.35.2-secure-ui in prod
+    ports:
+      - "8080:8080"          # UI + DICOMweb (QIDO/WADO/STOW-RS at /dcm4chee-arc/aets/DCM4CHEE/rs)
+      - "11112:11112"        # DICOM C-STORE SCP (modalities push here)
+      - "2575:2575"          # HL7 v2 MLLP (ADT/ORM/ORU)
+      - "9990:9990"          # WildFly admin — bind to localhost in prod
+    environment:
+      STORAGE_DIR: /storage/fs1
+      POSTGRES_DB: pacsdb
+      POSTGRES_USER: pacs
+      POSTGRES_PASSWORD: ${PACS_HUB_DB_PASSWORD:?set me}
+      WILDFLY_CHOWN: /opt/wildfly/standalone /storage
+      WILDFLY_WAIT_FOR: ldap:389 db:5432
+    depends_on: [ldap, db]
+    volumes:
+      - hub-wildfly:/opt/wildfly/standalone
+      - hub-storage:/storage
+
+volumes:
+  hub-ldap-data:
+  hub-ldap-config:
+  hub-db-data:
+  hub-wildfly:
+  hub-storage:
