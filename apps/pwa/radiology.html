@@ -64,6 +64,13 @@
     <div id="detail" class="muted" style="margin-top:8px">The reading session, the draft,
       the verification — all audited. A report is a draft until you verify it.</div>
     <div id="reportForm" style="display:none">
+      <div class="row">
+        <input id="artifactRef" placeholder="StudyInstanceUID / slide id / tracing id"
+               style="flex:2">
+        <button class="ghost" onclick="openViewer()" style="flex:1">Open viewer</button>
+      </div>
+      <div class="muted" id="viewerMsg" style="margin-top:4px">The viewer is a separate
+        audited deployment (OHIF / OpenSeadragon). Every launch is logged.</div>
       <textarea id="findings" rows="3" placeholder="Findings"></textarea>
       <textarea id="impression" rows="2" placeholder="Impression"></textarea>
       <input id="template" placeholder="report template version (e.g. cxr-v1)">
@@ -72,6 +79,23 @@
         <button class="ghost" onclick="saveDraft()">Save draft</button>
         <button onclick="verifyReport()">Verify &amp; sign</button>
         <button class="ghost" onclick="secondOpinion()">Request second opinion</button>
+      </div>
+      <hr style="border:none;border-top:1px solid #eee;margin:14px 0">
+      <strong>Structured report</strong>
+      <div class="muted">Templates are versioned; coded fields refuse free text.
+        Signing is a hash — a changed letter breaks it.</div>
+      <div class="row">
+        <select id="rtemplate" style="flex:2" onchange="buildTemplateForm()">
+          <option value="">— load templates —</option>
+        </select>
+        <button class="ghost" onclick="loadTemplates()">Refresh templates</button>
+      </div>
+      <div id="tform"></div>
+      <div class="row">
+        <button class="ghost" onclick="saveStructured()">Save structured draft</button>
+        <button onclick="signStructured()">Sign structured report</button>
+        <button class="ghost" onclick="exportReport('html')">Print</button>
+        <button class="ghost" onclick="exportReport('fhir')">FHIR JSON</button>
       </div>
       <div class="err" id="err"></div>
     </div>
@@ -180,6 +204,125 @@ async function secondOpinion() {
       day: DAY, reason});
   } catch (e) { showErr(e.message); }
 }
+
+// ---- viewer launch: worklist hands the reader pixels ----
+const VIEWER_KIND = {radiology: "dicom-ohif", "obstetric-us": "dicom-ohif",
+  "dr-screening": "dicom-ohif", dermatology: "dicom-ohif",
+  "cervix-screening": "dicom-ohif", pathology: "wsi-openseadragon",
+  ecg: "ecg-canvas"};
+
+async function openViewer() {
+  const domain = document.getElementById("domain").value;
+  const kind = VIEWER_KIND[domain];
+  const artifact = document.getElementById("artifactRef").value.trim();
+  const msg = document.getElementById("viewerMsg");
+  if (!kind) { msg.textContent = "no viewer kind for this domain yet"; return; }
+  if (!artifact) { msg.textContent = "artifact reference required — never open an empty frame"; return; }
+  try {
+    const out = await call("/viewer/launch?kind=" + kind +
+      "&artifact_ref=" + encodeURIComponent(artifact) +
+      "&reader_id=" + encodeURIComponent(document.getElementById("reader").value.trim()) +
+      "&session_id=" + encodeURIComponent(current + "-sess") +
+      "&case_id=" + encodeURIComponent(current) + "&day=" + DAY);
+    msg.textContent = "launch logged (hash " + out.access_event.event_hash.slice(0, 12) + "…)";
+    window.open(out.url, "_blank");
+  } catch (e) { msg.textContent = e.message; } // honest refusal stays visible
+}
+
+// ---- structured reports: versioned templates, signed hashes ----
+let templates = [];
+
+async function loadTemplates() {
+  try {
+    templates = await call("/report-templates");
+    const sel = document.getElementById("rtemplate");
+    sel.innerHTML = '<option value="">— pick a template —</option>';
+    const domain = document.getElementById("domain").value;
+    for (const t of templates.filter(t => t.domain === domain || !domain)) {
+      const o = document.createElement("option");
+      o.value = t.id; o.textContent = t.id + " — " + t.title;
+      sel.appendChild(o);
+    }
+  } catch (e) { showErr(e.message); }
+}
+
+async function buildTemplateForm() {
+  const id = document.getElementById("rtemplate").value;
+  const box = document.getElementById("tform");
+  box.innerHTML = "";
+  if (!id) return;
+  try {
+    const t = await call("/report-template?id=" + encodeURIComponent(id));
+    for (const s of t.sections) {
+      const lbl = document.createElement("label");
+      lbl.className = "muted";
+      lbl.textContent = s.label + (s.required ? " *" : " (optional)");
+      let el;
+      if (s.type === "code") {
+        el = document.createElement("select");
+        el.innerHTML = '<option value="">—</option>';
+        for (const [v, text] of Object.entries(s.options)) {
+          const o = document.createElement("option");
+          o.value = v; o.textContent = v + " — " + text;
+          el.appendChild(o);
+        }
+      } else {
+        el = document.createElement("input");
+        if (s.type === "number") { el.type = "number"; el.step = "any"; }
+        el.placeholder = s.unit || "";
+      }
+      el.id = "tf_" + s.key;
+      lbl.appendChild(el);
+      box.appendChild(lbl);
+    }
+  } catch (e) { showErr(e.message); }
+}
+
+function structuredAnswers() {
+  const id = document.getElementById("rtemplate").value;
+  const answers = {};
+  document.querySelectorAll("#tform label").forEach(lbl => {
+    const el = lbl.querySelector("input,select");
+    if (!el || el.value === "") return; // absence is not a value
+    answers[el.id.slice(6)] = el.type === "number" ? Number(el.value) : el.value;
+  });
+  return {id, answers};
+}
+
+async function saveStructured() {
+  const {id, answers} = structuredAnswers();
+  if (!id) { showErr("pick a template first"); return; }
+  try {
+    await call("/reports/structured", {
+      report_id: current + "-report", template_id: id, answers,
+      case_id: current,
+      author_id: document.getElementById("reader").value.trim(), day: DAY});
+    document.getElementById("err").style.display = "none";
+  } catch (e) { showErr(e.message); } // validation refusals surface verbatim
+}
+
+async function signStructured() {
+  try {
+    const out = await call("/reports/sign", {
+      report_id: current + "-report",
+      signer_id: document.getElementById("reader").value.trim(), day: DAY});
+    document.getElementById("detail").innerHTML =
+      `<span class="pill green">signed</span> <span class="muted">content hash
+       ${out.signature.content_hash.slice(0, 16)}… — recompute to verify</span>`;
+  } catch (e) { showErr(e.message); }
+}
+
+async function exportReport(format) {
+  try {
+    const out = await call("/reports/export?id=" +
+      encodeURIComponent(current + "-report") + "&format=" + format);
+    const blob = new Blob([format === "html" ? out.html : JSON.stringify(out, null, 2)],
+      {type: format === "html" ? "text/html" : "application/json"});
+    window.open(URL.createObjectURL(blob), "_blank");
+  } catch (e) { showErr(e.message); }
+}
+
+loadTemplates();
 </script>
 </body>
 </html>

@@ -65,7 +65,9 @@ func (e *SubprocessEngine) Call(cmd string, args map[string]any) (json.RawMessag
 }
 
 type server struct {
-	engine EngineIface
+	engine    EngineIface // teleread: worklists, reads, escalations
+	reportkit EngineIface // reportkit: structured templates + signatures
+	viewlink  EngineIface // viewlink: viewer launch + access audit
 }
 
 func env(k, def string) string {
@@ -101,7 +103,9 @@ func bodyMap(r *http.Request) (map[string]any, error) {
 		}
 	}
 	q := r.URL.Query()
-	for _, k := range []string{"domain", "reader_id", "case_id"} {
+	for _, k := range []string{"domain", "reader_id", "case_id", "kind",
+		"artifact_ref", "session_id", "report_id", "signer_id",
+		"template_id", "format", "id"} {
 		if v := q.Get(k); v != "" {
 			m[k] = v
 		}
@@ -116,25 +120,29 @@ func bodyMap(r *http.Request) (map[string]any, error) {
 	return m, nil
 }
 
-func (s server) handle(cmd string) http.HandlerFunc {
+func (s server) handleWith(eng EngineIface, cmd, unavailable string) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		args, err := bodyMap(r)
 		if err != nil {
 			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON body"})
 			return
 		}
-		res, msg, callErr := s.engine.Call(cmd, args)
+		res, msg, callErr := eng.Call(cmd, args)
 		if callErr != nil {
 			if errors.Is(callErr, errDomain) {
 				writeJSON(w, http.StatusUnprocessableEntity, map[string]string{"error": msg})
 				return
 			}
-			writeJSON(w, http.StatusBadGateway, map[string]string{"error": "reading engine unavailable"})
+			writeJSON(w, http.StatusBadGateway, map[string]string{"error": unavailable})
 			return
 		}
 		w.Header().Set("Content-Type", "application/json")
 		w.Write(res)
 	}
+}
+
+func (s server) handle(cmd string) http.HandlerFunc {
+	return s.handleWith(s.engine, cmd, "reading engine unavailable")
 }
 
 func (s server) routes() *http.ServeMux {
@@ -155,6 +163,27 @@ func (s server) routes() *http.ServeMux {
 	mux.HandleFunc("GET /result-line", s.handle("result-line"))
 	mux.HandleFunc("GET /case", s.handle("case"))
 	mux.HandleFunc("GET /domains", s.handle("domains"))
+	// viewer launch: worklist hands the reader pixels (OHIF/slides/ECG)
+	mux.HandleFunc("GET /viewer/launch",
+		s.handleWith(s.viewlink, "launch", "viewer seam unavailable"))
+	mux.HandleFunc("GET /viewer/access-log",
+		s.handleWith(s.viewlink, "access-log", "viewer seam unavailable"))
+	// structured reporting: templates, signed drafts, exports
+	rk := func(cmd string) http.HandlerFunc {
+		return s.handleWith(s.reportkit, cmd, "reporting engine unavailable")
+	}
+	mux.HandleFunc("GET /report-templates", rk("templates"))
+	mux.HandleFunc("GET /report-template", rk("template"))
+	mux.HandleFunc("POST /reports/structured", rk("draft"))
+	mux.HandleFunc("POST /reports/sign", rk("sign"))
+	mux.HandleFunc("GET /reports/check", rk("verify"))
+	mux.HandleFunc("GET /reports/export", func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Query().Get("format") == "html" {
+			rk("export-html")(w, r)
+			return
+		}
+		rk("export-fhir")(w, r)
+	})
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }
@@ -165,7 +194,19 @@ func main() {
 		Script: resolveToolPath(env("TELEREAD_CLI", "../../packages/teleread/cli.py")),
 		DB:     env("TELEREAD_DB", "teleread-state.json"),
 	}
+	reportkit := &SubprocessEngine{
+		Python: env("PYTHON", "python3"),
+		Script: resolveToolPath(env("REPORTKIT_CLI", "../../packages/reportkit/cli.py")),
+		DB:     env("REPORTKIT_DB", "reportkit-state.json"),
+	}
+	viewlink := &SubprocessEngine{
+		Python: env("PYTHON", "python3"),
+		Script: resolveToolPath(env("VIEWLINK_CLI", "../../packages/viewlink/cli.py")),
+		DB:     env("VIEWLINK_DB", "viewlink-audit.json"),
+	}
 	addr := env("LISTEN", ":8101")
-	log.Printf("OpenHealth OS reading-service on %s (cli=%s db=%s)", addr, engine.Script, engine.DB)
-	log.Fatal(http.ListenAndServe(addr, server{engine: engine}.routes()))
+	log.Printf("OpenHealth OS reading-service on %s (teleread=%s reportkit=%s viewlink=%s)",
+		addr, engine.Script, reportkit.Script, viewlink.Script)
+	log.Fatal(http.ListenAndServe(addr, server{
+		engine: engine, reportkit: reportkit, viewlink: viewlink}.routes()))
 }
