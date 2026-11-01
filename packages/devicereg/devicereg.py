@@ -24,7 +24,8 @@ CALIBRATION_VALID_DAYS = 365
 SILENCE_DAYS = 7
 
 DEVICE_TYPES = ("bp-cuff", "pulse-oximeter", "thermometer", "glucometer",
-                "scale", "muac-tape", "fetoscope", "hemoglobin-meter")
+                "scale", "muac-tape", "fetoscope", "hemoglobin-meter",
+                "ecg", "ultrasound", "fundus-camera")
 
 
 class DeviceError(Exception):
