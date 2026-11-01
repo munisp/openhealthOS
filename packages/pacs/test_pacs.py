@@ -148,6 +148,49 @@ class TestRegistry(unittest.TestCase):
         self.assertNotEqual(h1, h2)
         self.assertNotEqual(h1, "0" * 64)
 
+    # ---- hub-archive (dcm4chee) pull-sync ----
+    @staticmethod
+    def _qido(uid, modality="CT", accession="ACC-9", patient="EXT-1"):
+        rec = {"0020000D": {"vr": "UI", "Value": [uid]}}
+        if modality is not None:
+            rec["00080061"] = {"vr": "CS", "Value": [modality]}
+        if accession is not None:
+            rec["00080050"] = {"vr": "SH", "Value": [accession]}
+        if patient is not None:
+            rec["00100020"] = {"vr": "LO", "Value": [patient]}
+        return rec
+
+    def test_sync_from_archive_registers_unknown(self):
+        out = self.r.sync_from_archive(
+            [self._qido("S1"), self._qido("S-NEW")], day=5,
+            facility="hub")
+        self.assertEqual((out["registered"], out["already_known"]), (1, 1))
+        self.assertEqual(out["malformed"], [])
+        # pre-existing S1 untouched: our governed state survives sync
+        self.assertEqual(self.r.studies["S1"]["facility"], "phc-1")
+        self.assertEqual(self.r.studies["S-NEW"]["state"], "acquired")
+        self.assertEqual(out["reconciliation"]["orphans_in_appliance"],
+                         [])
+
+    def test_sync_from_archive_garbage_is_finding_not_crash(self):
+        out = self.r.sync_from_archive(
+            [{"00080020": {"vr": "DA", "Value": ["20260101"]}},  # no UID
+             self._qido("S-BAD", modality="OT")],                # bad modality
+            day=5, facility="hub")
+        self.assertEqual(out["registered"], 0)
+        self.assertEqual(len(out["malformed"]), 2)
+        self.assertEqual(out["malformed"][0]["reason"],
+                         "no StudyInstanceUID")
+        self.assertIn("unknown modality", out["malformed"][1]["reason"])
+
+    def test_sync_from_archive_reconciliation_flags_gaps(self):
+        # registry knows S1, archive does not → missing_from_appliance
+        out = self.r.sync_from_archive([self._qido("S-ORPHAN")], day=5,
+                                       facility="hub")
+        recon = out["reconciliation"]
+        self.assertEqual(recon["missing_from_appliance"], ["S1"])
+        self.assertEqual(recon["orphans_in_appliance"], [])
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -24,6 +24,9 @@ Ten innovations in this module:
     from a versioned list)
 10. AI pre-analysis queue governance: results land as DRAFT, a
     radiologist confirms — a nudge never executes
+11. Pull-sync from the hub archive (dcm4chee QIDO-RS): unknown studies
+    are registered, malformed records are findings, sync never
+    overwrites governed state
 
 Doctrine: the registry is the source of truth; the PACS appliance is
 storage. A study in the appliance but not the registry is an orphan;
@@ -41,6 +44,13 @@ DOSE_CUMULATIVE_ALERT_MGY = 500.0                      # rolling per patient
 
 class PACSError(Exception):
     pass
+
+
+def _dicom_value(record, tag):
+    """DICOM JSON model: {"0020000D": {"vr": "UI", "Value": ["1.2.3"]}}.
+    Missing or empty → None (caller decides whether that's a finding)."""
+    values = record.get(tag, {}).get("Value") or []
+    return values[0] if values else None
 
 
 class DICOMwebAdapter:
@@ -267,6 +277,51 @@ class StudyRegistry:
         return {"orphans_in_appliance": sorted(app - reg),
                 "missing_from_appliance": sorted(reg - app),
                 "note": "both directions are findings, never cosmetic"}
+
+    # ---- 11. pull-sync from the hub archive (dcm4chee) ----
+    def sync_from_archive(self, qido_studies, *, day, facility):
+        """Consume QIDO-RS results (DICOM JSON model) from the hub
+        archive, e.g. GET {base}/dcm4chee-arc/aets/DCM4CHEE/rs/studies.
+
+        Governance posture: the archive is storage; this registry is
+        truth. A study the archive holds but we don't know gets
+        registered (it EXISTS — a patient was irradiated; ignoring it
+        is not an option). A study we already govern is untouched —
+        sync never overwrites local state. A malformed record is a
+        FINDING, never a crash: garbage in the archive means something
+        upstream is broken and silence would hide it.
+        """
+        registered, already_known, malformed = 0, 0, []
+        archive_uids = set()
+        for raw in qido_studies:
+            uid = _dicom_value(raw, "0020000D")       # StudyInstanceUID
+            if not uid:
+                malformed.append({"record_keys": sorted(raw),
+                                  "reason": "no StudyInstanceUID"})
+                continue
+            archive_uids.add(uid)
+            if uid in self.studies:
+                already_known += 1
+                continue
+            modality = _dicom_value(raw, "00080061")  # ModalitiesInStudy
+            accession = (_dicom_value(raw, "00080050")  # AccessionNumber
+                         or f"ARCHIVE-{uid[:24]}")
+            patient = (_dicom_value(raw, "00100020")   # PatientID
+                       or "archive-unknown-patient")
+            try:
+                self.register_study(
+                    study_uid=uid, accession=accession,
+                    patient_id=patient, modality=modality,
+                    exam_protocol="archive-ingested",
+                    priority="routine", facility=facility, day=day)
+                registered += 1
+            except PACSError as e:
+                malformed.append({"study_uid": uid, "reason": str(e)})
+        recon = self.orphans_and_gaps(archive_uids)
+        return {"registered": registered, "already_known": already_known,
+                "malformed": malformed, "reconciliation": recon,
+                "note": "garbage in the archive is a finding, not a "
+                        "crash; sync never overwrites governed state"}
 
     def _study(self, uid):
         if uid not in self.studies:
