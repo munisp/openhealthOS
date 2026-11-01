@@ -68,6 +68,7 @@ type server struct {
 	engine    EngineIface // teleread: worklists, reads, escalations
 	reportkit EngineIface // reportkit: structured templates + signatures
 	viewlink  EngineIface // viewlink: viewer launch + access audit
+	resultloop EngineIface // resultloop: closed-loop result delivery
 }
 
 func env(k, def string) string {
@@ -105,7 +106,9 @@ func bodyMap(r *http.Request) (map[string]any, error) {
 	q := r.URL.Query()
 	for _, k := range []string{"domain", "reader_id", "case_id", "kind",
 		"artifact_ref", "session_id", "report_id", "signer_id",
-		"template_id", "format", "id"} {
+		"template_id", "format", "id", "delivery_id", "facility",
+		"referrer", "content_ref", "urgency", "receipt_ref", "by",
+		"delegate_reason"} {
 		if v := q.Get(k); v != "" {
 			m[k] = v
 		}
@@ -184,6 +187,17 @@ func (s server) routes() *http.ServeMux {
 		}
 		rk("export-fhir")(w, r)
 	})
+	// closed-loop result delivery: the loop watches itself
+	rl := func(cmd string) http.HandlerFunc {
+		return s.handleWith(s.resultloop, cmd, "result loop unavailable")
+	}
+	mux.HandleFunc("POST /results/dispatch", rl("dispatch"))
+	mux.HandleFunc("POST /results/sent", rl("mark-sent"))
+	mux.HandleFunc("POST /results/delivered", rl("mark-delivered"))
+	mux.HandleFunc("POST /results/ack", rl("ack"))
+	mux.HandleFunc("GET /results/unclosed", rl("unclosed"))
+	mux.HandleFunc("POST /results/escalate", rl("escalate"))
+	mux.HandleFunc("GET /results/stats", rl("stats"))
 	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) { w.Write([]byte("ok")) })
 	return mux
 }
@@ -204,9 +218,15 @@ func main() {
 		Script: resolveToolPath(env("VIEWLINK_CLI", "../../packages/viewlink/cli.py")),
 		DB:     env("VIEWLINK_DB", "viewlink-audit.json"),
 	}
+	resultloop := &SubprocessEngine{
+		Python: env("PYTHON", "python3"),
+		Script: resolveToolPath(env("RESULTLOOP_CLI", "../../packages/resultloop/cli.py")),
+		DB:     env("RESULTLOOP_DB", "resultloop-state.json"),
+	}
 	addr := env("LISTEN", ":8101")
 	log.Printf("OpenHealth OS reading-service on %s (teleread=%s reportkit=%s viewlink=%s)",
 		addr, engine.Script, reportkit.Script, viewlink.Script)
 	log.Fatal(http.ListenAndServe(addr, server{
-		engine: engine, reportkit: reportkit, viewlink: viewlink}.routes()))
+		engine: engine, reportkit: reportkit, viewlink: viewlink,
+		resultloop: resultloop}.routes()))
 }

@@ -24,7 +24,7 @@ func (f *fakeEngine) Call(cmd string, args map[string]any) (json.RawMessage, str
 
 func TestOrderPassesThrough(t *testing.T) {
 	f := &fakeEngine{result: `{"case_id":"S1","state":"unassigned"}`}
-	srv := server{engine: f, reportkit: f, viewlink: f}
+	srv := server{engine: f, reportkit: f, viewlink: f, resultloop: f}
 	req := httptest.NewRequest(http.MethodPost, "/orders",
 		strings.NewReader(`{"domain":"ecg","case_id":"S1","day":0}`))
 	w := httptest.NewRecorder()
@@ -42,7 +42,7 @@ func TestOrderPassesThrough(t *testing.T) {
 
 func TestDomainErrorIs422WithMessage(t *testing.T) {
 	f := &fakeEngine{errMsg: "no clinical question — looking, not diagnosis", err: errDomain}
-	srv := server{engine: f, reportkit: f, viewlink: f}
+	srv := server{engine: f, reportkit: f, viewlink: f, resultloop: f}
 	req := httptest.NewRequest(http.MethodPost, "/orders",
 		strings.NewReader(`{"domain":"ecg"}`))
 	w := httptest.NewRecorder()
@@ -57,7 +57,7 @@ func TestDomainErrorIs422WithMessage(t *testing.T) {
 
 func TestEngineDownIs502(t *testing.T) {
 	f := &fakeEngine{err: errors.New("boom")}
-	srv := server{engine: f, reportkit: f, viewlink: f}
+	srv := server{engine: f, reportkit: f, viewlink: f, resultloop: f}
 	req := httptest.NewRequest(http.MethodGet, "/worklist?domain=ecg&reader_id=r1&day=0", nil)
 	w := httptest.NewRecorder()
 	srv.routes().ServeHTTP(w, req)
@@ -68,7 +68,7 @@ func TestEngineDownIs502(t *testing.T) {
 
 func TestQueryParamsFoldIntoArgs(t *testing.T) {
 	f := &fakeEngine{result: `[]`}
-	srv := server{engine: f, reportkit: f, viewlink: f}
+	srv := server{engine: f, reportkit: f, viewlink: f, resultloop: f}
 	req := httptest.NewRequest(http.MethodGet, "/worklist?domain=ecg&reader_id=r1&day=4", nil)
 	w := httptest.NewRecorder()
 	srv.routes().ServeHTTP(w, req)
@@ -78,7 +78,7 @@ func TestQueryParamsFoldIntoArgs(t *testing.T) {
 }
 
 func TestHealthz(t *testing.T) {
-	srv := server{engine: &fakeEngine{}, reportkit: &fakeEngine{}, viewlink: &fakeEngine{}}
+	srv := server{engine: &fakeEngine{}, reportkit: &fakeEngine{}, viewlink: &fakeEngine{}, resultloop: &fakeEngine{}}
 	req := httptest.NewRequest(http.MethodGet, "/healthz", nil)
 	w := httptest.NewRecorder()
 	srv.routes().ServeHTTP(w, req)
@@ -90,7 +90,8 @@ func TestHealthz(t *testing.T) {
 func TestViewerLaunchRouteUsesViewlinkEngine(t *testing.T) {
 	tl := &fakeEngine{err: errors.New("teleread should not be called")}
 	vl := &fakeEngine{result: `{"url":"https://v/viewer?StudyInstanceUIDs=1.2"}`}
-	srv := server{engine: tl, reportkit: tl, viewlink: vl}
+	rl := &fakeEngine{err: errors.New("resultloop should not be called")}
+	srv := server{engine: tl, reportkit: tl, viewlink: vl, resultloop: rl}
 	req := httptest.NewRequest(http.MethodGet,
 		"/viewer/launch?kind=dicom-ohif&artifact_ref=1.2&reader_id=r1&session_id=s1&case_id=c1&day=3", nil)
 	w := httptest.NewRecorder()
@@ -105,7 +106,7 @@ func TestViewerLaunchRouteUsesViewlinkEngine(t *testing.T) {
 
 func TestStructuredReportRoutesUseReportkitEngine(t *testing.T) {
 	rk := &fakeEngine{result: `{"id":"R1","status":"draft"}`}
-	srv := server{engine: &fakeEngine{}, reportkit: rk, viewlink: &fakeEngine{}}
+	srv := server{engine: &fakeEngine{}, reportkit: rk, viewlink: &fakeEngine{}, resultloop: &fakeEngine{}}
 	req := httptest.NewRequest(http.MethodPost, "/reports/structured",
 		strings.NewReader(`{"report_id":"R1","template_id":"birads-mammo@1.0.0","answers":{},"case_id":"c","author_id":"a","day":1}`))
 	w := httptest.NewRecorder()
@@ -123,7 +124,7 @@ func TestStructuredReportRoutesUseReportkitEngine(t *testing.T) {
 
 func TestViewerLaunchDomainErrorIs422(t *testing.T) {
 	vl := &fakeEngine{errMsg: "viewer 'ecg-canvas' is not configured for this deployment", err: errDomain}
-	srv := server{engine: &fakeEngine{}, reportkit: &fakeEngine{}, viewlink: vl}
+	srv := server{engine: &fakeEngine{}, reportkit: &fakeEngine{}, viewlink: vl, resultloop: &fakeEngine{}}
 	req := httptest.NewRequest(http.MethodGet,
 		"/viewer/launch?kind=ecg-canvas&artifact_ref=t1&reader_id=r1&session_id=s1&case_id=c1&day=1", nil)
 	w := httptest.NewRecorder()
@@ -132,6 +133,53 @@ func TestViewerLaunchDomainErrorIs422(t *testing.T) {
 		t.Fatalf("expected 422, got %d", w.Code)
 	}
 	if !strings.Contains(w.Body.String(), "not configured") {
+		t.Fatalf("honest refusal swallowed: %s", w.Body)
+	}
+}
+
+func TestResultLoopRoutesUseResultloopEngine(t *testing.T) {
+	tl := &fakeEngine{err: errors.New("teleread should not be called")}
+	rl := &fakeEngine{result: `{"delivery_id":"DLV-1","state":"queued"}`}
+	srv := server{engine: tl, reportkit: tl, viewlink: tl, resultloop: rl}
+
+	// dispatch is a POST with a JSON body
+	req := httptest.NewRequest(http.MethodPost, "/results/dispatch",
+		strings.NewReader(`{"case_id":"C1","facility":"f","referrer":"mo-1","critical":true,"day":0,"content_ref":"report:R1#h"}`))
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+	if w.Code != 200 || rl.lastCmd != "dispatch" {
+		t.Fatalf("dispatch: code=%d cmd=%s body=%s", w.Code, rl.lastCmd, w.Body)
+	}
+
+	// unclosed is a GET with query params
+	req = httptest.NewRequest(http.MethodGet, "/results/unclosed?day=3", nil)
+	w = httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+	if w.Code != 200 || rl.lastCmd != "unclosed" {
+		t.Fatalf("unclosed: code=%d cmd=%s", w.Code, rl.lastCmd)
+	}
+
+	// escalation ladder run
+	req = httptest.NewRequest(http.MethodPost, "/results/escalate",
+		strings.NewReader(`{"day":3}`))
+	w = httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+	if w.Code != 200 || rl.lastCmd != "escalate" {
+		t.Fatalf("escalate: code=%d cmd=%s", w.Code, rl.lastCmd)
+	}
+}
+
+func TestResultLoopDomainErrorIs422(t *testing.T) {
+	rl := &fakeEngine{errMsg: "only mo-1 acknowledges, or a named delegate WITH a reason", err: errDomain}
+	srv := server{engine: &fakeEngine{}, reportkit: &fakeEngine{}, viewlink: &fakeEngine{}, resultloop: rl}
+	req := httptest.NewRequest(http.MethodPost, "/results/ack",
+		strings.NewReader(`{"delivery_id":"DLV-1","day":1,"by":"nurse-9"}`))
+	w := httptest.NewRecorder()
+	srv.routes().ServeHTTP(w, req)
+	if w.Code != http.StatusUnprocessableEntity {
+		t.Fatalf("expected 422, got %d", w.Code)
+	}
+	if !strings.Contains(w.Body.String(), "delegate") {
 		t.Fatalf("honest refusal swallowed: %s", w.Body)
 	}
 }

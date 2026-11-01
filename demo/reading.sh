@@ -18,11 +18,14 @@ echo "== build =="
 
 # reportkit + viewlink envs propagate to the Python engines the service
 # shells out to; SLIDE_BASE/ECG_BASE deliberately unset to prove fail-loud.
+# RESULTLOOP_CHANNEL deliberately unset: the rail is an honest spike —
+# deliveries queue, nothing claims 'sent'.
 start_server() {
   env LISTEN=:18101 \
       TELEREAD_CLI=packages/teleread/cli.py TELEREAD_DB="$TMP/state.json" \
       REPORTKIT_CLI=packages/reportkit/cli.py REPORTKIT_DB="$TMP/rk.json" \
       VIEWLINK_CLI=packages/viewlink/cli.py VIEWLINK_DB="$TMP/vl.json" \
+      RESULTLOOP_CLI=packages/resultloop/cli.py RESULTLOOP_DB="$TMP/rl.json" \
       REPORTKIT_SIGNING_KEY=demo-signing-key \
       OHIF_BASE=http://viewer.example/ohif \
       "$TMP/reading" >>"$TMP/reading.log" 2>&1 &
@@ -98,5 +101,21 @@ curl -sf "$B/viewer/access-log?case_id=S1" | grep -q '"reader_id": "rad-1"'
 echo "== fail-loud: unconfigured viewer kind refuses, no empty frame =="
 code=$(curl -s -o "$TMP/err4.json" -w '%{http_code}' "$B/viewer/launch?kind=wsi-openseadragon&artifact_ref=slide-1&reader_id=rad-1&session_id=sess-1&case_id=S1&day=1")
 [ "$code" = 422 ] && grep -q "not configured" "$TMP/err4.json"
+
+echo "== closed-loop: dispatch queues honestly without a rail =="
+curl -sf -X POST "$B/results/dispatch" -d '{"case_id":"S1","facility":"phc-1","referrer":"nurse-1","critical":true,"day":1,"content_ref":"report:S1#hash"}' | grep -q '"state": "queued"'
+curl -sf -X POST "$B/results/dispatch" -d '{"case_id":"S1","facility":"phc-1","referrer":"nurse-1","critical":true,"day":1,"content_ref":"report:S1#hash"}' | grep -q 'DLV-1'
+
+echo "== unclosed criticals climb the ladder =="
+curl -sf "$B/results/unclosed?day=2" | grep -q '"overdue": true'
+curl -sf -X POST "$B/results/escalate" -d '{"day":2}' | grep -q 'facility-head'
+
+echo "== fail-closed: delegate ack needs a recorded reason =="
+code=$(curl -s -o "$TMP/err5.json" -w '%{http_code}' -X POST "$B/results/ack" -d '{"delivery_id":"DLV-1","day":2,"by":"nurse-9"}')
+[ "$code" = 422 ] && grep -q "delegate" "$TMP/err5.json"
+
+echo "== named ack closes the loop; stats ship denominators =="
+curl -sf -X POST "$B/results/ack" -d '{"delivery_id":"DLV-1","day":2,"by":"nurse-1"}' | grep -q 'acked-off-channel'
+curl -sf "$B/results/stats" | grep -q '"acknowledged": 1'
 
 echo "reading-service smoke: OK"

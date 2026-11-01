@@ -19,6 +19,15 @@ treats everything else:
   - catheter-days are counted (infection risk has a denominator)
   - adequacy (spKt/V) reports with denominators
   - transplant workup is a strictly sequential chain
+  - per-session prescriptions are versioned records (UF target, flows,
+    dialysate composition, heparin, sodium profile) — a change is a new
+    version citing the old, never an edit
+  - intradialytic events (hypotension, cramps, clotting) carry the
+    action taken — an event without a response is a monitor log,
+    not care
+  - anemia: iron before ESA, ESA refused above Hb 11.5, dose changes
+    bounded per month; the protocol DRAFTS, the nephrologist signs
+  - CKD-MBD: Ca/PO4/PTH trends with binder/vitamin-D review drafts
 """
 
 CKD_BANDS = ((90, "G1"), (60, "G2"), (45, "G3a"), (30, "G3b"),
@@ -30,6 +39,41 @@ DEFAULT_MAX_REUSE = 10
 KTV_TARGET = 1.2
 ACCESS_KINDS = ("avf", "avg", "catheter")
 WORKUP_STAGES = ("referral", "labs", "imaging", "crossmatch", "listed")
+
+# ---- per-session prescription bounds (KDIGO/KDOQI-shaped, deployment-
+# tunable; every field fail-closed against plausibility) ----
+PRESCRIPTION_FIELDS = {
+    "target_uf_ml": (0, 8000),
+    "blood_flow_ml_min": (100, 500),
+    "dialysate_flow_ml_min": (300, 800),
+    "dialysate_sodium_mmol": (130, 155),
+    "dialysate_potassium_mmol": (0, 4),
+    "dialysate_calcium_mmol": (1.0, 2.0),
+    "dialysate_bicarbonate_mmol": (25, 40),
+    "heparin_bolus_iu": (0, 10000),
+    "heparin_infusion_iu_h": (0, 3000),
+    "duration_min": (60, 480),
+}
+SODIUM_PROFILES = ("constant", "step", "linear")
+PRESCRIPTION_REQUIRED = ("target_uf_ml", "blood_flow_ml_min",
+                         "duration_min")
+INTRADIALYTIC_EVENTS = ("hypotension", "cramps", "clotting",
+                        "arrhythmia", "access-issue", "pyrogenic")
+
+# ---- anemia (KDIGO-shaped): iron first, ESA cautiously, never above
+# Hb 11.5 — the trials were unambiguous about harm up there ----
+HB_TARGET_LO, HB_TARGET_HI = 10.0, 11.5
+HB_NO_ESA_ABOVE = 11.5
+TSAT_IRON_FIRST = 20.0        # % below → iron before ESA
+FERRITIN_IRON_FIRST = 200.0   # ng/mL below → iron before ESA
+ESA_MAX_MONTHLY_CHANGE_PCT = 25
+HB_FAST_RISE = 1.0            # g/dL per 2 weeks → reduce dose
+
+# ---- CKD-MBD plausibility bounds ----
+MBD_BOUNDS = {"calcium_mmol": (1.0, 4.0), "phosphate_mmol": (0.3, 6.0),
+              "pth_pmol_l": (1.0, 300.0)}
+PHOSPHATE_HIGH = 1.45         # mmol/L — binder review above
+PTH_HIGH = 60.0               # pmol/L ≈ 570 pg/mL — vitamin-D review
 
 
 class NephroError(Exception):
@@ -57,6 +101,10 @@ class DialysisUnit:
         self.events = []          # seroconversions, isolations
         self.access = {}          # patient_id -> access record
         self.workups = {}         # patient_id -> stage
+        self.prescriptions = {}   # patient_id -> [versioned rx]
+        self.anemia = {}          # patient_id -> [lab series]
+        self.esa_doses = []       # append-only administrations
+        self.mbd = {}             # patient_id -> [lab series]
 
     # ---- registry ----
     def register_patient(self, patient_id, *, dry_weight_kg, egfr, day,
@@ -111,7 +159,7 @@ class DialysisUnit:
 
     # ---- sessions ----
     def start_session(self, session_id, *, patient_id, machine_id,
-                      dialyzer_id, day):
+                      dialyzer_id, day, prescription_version=None):
         p = self._patient(patient_id)
         if session_id in self.sessions:
             raise NephroError(f"duplicate session: {session_id}")
@@ -131,6 +179,17 @@ class DialysisUnit:
         for kind, status in self.water_status(day).items():
             if status != "verified":
                 flags.append(f"water-{kind}-{status}")
+        # prescription binding: named rx or a loud flag
+        rxs = self.prescriptions.get(patient_id, [])
+        if prescription_version is not None:
+            if not any(r["version"] == prescription_version
+                       for r in rxs):
+                raise NephroError(
+                    f"no prescription v{prescription_version} for "
+                    f"{patient_id} — binding to a ghost prescription "
+                    "is how the wrong settings reach the machine")
+        elif rxs:
+            flags.append("no-prescription-bound")
         # dialyzer reuse capped and counted
         uses = self.dialyzers.get(dialyzer_id, 0)
         if uses >= self.max_reuse:
@@ -141,6 +200,7 @@ class DialysisUnit:
         self.sessions[session_id] = {
             "patient_id": patient_id, "machine_id": machine_id,
             "dialyzer_id": dialyzer_id, "dialyzer_use": uses + 1,
+            "prescription_version": prescription_version,
             "day": day, "flags": flags, "state": "running"}
         p["last_session_day"] = day
         return dict(self.sessions[session_id])
@@ -264,6 +324,241 @@ class DialysisUnit:
         cur["stage"] = stage
         cur["history"].append((stage, day, by))
         return dict(cur)
+
+    # ---- prescriptions: versioned, never edited ----
+    def set_prescription(self, patient_id, *, day, by,
+                         sodium_profile="constant", **fields):
+        """A dialysis prescription is the machine's orders. Changes are
+        new versions citing the old — because intradialytic hypotension
+        needs an audit trail back to what the machine was TOLD to do,
+        not what someone now remembers telling it."""
+        self._patient(patient_id)
+        if sodium_profile not in SODIUM_PROFILES:
+            raise NephroError(f"unknown sodium profile: {sodium_profile}")
+        unknown = set(fields) - set(PRESCRIPTION_FIELDS)
+        if unknown:
+            raise NephroError(
+                f"unknown prescription fields: {sorted(unknown)}")
+        missing = [k for k in PRESCRIPTION_REQUIRED if k not in fields]
+        if missing:
+            raise NephroError(
+                f"prescription missing {missing} — an incomplete "
+                "prescription is an unsafe one")
+        for k, v in fields.items():
+            lo, hi = PRESCRIPTION_FIELDS[k]
+            if not (lo <= v <= hi):
+                raise NephroError(
+                    f"implausible {k}: {v} (plausible {lo}-{hi}) — "
+                    "refused, not clamped")
+        rxs = self.prescriptions.setdefault(patient_id, [])
+        rx = {"version": len(rxs) + 1, "day": day, "by": by,
+              "sodium_profile": sodium_profile, "fields": dict(fields),
+              "supersedes": rxs[-1]["version"] if rxs else None}
+        rxs.append(rx)
+        return dict(rx)
+
+    def current_prescription(self, patient_id):
+        rxs = self.prescriptions.get(patient_id)
+        if not rxs:
+            raise NephroError(
+                f"no prescription for {patient_id} — dialyzing without "
+                "one is flying the machine by memory")
+        return dict(rxs[-1])
+
+    # ---- intradialytic events: the response is part of the event ----
+    def record_intradialytic(self, session_id, *, event, minute,
+                             action, day, by):
+        s = self._session(session_id)
+        if s["state"] != "running":
+            raise NephroError(
+                f"session is {s['state']} — events belong to a running "
+                "session, not a reconstructed one")
+        if event not in INTRADIALYTIC_EVENTS:
+            raise NephroError(f"unknown intradialytic event: {event}")
+        if not action:
+            raise NephroError(
+                "an intradialytic event without an action is a monitor "
+                "log, not care — what was DONE?")
+        if not (0 <= minute <= s.get("duration_min", 480)):
+            raise NephroError("implausible event minute")
+        ev = {"event": event, "minute": minute, "action": action,
+              "day": day, "by": by}
+        s.setdefault("events", []).append(ev)
+        return dict(ev)
+
+    def intradialytic_report(self, patient_id=None):
+        """Hypotension and friends, with denominators."""
+        sessions = [s for s in self.sessions.values()
+                    if patient_id is None
+                    or s["patient_id"] == patient_id]
+        n = len(sessions)
+        counts = {e: 0 for e in INTRADIALYTIC_EVENTS}
+        for s in sessions:
+            for ev in s.get("events", []):
+                counts[ev["event"]] += 1
+        return {"sessions": n, "events": counts,
+                "hypotension_per_100_sessions": (
+                    round(100 * counts["hypotension"] / n, 1)
+                    if n else None),
+                "note": "rates divide by sessions run; uneventful "
+                        "sessions are the denominator, not an omission"}
+
+    # ---- anemia: the protocol drafts, the nephrologist signs ----
+    def record_anemia_labs(self, patient_id, *, hb_g_dl, tsat_pct,
+                           ferritin_ng_ml, day):
+        self._patient(patient_id)
+        if not (3.0 <= hb_g_dl <= 20.0):
+            raise NephroError(f"implausible Hb: {hb_g_dl}")
+        if not (1.0 <= tsat_pct <= 80.0):
+            raise NephroError(f"implausible TSAT: {tsat_pct}")
+        if not (10.0 <= ferritin_ng_ml <= 5000.0):
+            raise NephroError(f"implausible ferritin: {ferritin_ng_ml}")
+        series = self.anemia.setdefault(patient_id, [])
+        entry = {"day": day, "hb": hb_g_dl, "tsat": tsat_pct,
+                 "ferritin": ferritin_ng_ml}
+        series.append(entry)
+        return dict(entry)
+
+    def anemia_review(self, patient_id, *, day):
+        """Protocol-driven DRAFT. Iron repletion precedes ESA; ESA is
+        refused above the harm threshold; fast rises force reduction.
+        Nothing here administers anything."""
+        series = self.anemia.get(patient_id)
+        if not series:
+            raise NephroError(
+                f"no anemia labs for {patient_id} — reviewing without "
+                "labs is prescribing from vibes")
+        latest = series[-1]
+        hb, tsat, fer = latest["hb"], latest["tsat"], latest["ferritin"]
+        current_esa = self._current_esa(patient_id)
+
+        rec = {"patient_id": patient_id, "day": day, "labs": dict(latest),
+               "labs_age_days": day - latest["day"],
+               "current_esa_iu_wk": current_esa,
+               "recommendation": None, "draft": True,
+               "note": "a protocol drafts; the nephrologist signs"}
+        if hb > HB_NO_ESA_ABOVE:
+            rec["recommendation"] = {
+                "action": "hold-esa",
+                "reason": f"Hb {hb} > {HB_NO_ESA_ABOVE} g/dL — ESA "
+                          "above this is harm, not care (TREAT/CHOIR)"}
+            return rec
+        if tsat < TSAT_IRON_FIRST or fer < FERRITIN_IRON_FIRST:
+            rec["recommendation"] = {
+                "action": "iv-iron-first",
+                "reason": f"TSAT {tsat}% / ferritin {fer} — iron "
+                          "repletion before any ESA change; ESA on "
+                          "empty iron stores buys strokes, not Hb"}
+            return rec
+        if len(series) >= 2:
+            prev = series[-2]
+            weeks = max(1, (latest["day"] - prev["day"]) / 7)
+            rise_rate = (hb - prev["hb"]) / weeks
+            if rise_rate > HB_FAST_RISE / 2 and current_esa:
+                rec["recommendation"] = {
+                    "action": "reduce-esa",
+                    "max_change_pct": -ESA_MAX_MONTHLY_CHANGE_PCT,
+                    "reason": f"Hb rising {rise_rate:.2f} g/dL/wk — "
+                              "fast rises are the thrombosis signal; "
+                              "reduce, don't celebrate"}
+                return rec
+        if hb < HB_TARGET_LO and not current_esa:
+            rec["recommendation"] = {
+                "action": "start-esa",
+                "suggested_iu_wk": 4000,
+                "reason": f"Hb {hb} < {HB_TARGET_LO} with replete iron "
+                          "— ESA indicated at conservative start dose"}
+        elif hb < HB_TARGET_LO:
+            rec["recommendation"] = {
+                "action": "titrate-esa",
+                "max_change_pct": ESA_MAX_MONTHLY_CHANGE_PCT,
+                "reason": f"Hb {hb} below target on ESA — titrate "
+                          "within the monthly bound"}
+        else:
+            rec["recommendation"] = {
+                "action": "maintain",
+                "reason": f"Hb {hb} in target "
+                          f"{HB_TARGET_LO}-{HB_TARGET_HI}"}
+        return rec
+
+    def administer_esa(self, patient_id, *, dose_iu, day, by,
+                       review_day):
+        """An administration must cite a review — the draft-then-sign
+        loop applied to drugs. ESA above the harm threshold refuses."""
+        series = self.anemia.get(patient_id)
+        if not series:
+            raise NephroError("no anemia labs — refusing blind ESA")
+        if series[-1]["hb"] > HB_NO_ESA_ABOVE:
+            raise NephroError(
+                f"Hb {series[-1]['hb']} > {HB_NO_ESA_ABOVE} — ESA "
+                "refused at any dose; the trials were unambiguous")
+        if not (500 <= dose_iu <= 30000):
+            raise NephroError(f"implausible ESA dose: {dose_iu}")
+        if review_day > day:
+            raise NephroError("the review cannot postdate the dose")
+        entry = {"patient_id": patient_id, "dose_iu": dose_iu,
+                 "day": day, "by": by, "review_day": review_day}
+        self.esa_doses.append(entry)
+        return dict(entry)
+
+    def esa_response_report(self):
+        on_esa = {e["patient_id"] for e in self.esa_doses}
+        in_target = sum(
+            1 for pid in on_esa
+            if self.anemia.get(pid)
+            and HB_TARGET_LO <= self.anemia[pid][-1]["hb"]
+            <= HB_TARGET_HI)
+        return {"patients_on_esa": len(on_esa),
+                "hb_in_target": in_target,
+                "note": "target 10-11.5 g/dL; the denominator is "
+                        "patients on ESA, not the whole unit"}
+
+    def _current_esa(self, patient_id):
+        doses = [e for e in self.esa_doses
+                 if e["patient_id"] == patient_id]
+        return doses[-1]["dose_iu"] if doses else 0
+
+    # ---- CKD-MBD: trends with review drafts ----
+    def record_mbd_labs(self, patient_id, *, calcium_mmol,
+                        phosphate_mmol, pth_pmol_l, day):
+        self._patient(patient_id)
+        vals = {"calcium_mmol": calcium_mmol,
+                "phosphate_mmol": phosphate_mmol,
+                "pth_pmol_l": pth_pmol_l}
+        for k, v in vals.items():
+            lo, hi = MBD_BOUNDS[k]
+            if not (lo <= v <= hi):
+                raise NephroError(f"implausible {k}: {v}")
+        series = self.mbd.setdefault(patient_id, [])
+        series.append({"day": day, **vals})
+        return dict(series[-1])
+
+    def mbd_review(self, patient_id, *, day):
+        series = self.mbd.get(patient_id)
+        if not series:
+            raise NephroError(f"no CKD-MBD labs for {patient_id}")
+        latest = series[-1]
+        drafts = []
+        if latest["phosphate_mmol"] > PHOSPHATE_HIGH:
+            drafts.append({"draft": "binder-review",
+                           "reason": f"phosphate "
+                                     f"{latest['phosphate_mmol']} > "
+                                     f"{PHOSPHATE_HIGH} mmol/L — "
+                                     "adherence, diet, binder class"})
+        if latest["pth_pmol_l"] > PTH_HIGH:
+            drafts.append({"draft": "vitamin-d-review",
+                           "reason": f"PTH {latest['pth_pmol_l']} > "
+                                     f"{PTH_HIGH} pmol/L — secondary "
+                                     "hyperparathyroidism workup"})
+        if len(series) >= 2 and \
+                latest["pth_pmol_l"] > series[-2]["pth_pmol_l"]:
+            drafts.append({"draft": "pth-trend-rising",
+                           "reason": "PTH rising across draws — trend "
+                                     "is the diagnosis, not the "
+                                     "snapshot"})
+        return {"patient_id": patient_id, "day": day,
+                "labs": dict(latest), "drafts": drafts,
+                "note": "drafts, not orders — the nephrologist decides"}
 
     def _patient(self, pid):
         if pid not in self.patients:

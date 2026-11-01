@@ -119,3 +119,193 @@ class TestNephro(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestPrescriptions(unittest.TestCase):
+    def setUp(self):
+        self.u = DialysisUnit("renal-1")
+        self.u.register_patient("p1", dry_weight_kg=65, egfr=8, day=0)
+        self.u.register_machine("m1")
+        self.u.record_water_test("chloramine", day=0, result="pass")
+        self.u.record_water_test("endotoxin", day=0, result="pass")
+
+    def test_prescription_versioned_never_edited(self):
+        r1 = self.u.set_prescription(
+            "p1", day=1, by="neph-1", target_uf_ml=2000,
+            blood_flow_ml_min=300, duration_min=240,
+            dialysate_potassium_mmol=2)
+        r2 = self.u.set_prescription(
+            "p1", day=8, by="neph-1", target_uf_ml=2500,
+            blood_flow_ml_min=320, duration_min=240,
+            dialysate_potassium_mmol=2)
+        self.assertEqual((r1["version"], r2["version"]), (1, 2))
+        self.assertEqual(r2["supersedes"], 1)
+        self.assertEqual(self.u.current_prescription("p1")["version"], 2)
+
+    def test_required_fields_and_bounds_fail_closed(self):
+        with self.assertRaises(NephroError):      # missing duration
+            self.u.set_prescription("p1", day=1, by="n",
+                                    target_uf_ml=2000,
+                                    blood_flow_ml_min=300)
+        with self.assertRaises(NephroError):      # implausible flow
+            self.u.set_prescription("p1", day=1, by="n",
+                                    target_uf_ml=2000,
+                                    blood_flow_ml_min=900,
+                                    duration_min=240)
+        with self.assertRaises(NephroError):      # unknown field
+            self.u.set_prescription("p1", day=1, by="n",
+                                    target_uf_ml=2000,
+                                    blood_flow_ml_min=300,
+                                    duration_min=240, magic_knob=7)
+
+    def test_session_binds_prescription_or_flags(self):
+        self.u.set_prescription("p1", day=1, by="neph-1",
+                                target_uf_ml=2000, blood_flow_ml_min=300,
+                                duration_min=240)
+        flagged = self.u.start_session("s1", patient_id="p1",
+                                       machine_id="m1", dialyzer_id="d1",
+                                       day=2)
+        self.assertIn("no-prescription-bound", flagged["flags"])
+        bound = self.u.start_session("s2", patient_id="p1",
+                                     machine_id="m1", dialyzer_id="d2",
+                                     day=3, prescription_version=1)
+        self.assertEqual(bound["flags"], [])
+        with self.assertRaises(NephroError):      # ghost version
+            self.u.start_session("s3", patient_id="p1", machine_id="m1",
+                                 dialyzer_id="d3", day=4,
+                                 prescription_version=9)
+
+    def test_intradialytic_event_carries_action(self):
+        self.u.start_session("s1", patient_id="p1", machine_id="m1",
+                             dialyzer_id="d1", day=1)
+        with self.assertRaises(NephroError):      # no action
+            self.u.record_intradialytic("s1", event="hypotension",
+                                        minute=90, action="", day=1,
+                                        by="nurse-1")
+        ev = self.u.record_intradialytic("s1", event="hypotension",
+                                         minute=90,
+                                         action="reduced UF, 250ml "
+                                         "saline, trendelenburg",
+                                         day=1, by="nurse-1")
+        self.assertEqual(ev["event"], "hypotension")
+        self.u.end_session("s1", pre_weight=67, post_weight=65, day=1)
+        with self.assertRaises(NephroError):      # session closed
+            self.u.record_intradialytic("s1", event="cramps", minute=200,
+                                        action="stretch", day=1,
+                                        by="nurse-1")
+
+    def test_intradialytic_report_denominators(self):
+        for i in range(4):
+            self.u.start_session(f"s{i}", patient_id="p1",
+                                 machine_id="m1", dialyzer_id=f"d{i}",
+                                 day=i + 1)
+            self.u.end_session(f"s{i}", pre_weight=67, post_weight=65,
+                               day=i + 1)
+        self.u.start_session("s9", patient_id="p1", machine_id="m1",
+                             dialyzer_id="d9", day=9)
+        self.u.record_intradialytic("s9", event="hypotension", minute=60,
+                                    action="reduced UF", day=9,
+                                    by="n1")
+        rep = self.u.intradialytic_report("p1")
+        self.assertEqual(rep["sessions"], 5)
+        self.assertEqual(rep["hypotension_per_100_sessions"], 20.0)
+
+
+class TestAnemia(unittest.TestCase):
+    def setUp(self):
+        self.u = DialysisUnit("renal-1")
+        self.u.register_patient("p1", dry_weight_kg=65, egfr=8, day=0)
+
+    def test_labs_fail_closed(self):
+        with self.assertRaises(NephroError):
+            self.u.record_anemia_labs("p1", hb_g_dl=25, tsat_pct=30,
+                                      ferritin_ng_ml=300, day=1)
+        with self.assertRaises(NephroError):
+            self.u.record_anemia_labs("p1", hb_g_dl=9.5, tsat_pct=95,
+                                      ferritin_ng_ml=300, day=1)
+
+    def test_iron_before_esa(self):
+        self.u.record_anemia_labs("p1", hb_g_dl=9.0, tsat_pct=15,
+                                  ferritin_ng_ml=120, day=1)
+        rec = self.u.anemia_review("p1", day=2)
+        self.assertEqual(rec["recommendation"]["action"],
+                         "iv-iron-first")
+        self.assertTrue(rec["draft"])
+
+    def test_esa_refused_above_harm_threshold(self):
+        self.u.record_anemia_labs("p1", hb_g_dl=12.0, tsat_pct=30,
+                                  ferritin_ng_ml=400, day=1)
+        rec = self.u.anemia_review("p1", day=2)
+        self.assertEqual(rec["recommendation"]["action"], "hold-esa")
+        with self.assertRaises(NephroError):
+            self.u.administer_esa("p1", dose_iu=4000, day=2, by="n1",
+                                  review_day=2)
+
+    def test_start_esa_when_replete_and_low(self):
+        self.u.record_anemia_labs("p1", hb_g_dl=9.2, tsat_pct=30,
+                                  ferritin_ng_ml=400, day=1)
+        rec = self.u.anemia_review("p1", day=2)
+        self.assertEqual(rec["recommendation"]["action"], "start-esa")
+        out = self.u.administer_esa("p1", dose_iu=4000, day=2, by="n1",
+                                    review_day=2)
+        self.assertEqual(out["dose_iu"], 4000)
+
+    def test_fast_rise_forces_reduction(self):
+        self.u.record_anemia_labs("p1", hb_g_dl=9.0, tsat_pct=30,
+                                  ferritin_ng_ml=400, day=0)
+        self.u.administer_esa("p1", dose_iu=4000, day=0, by="n1",
+                              review_day=0)
+        self.u.record_anemia_labs("p1", hb_g_dl=11.2, tsat_pct=32,
+                                  ferritin_ng_ml=420, day=14)
+        rec = self.u.anemia_review("p1", day=14)
+        self.assertEqual(rec["recommendation"]["action"], "reduce-esa")
+
+    def test_review_requires_labs_and_esa_requires_review(self):
+        with self.assertRaises(NephroError):
+            self.u.anemia_review("p1", day=1)
+        with self.assertRaises(NephroError):
+            self.u.administer_esa("p1", dose_iu=4000, day=1, by="n1",
+                                  review_day=1)
+        self.u.record_anemia_labs("p1", hb_g_dl=9.0, tsat_pct=30,
+                                  ferritin_ng_ml=300, day=5)
+        with self.assertRaises(NephroError):  # review after the dose?!
+            self.u.administer_esa("p1", dose_iu=4000, day=1, by="n1",
+                                  review_day=2)
+
+    def test_esa_response_report_denominators(self):
+        self.u.record_anemia_labs("p1", hb_g_dl=9.0, tsat_pct=30,
+                                  ferritin_ng_ml=300, day=0)
+        self.u.administer_esa("p1", dose_iu=4000, day=1, by="n1",
+                              review_day=0)
+        self.u.record_anemia_labs("p1", hb_g_dl=10.8, tsat_pct=35,
+                                  ferritin_ng_ml=350, day=30)
+        rep = self.u.esa_response_report()
+        self.assertEqual(rep["patients_on_esa"], 1)
+        self.assertEqual(rep["hb_in_target"], 1)
+
+
+class TestCKDMBD(unittest.TestCase):
+    def setUp(self):
+        self.u = DialysisUnit("renal-1")
+        self.u.register_patient("p1", dry_weight_kg=65, egfr=8, day=0)
+
+    def test_mbd_labs_and_drafts(self):
+        self.u.record_mbd_labs("p1", calcium_mmol=2.2,
+                               phosphate_mmol=2.1, pth_pmol_l=50, day=0)
+        self.u.record_mbd_labs("p1", calcium_mmol=2.25,
+                               phosphate_mmol=2.3, pth_pmol_l=75, day=30)
+        out = self.u.mbd_review("p1", day=30)
+        kinds = [d["draft"] for d in out["drafts"]]
+        self.assertIn("binder-review", kinds)
+        self.assertIn("vitamin-d-review", kinds)
+        self.assertIn("pth-trend-rising", kinds)
+
+    def test_mbd_implausible_refused(self):
+        with self.assertRaises(NephroError):
+            self.u.record_mbd_labs("p1", calcium_mmol=9.0,
+                                   phosphate_mmol=1.5, pth_pmol_l=40,
+                                   day=0)
+
+    def test_mbd_review_requires_labs(self):
+        with self.assertRaises(NephroError):
+            self.u.mbd_review("p1", day=0)
