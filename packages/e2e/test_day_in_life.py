@@ -73,11 +73,13 @@ class TestOutbreakComposition(unittest.TestCase):
 
 
 class TestConnectedDay(unittest.TestCase):
-    def test_seven_seams_compose(self):
+    def test_ten_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 9)
+        self.assertEqual(log["seams_proven"], 10)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")
         self.assertEqual(log["cryo_ticket"], "P2")
+        self.assertTrue(log["capture_gate_refused"])
+        self.assertEqual(log["duel_arbitrated"], "pdr")

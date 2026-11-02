@@ -9,10 +9,18 @@ Engine: teleread. This module owns consent + the lesion record.
 """
 
 from teleread import DomainConfig, ReadingService, TeleReadError
+from duelgrade import CaptureQA
 
 NTD_FLAGS = ("leprosy-suspect", "buruli-suspect", "scabies",
              "tinea-capitis")
 CONSENT_KINDS = ("signed", "verbal-witnessed")
+
+# capture-time dermoscopy/photo standards — telederm P0:
+# a scale marker for size, focus sharp enough for margins, the whole
+# lesion in frame, and a dermoscopic view (or a deliberate clinical-only
+# view) so pigmented lesions are not judged from a flash photo.
+DERM_CHECKS = ("scale-marker", "focus", "whole-lesion-in-frame",
+               "dermoscopic-or-clinical-view")
 
 CONFIG = DomainConfig(
     "dermatology",
@@ -25,7 +33,12 @@ CONFIG = DomainConfig(
 class TeleDerm:
     def __init__(self, readers):
         self.reading = ReadingService(CONFIG, readers)
+        self.qa = CaptureQA("derm", DERM_CHECKS)
         self.lesions = {}
+
+    def assess_capture(self, image_ref, *, day, by, passed=(), failed=()):
+        return self.qa.assess(image_ref, day=day, by=by,
+                              passed=passed, failed=failed)
 
     def submit_lesion(self, case_id, *, patient_id, body_site, image_ref,
                       consent, facility, referrer, day, duration_days,
@@ -43,6 +56,12 @@ class TeleDerm:
             raise TeleReadError(f"unknown NTD flags: {sorted(unknown)}")
         if duration_days is None or duration_days < 0:
             raise TeleReadError("lesion duration required")
+        if not self.qa.gradable(image_ref):
+            raise TeleReadError(
+                "no gradable capture QA on record — a lesion photo "
+                "nobody quality-checked is a rumour with pixels; an "
+                "ungradable photo is a failed consult, not a benign "
+                "lesion")
         self.lesions[case_id] = {
             "patient_id": patient_id, "body_site": body_site,
             "consent": consent, "ntd_flags": list(ntd_flags),

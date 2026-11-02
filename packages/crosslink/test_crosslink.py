@@ -8,7 +8,7 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
-            "devicereg", "teleicu", "mdt"):
+            "devicereg", "teleicu", "mdt", "duelgrade"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
@@ -16,7 +16,7 @@ from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa
                        cryo_watch, chair_plan, on_shift_readers,
                        assign_on_shift, escalate_events)
 from nephrology import DialysisUnit  # noqa: E402
-from telederm import TeleDerm  # noqa: E402
+from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import ReaderRegistry, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -77,6 +77,8 @@ class TestBiopsyToPath(unittest.TestCase):
                               scopes=("histopathologist",))
         self.derm = TeleDerm(self.readers)
         self.path = PathologyService(self.readers)
+        self.derm.assess_capture("img://1", day=0, by="nurse-1",
+                                 passed=DERM_CHECKS)
         self.derm.submit_lesion("DC1", patient_id="p1",
                                 body_site="left forearm",
                                 image_ref="img://1", consent="signed",

@@ -14,6 +14,8 @@ one operational arc across NINE packages, each hand-off a public seam:
   14:00  spo2 breach goes unacknowledged      → tele-ICU oversight opens
   15:00  dialysis chair plan for tomorrow     → HBV+ on dedicated only
   16:00  cryo tank drifts warm                → ticket names WHOSE embryos
+  17:30  fundus photo: ungradable = failed screen; two graders dispute,
+         a third pair of eyes arbitrates → referral + recall (gap #8)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -24,7 +26,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
-            "teleicu", "mdt", "serial"):
+            "teleicu", "mdt", "serial", "duelgrade", "drscreen"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -32,7 +34,8 @@ from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E40
                        chair_plan, on_shift_readers, assign_on_shift,
                        escalate_events)
 from nephrology import DialysisUnit  # noqa: E402
-from telederm import TeleDerm  # noqa: E402
+from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
+from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import DomainConfig, ReaderRegistry, ReadingService, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -62,6 +65,10 @@ def run_connected_day():
                      licence_expiry_day=400, scopes=("dermatologist",))
     readers.register("icu-1", licence_id="MDCN-I1",
                      licence_expiry_day=400, scopes=("intensivist",))
+    for rid, lic in (("dr-1", "MDCN-G1"), ("dr-2", "MDCN-G2"),
+                     ("dr-senior", "MDCN-G3")):
+        readers.register(rid, licence_id=lic, licence_expiry_day=400,
+                         scopes=("dr-grader",))
 
     radiology = ReadingService(
         DomainConfig("radiology", scopes=("chest",),
@@ -119,6 +126,10 @@ def run_connected_day():
     log["report_signed"] = True
 
     # ---- 09:20 derm 'biopsy it' → telepath custody ----
+    # capture QA first (gap #8): a photo nobody quality-checked is a
+    # rumour with pixels
+    derm.assess_capture("img://9", day=0, by="nurse-1",
+                        passed=DERM_CHECKS)
     derm.submit_lesion("DC-1", patient_id="p-derm",
                        body_site="left temple", image_ref="img://9",
                        consent="signed", facility="phc-1",
@@ -271,7 +282,38 @@ def run_connected_day():
     assert any("QTc +65" in f for f in ecg_delta["flags"]), ecg_delta
     log["serial_flags"] = len(ecg_delta["flags"])
 
-    log["seams_proven"] = 9
+    # ---- 17:30 DR screening: capture gate + two graders + arbiter ----
+    drs = DRScreening(readers)
+    # an unassessed fundus photo is stopped at the gate
+    try:
+        drs.screen("p-dm", eye="both", image_ref="fundus://1",
+                   facility="phc-1", referrer="mo-1", day=0)
+        raise AssertionError("unassessed capture must refuse")
+    except TeleReadError:
+        log["capture_gate_refused"] = True
+    # first capture ungradable → failed screen; retake is a NEW image
+    drs.assess_capture("fundus://1", day=0, by="photog-1",
+                       passed=("field-definition", "illumination"),
+                       failed=("focus", "media-clarity"))
+    assert not drs.qa.gradable("fundus://1")
+    drs.assess_capture("fundus://2", day=0, by="photog-1",
+                       passed=FUNDUS_CHECKS)
+    drs.screen("p-dm", eye="both", image_ref="fundus://2",
+               facility="phc-1", referrer="mo-1", day=0)
+    # two graders disagree → no referral on a dispute; the arbiter is a
+    # third pair of eyes, and the referral fires only on their word
+    drs.record_grade("p-dm", grade="moderate-npdr", by="dr-1", day=1)
+    out = drs.record_grade("p-dm", grade="pdr", by="dr-2", day=1)
+    assert out["resolution"] == "awaiting-arbitration", out
+    assert out["critical_pending_arbitration"] == ["pdr"], out
+    assert "referred" not in drs.cascade["p-dm"]
+    arb = drs.arbitrate("p-dm", grade="pdr", by="dr-senior", day=2)
+    assert arb["referred"] is True and arb["final_grade"] == "pdr", arb
+    assert drs.cascade["p-dm"]["referred"] == 2
+    assert drs.recall["p-dm"]["interval_months"] == 1
+    log["duel_arbitrated"] = arb["final_grade"]
+
+    log["seams_proven"] = 10
     return log
 
 
