@@ -190,3 +190,139 @@ class TestFertility(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestStimulationMonitoring(unittest.TestCase):
+    def setUp(self):
+        self.cl = FertilityClinic("fert-1")
+        self.cl.register_couple("CPL", partner_a="pa", partner_b="pb",
+                                day=0)
+        for p in ("pa", "pb"):
+            self.cl.grant_consent("CPL", "cycle-treatment",
+                                  method="signed", by=p, day=0)
+        self.cl.start_cycle("CY1", couple_id="CPL",
+                            protocol_version="antag-v3", day=1)
+        self.cl.advance("CY1", "stimulation", day=1, by="dr-1")
+
+    def _mon(self, day, e2, ge14, total, endo=8, fsh=225):
+        return self.cl.record_monitoring(
+            "CY1", day=day, e2_pmol_l=e2, follicles_ge_14mm=ge14,
+            follicles_total=total, endometrium_mm=endo, fsh_dose_iu=fsh,
+            by="son-1")
+
+    def test_monitoring_attaches_only_in_stimulation(self):
+        self.cl.start_cycle("CY2", couple_id="CPL",
+                            protocol_version="antag-v3", day=1)
+        with self.assertRaises(FertilityError):
+            self.cl.record_monitoring(
+                "CY2", day=1, e2_pmol_l=500, follicles_ge_14mm=0,
+                follicles_total=5, endometrium_mm=6, fsh_dose_iu=225,
+                by="son-1")
+
+    def test_implausible_observations_refused(self):
+        with self.assertRaises(FertilityError):      # E2
+            self._mon(2, 99999, 0, 5)
+        with self.assertRaises(FertilityError):      # ≥14 > total
+            self._mon(2, 500, 6, 5)
+        with self.assertRaises(FertilityError):      # endometrium
+            self._mon(2, 500, 0, 5, endo=40)
+
+    def test_stalled_response_drafts_bounded_increase(self):
+        self._mon(2, 400, 0, 6)
+        self._mon(4, 430, 0, 6)   # flat E2, no growth
+        rec = self.cl.monitoring_review("CY1", day=4)
+        self.assertEqual(rec["recommendation"]["action"],
+                         "increase-fsh")
+        self.assertEqual(rec["recommendation"]["max_step_pct"], 50)
+        self.assertTrue(rec["draft"])
+
+    def test_overshoot_drafts_decrease(self):
+        self._mon(2, 400, 2, 8)
+        self._mon(4, 2600, 6, 12)  # E2 6.5x in 2d
+        rec = self.cl.monitoring_review("CY1", day=4)
+        self.assertEqual(rec["recommendation"]["action"],
+                         "decrease-fsh")
+
+    def test_ohss_flood_drafts_coast_or_cancel(self):
+        self._mon(2, 400, 2, 8)
+        self._mon(5, 14000, 9, 18)
+        self._mon(6, 16000, 21, 28)  # ≥14mm flood
+        rec = self.cl.monitoring_review("CY1", day=6)
+        self.assertEqual(rec["recommendation"]["action"],
+                         "coast-or-cancel")
+
+    def test_trigger_ready(self):
+        self._mon(2, 400, 1, 7)
+        self._mon(4, 900, 3, 9)
+        rec = self.cl.monitoring_review("CY1", day=4)
+        self.assertEqual(rec["recommendation"]["action"],
+                         "trigger-ready")
+
+    def test_review_without_monitoring_refuses(self):
+        with self.assertRaises(FertilityError):
+            self.cl.monitoring_review("CY1", day=3)
+
+
+class TestEmbryologyGrading(unittest.TestCase):
+    def setUp(self):
+        self.cl = FertilityClinic("fert-1")
+        self.cl.register_couple("CPL", partner_a="pa", partner_b="pb",
+                                day=0)
+        for p in ("pa", "pb"):
+            self.cl.grant_consent("CPL", "cycle-treatment",
+                                  method="signed", by=p, day=0)
+        self.cl.start_cycle("CY1", couple_id="CPL",
+                            protocol_version="antag-v3", day=1)
+        for stage in ("stimulation", "triggered", "retrieval",
+                      "fertilization"):
+            self.cl.advance("CY1", stage, day=2, by="dr-1")
+        self.cl.fertilize("CY1", method="ivf", n_embryos=2, day=3,
+                          embryologist="emb-1")
+
+    def test_pn_check_with_grader_identity(self):
+        g = self.cl.grade_embryo("CY1-E1", culture_day=1, day=4,
+                                 by="emb-1", pn="2PN")
+        self.assertEqual(g["pn"], "2PN")
+        with self.assertRaises(FertilityError):      # unsigned
+            self.cl.grade_embryo("CY1-E2", culture_day=1, day=4,
+                                 by="", pn="2PN")
+        with self.assertRaises(FertilityError):      # unknown PN
+            self.cl.grade_embryo("CY1-E2", culture_day=1, day=4,
+                                 by="emb-1", pn="maybe")
+
+    def test_gardner_bounds(self):
+        with self.assertRaises(FertilityError):
+            self.cl.grade_embryo("CY1-E1", culture_day=5, day=8,
+                                 by="emb-1", expansion=7, icm="A",
+                                 te="B")
+        g = self.cl.grade_embryo("CY1-E1", culture_day=5, day=8,
+                                 by="emb-1", expansion=4, icm="A",
+                                 te="B")
+        self.assertEqual(g["expansion"], 4)
+
+    def test_day3_bounds_and_unknown_day_refused(self):
+        with self.assertRaises(FertilityError):
+            self.cl.grade_embryo("CY1-E1", culture_day=3, day=6,
+                                 by="emb-1", cells=42, fragmentation=1)
+        with self.assertRaises(FertilityError):
+            self.cl.grade_embryo("CY1-E1", culture_day=2, day=5,
+                                 by="emb-1")
+
+    def test_regrade_is_appended_not_edited(self):
+        self.cl.grade_embryo("CY1-E1", culture_day=3, day=6, by="emb-1",
+                             cells=7, fragmentation=2)
+        self.cl.grade_embryo("CY1-E1", culture_day=3, day=6, by="emb-2",
+                             cells=8, fragmentation=1)
+        self.assertEqual(len(self.cl.grades["CY1-E1"]), 2)
+
+    def test_grade_report_denominators(self):
+        self.cl.grade_embryo("CY1-E1", culture_day=1, day=4, by="e",
+                             pn="2PN")
+        self.cl.grade_embryo("CY1-E1", culture_day=5, day=8, by="e",
+                             expansion=4, icm="A", te="B")
+        self.cl.grade_embryo("CY1-E2", culture_day=1, day=4, by="e",
+                             pn="0PN")
+        rep = self.cl.grade_report("CY1")
+        self.assertEqual(rep["embryos"], 2)
+        self.assertEqual(rep["fertilized_2pn"], 1)
+        self.assertEqual(rep["usable"], 1)

@@ -309,3 +309,53 @@ class TestCKDMBD(unittest.TestCase):
     def test_mbd_review_requires_labs(self):
         with self.assertRaises(NephroError):
             self.u.mbd_review("p1", day=0)
+
+
+class TestPeritonealDialysis(unittest.TestCase):
+    def setUp(self):
+        self.u = DialysisUnit("renal-1")
+        self.u.register_patient("p1", dry_weight_kg=65, egfr=8, day=0)
+        self.u.register_pd("p1", modality="capd", day=0)
+
+    def test_pd_registration_gates(self):
+        with self.assertRaises(NephroError):
+            self.u.register_pd("p1", modality="apd", day=1)   # dup
+        with self.assertRaises(NephroError):
+            self.u.register_pd("p2", modality="apd", day=1)   # unknown
+        self.u.register_patient("p2", dry_weight_kg=70, egfr=9, day=0)
+        with self.assertRaises(NephroError):
+            self.u.register_pd("p2", modality="night-cycler", day=1)
+
+    def test_pet_transporter_category(self):
+        pet = self.u.record_pet("p1", d_p_creatinine=0.72, day=30)
+        self.assertEqual(pet["category"], "high-average")
+        with self.assertRaises(NephroError):
+            self.u.record_pet("p1", d_p_creatinine=1.4, day=30)
+        self.u.register_patient("p3", dry_weight_kg=70, egfr=9, day=0)
+        with self.assertRaises(NephroError):  # not on PD
+            self.u.record_pet("p3", d_p_creatinine=0.6, day=30)
+
+    def test_peritonitis_confirmed_carries_protocol_draft(self):
+        ep = self.u.record_peritonitis("p1", day=60,
+                                       cloudy_effluent=True,
+                                       wbc_per_ul=450, by="n1")
+        self.assertTrue(ep["confirmed"])
+        self.assertEqual(ep["draft"]["action"], "ip-antibiotics-empiric")
+
+    def test_peritonitis_ruled_out_is_honest(self):
+        ep = self.u.record_peritonitis("p1", day=60,
+                                       cloudy_effluent=False,
+                                       wbc_per_ul=40, by="n1")
+        self.assertFalse(ep["confirmed"])
+        self.assertIsNone(ep["draft"])
+
+    def test_peritonitis_rate_denominator_is_patient_years(self):
+        self.u.register_patient("p2", dry_weight_kg=70, egfr=9, day=0)
+        self.u.register_pd("p2", modality="apd", day=0)
+        # 2 patients × 365.25 days ≈ 2 patient-years; 1 episode → 0.5/yr
+        self.u.record_peritonitis("p1", day=365, cloudy_effluent=True,
+                                  wbc_per_ul=300, by="n1")
+        rep = self.u.peritonitis_report(as_of=365)
+        self.assertEqual(rep["episodes"], 1)
+        self.assertAlmostEqual(rep["rate_per_patient_year"], 0.5,
+                               places=1)

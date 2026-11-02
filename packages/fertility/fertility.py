@@ -39,6 +39,26 @@ DONOR_SCREENING = ("hiv", "hbv", "hcv", "syphilis")
 OHSS_ESCALATE = ("severe", "critical")
 OHSS_SEVERITIES = ("mild", "moderate") + OHSS_ESCALATE
 
+# ---- stimulation monitoring (P0): a cycle without observations is
+# unmanageable clinically. Bounds are plausibility gates, not targets.
+MON_E2_PMOL_L = (20.0, 30000.0)
+MON_ENDOMETRIUM_MM = (2.0, 25.0)
+MON_MAX_FOLLICLES = 60
+OHSS_FOLLICLE_WARN = 20       # ≥14 mm count above → coast/cancel draft
+OHSS_E2_WARN = 15000.0        # pmol/L
+E2_DOUBLING_DAYS = 2          # E2 should ~double per 2 days mid-stim
+FOLLICLE_TRIGGER_MM = 18      # ≥2 follicles ≥18 → trigger-ready draft
+FSH_MAX_STEP_PCT = 50         # dose adjustments bounded, like ESA
+
+# ---- embryology grading (P0): morphology with grader identity.
+# Assessments are append-only: a second read is a second entry, never
+# an edit — the lab notebook does not erase.
+PN_RESULTS = ("0PN", "1PN", "2PN", "3PN", "degenerate")
+GARDNER_EXPANSION = (1, 2, 3, 4, 5, 6)
+GARDNER_LETTERS = ("A", "B", "C")
+DAY3_MAX_CELLS = 16
+FRAGMENTATION_GRADES = (1, 2, 3, 4)   # 1 = <10%, 4 = >50%
+
 
 class FertilityError(Exception):
     pass
@@ -56,6 +76,7 @@ class FertilityClinic:
         self.escalations = []   # OHSS
         self.transports = []
         self.access_log = []    # sealed-class: every view recorded
+        self.grades = {}        # embryo_id -> [assessment entries]
 
     # ---- couples & consent ----
     def register_couple(self, couple_id, *, partner_a, partner_b, day):
@@ -359,6 +380,194 @@ class FertilityClinic:
                 "embryos": len(self.embryos),
                 "donors": len(self.donors),
                 "access_events": len(self.access_log)}
+
+    # ---- stimulation monitoring (P0) ----
+    def record_monitoring(self, cycle_id, *, day, e2_pmol_l,
+                          follicles_ge_14mm, follicles_total,
+                          endometrium_mm, fsh_dose_iu, by):
+        """One monitoring visit: E2, follicle counts, endometrium, and
+        the FSH dose actually given that day. The cycle must be in
+        stimulation — monitoring a triggered cycle is revisionism."""
+        cy = self._cycle(cycle_id)
+        if cy["stage"] != "stimulation":
+            raise FertilityError(
+                f"cycle is '{cy['stage']}' — monitoring attaches to "
+                "stimulation only")
+        lo, hi = MON_E2_PMOL_L
+        if not (lo <= e2_pmol_l <= hi):
+            raise FertilityError(f"implausible E2: {e2_pmol_l}")
+        if not (0 <= follicles_ge_14mm <= follicles_total
+                <= MON_MAX_FOLLICLES):
+            raise FertilityError(
+                "implausible follicle counts (≥14mm cannot exceed "
+                "total)")
+        lo, hi = MON_ENDOMETRIUM_MM
+        if not (lo <= endometrium_mm <= hi):
+            raise FertilityError(
+                f"implausible endometrium: {endometrium_mm}mm")
+        if not (0 <= fsh_dose_iu <= 600):
+            raise FertilityError(f"implausible FSH dose: {fsh_dose_iu}")
+        entry = {"day": day, "e2_pmol_l": e2_pmol_l,
+                 "follicles_ge_14mm": follicles_ge_14mm,
+                 "follicles_total": follicles_total,
+                 "endometrium_mm": endometrium_mm,
+                 "fsh_dose_iu": fsh_dose_iu, "by": by}
+        cy.setdefault("monitoring", []).append(entry)
+        return dict(entry)
+
+    def monitoring_review(self, cycle_id, *, day):
+        """Serial observations → a dose/timing DRAFT. The embryologist
+        and clinician decide; the protocol proposes, bounded.
+
+        Drafts, in priority order:
+          coast-or-cancel  — OHSS risk (E2 very high or ≥14mm flood)
+          trigger-ready    — ≥2 follicles ≥18mm, endometrium adequate
+          increase-fsh     — flat E2 / stalled growth (bounded step)
+          decrease-fsh     — E2 rising faster than doubling
+          continue         — on track
+        """
+        cy = self._cycle(cycle_id)
+        mon = cy.get("monitoring", [])
+        if not mon:
+            raise FertilityError(
+                f"no monitoring for {cycle_id} — reviewing without "
+                "observations is prescribing from vibes")
+        latest = mon[-1]
+        rec = {"cycle_id": cycle_id, "day": day,
+               "latest": dict(latest), "draft": True,
+               "note": "the protocol proposes, bounded; the clinician "
+                       "decides — and OHSS assessment is separate and "
+                       "mandatory (ohss_assess)"}
+        if (latest["e2_pmol_l"] >= OHSS_E2_WARN
+                or latest["follicles_ge_14mm"] >= OHSS_FOLLICLE_WARN):
+            rec["recommendation"] = {
+                "action": "coast-or-cancel",
+                "reason": f"E2 {latest['e2_pmol_l']:.0f} / "
+                          f"{latest['follicles_ge_14mm']} follicles "
+                          f"≥14mm — OHSS risk; trigger only after "
+                          "ohss_assess, consider freeze-all"}
+            return rec
+        if len(mon) >= 2:
+            prev = mon[-2]
+            gap = max(1, latest["day"] - prev["day"])
+            e2_ratio = latest["e2_pmol_l"] / max(prev["e2_pmol_l"], 1)
+            expected = 2 ** (gap / E2_DOUBLING_DAYS)
+            # overshoot outranks trigger-readiness: safety before timing
+            if e2_ratio > expected * 1.5:
+                rec["recommendation"] = {
+                    "action": "decrease-fsh",
+                    "max_step_pct": -FSH_MAX_STEP_PCT,
+                    "reason": f"E2 rising {e2_ratio:.1f}x in {gap}d — "
+                              "faster than doubling; overshoot is the "
+                              "OHSS on-ramp"}
+                return rec
+        if (latest["follicles_ge_14mm"] >= 2
+                and latest["endometrium_mm"] >= 7):
+            rec["recommendation"] = {
+                "action": "trigger-ready",
+                "reason": "≥2 follicles ≥14mm cohort with adequate "
+                          "endometrium — check lead follicle ≥18mm on "
+                          "scan, then trigger"}
+            return rec
+        if len(mon) >= 2:
+            stalled = (e2_ratio < 1.2
+                       and latest["follicles_ge_14mm"]
+                       <= prev["follicles_ge_14mm"])
+            if stalled:
+                rec["recommendation"] = {
+                    "action": "increase-fsh",
+                    "max_step_pct": FSH_MAX_STEP_PCT,
+                    "reason": f"E2 flat ({e2_ratio:.2f}x in {gap}d) "
+                              "and no cohort growth — step up within "
+                              "the bound, rescan in 2-3d"}
+                return rec
+        rec["recommendation"] = {"action": "continue",
+                                 "reason": "response on track"}
+        return rec
+
+    # ---- embryology grading (P0) ----
+    def grade_embryo(self, embryo_id, *, culture_day, day, by, **fields):
+        """Morphology with grader identity. culture_day selects the
+        assessment kind:
+          1   — fertilization check: pn ('2PN' etc.)
+          3   — cells + fragmentation grade
+          5/6 — Gardner: expansion (1-6), icm (A-C), te (A-C)
+        Append-only: re-grading is a new entry citing the grader,
+        never an edit of yesterday's morphology."""
+        e = self._embryo(embryo_id)
+        if not by:
+            raise FertilityError("grader identity required — unsigned "
+                                 "morphology is gossip")
+        if e["stage"] not in ("culture", "frozen"):
+            raise FertilityError(
+                f"embryo is '{e['stage']}' — grading attaches to "
+                "culture (or a thaw-check on frozen)")
+        a = {"culture_day": culture_day, "day": day, "by": by}
+        if culture_day == 1:
+            pn = fields.get("pn")
+            if pn not in PN_RESULTS:
+                raise FertilityError(f"unknown PN result: {pn}")
+            a["pn"] = pn
+        elif culture_day == 3:
+            cells = fields.get("cells")
+            frag = fields.get("fragmentation")
+            if not isinstance(cells, int) or not (1 <= cells
+                                                  <= DAY3_MAX_CELLS):
+                raise FertilityError(f"implausible cell count: {cells}")
+            if frag not in FRAGMENTATION_GRADES:
+                raise FertilityError(
+                    f"fragmentation grade must be {FRAGMENTATION_GRADES}")
+            a["cells"], a["fragmentation"] = cells, frag
+        elif culture_day in (5, 6):
+            exp = fields.get("expansion")
+            icm, te = fields.get("icm"), fields.get("te")
+            if exp not in GARDNER_EXPANSION:
+                raise FertilityError(
+                    f"Gardner expansion must be 1-6, got {exp}")
+            if icm not in GARDNER_LETTERS or te not in GARDNER_LETTERS:
+                raise FertilityError("Gardner ICM/TE must be A, B or C")
+            a.update({"expansion": exp, "icm": icm, "te": te})
+        else:
+            raise FertilityError(
+                f"no defined assessment for culture day {culture_day} "
+                "— day 1 (PN), day 3 (cells/fragmentation), day 5-6 "
+                "(Gardner)")
+        self.grades.setdefault(embryo_id, []).append(a)
+        return dict(a)
+
+    def grade_report(self, cycle_id):
+        """Per-embryo latest assessments + usable-blastocyst count.
+        Denominators: embryos created, fertilized normally (2PN),
+        usable (Gardner ≥3 expansion with no C, or day-3 ≥6 cells
+        with fragmentation ≤2)."""
+        embryos = [e for eid, e in self.embryos.items()
+                   if e["cycle_id"] == cycle_id]
+        n = len(embryos)
+        normal_fert = usable = 0
+        per_embryo = []
+        for e in embryos:
+            gs = self.grades.get(e["embryo_id"], [])
+            latest_by_day = {}
+            for g in gs:
+                latest_by_day[g["culture_day"]] = g
+            pn = latest_by_day.get(1, {}).get("pn")
+            if pn == "2PN":
+                normal_fert += 1
+            gard = latest_by_day.get(5) or latest_by_day.get(6)
+            d3 = latest_by_day.get(3)
+            ok = (gard and gard["expansion"] >= 3
+                  and gard["icm"] != "C" and gard["te"] != "C") or \
+                 (d3 and d3["cells"] >= 6 and d3["fragmentation"] <= 2)
+            if ok:
+                usable += 1
+            per_embryo.append({"embryo_id": e["embryo_id"],
+                               "assessments": len(gs),
+                               "latest": latest_by_day or None})
+        return {"cycle_id": cycle_id, "embryos": n,
+                "fertilized_2pn": normal_fert, "usable": usable,
+                "per_embryo": per_embryo,
+                "note": "denominators are embryos created; ungraded "
+                        "embryos are not assumed viable"}
 
     def _couple(self, cid):
         if cid not in self.couples:

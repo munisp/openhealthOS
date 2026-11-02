@@ -75,6 +75,15 @@ MBD_BOUNDS = {"calcium_mmol": (1.0, 4.0), "phosphate_mmol": (0.3, 6.0),
 PHOSPHATE_HIGH = 1.45         # mmol/L — binder review above
 PTH_HIGH = 60.0               # pmol/L ≈ 570 pg/mL — vitamin-D review
 
+# ---- peritoneal dialysis: no machine, different failure modes.
+# The killers are peritonitis and technique failure — so episodes,
+# rates with denominators, and PET transporter typing. ----
+PD_MODALITIES = ("capd", "apd")
+PET_DP_BOUNDS = (0.30, 1.05)      # 4h D/P creatinine plausibility
+PET_BANDS = ((0.50, "low"), (0.65, "low-average"),
+             (0.81, "high-average"), (1.06, "high"))
+PERITONITIS_WBC_UL = 100          # ISPD: effluent WBC > 100/µL
+
 
 class NephroError(Exception):
     pass
@@ -105,6 +114,8 @@ class DialysisUnit:
         self.anemia = {}          # patient_id -> [lab series]
         self.esa_doses = []       # append-only administrations
         self.mbd = {}             # patient_id -> [lab series]
+        self.pd = {}              # patient_id -> {modality, start_day}
+        self.peritonitis = []     # append-only episodes
 
     # ---- registry ----
     def register_patient(self, patient_id, *, dry_weight_kg, egfr, day,
@@ -559,6 +570,79 @@ class DialysisUnit:
         return {"patient_id": patient_id, "day": day,
                 "labs": dict(latest), "drafts": drafts,
                 "note": "drafts, not orders — the nephrologist decides"}
+
+    # ---- peritoneal dialysis ----
+    def register_pd(self, patient_id, *, modality, day):
+        self._patient(patient_id)
+        if modality not in PD_MODALITIES:
+            raise NephroError(f"unknown PD modality: {modality}")
+        if patient_id in self.pd:
+            raise NephroError(f"{patient_id} already on PD")
+        self.pd[patient_id] = {"modality": modality, "start_day": day}
+        return dict(self.pd[patient_id])
+
+    def record_pet(self, patient_id, *, d_p_creatinine, day):
+        """Peritoneal equilibration test → transporter category. The
+        category drives dwell-time prescription: high transporters
+        need short dwells (they absorb glucose, lose UF)."""
+        if patient_id not in self.pd:
+            raise NephroError(f"{patient_id} is not on PD")
+        lo, hi = PET_DP_BOUNDS
+        if not (lo <= d_p_creatinine <= hi):
+            raise NephroError(
+                f"implausible 4h D/P creatinine: {d_p_creatinine}")
+        for ceiling, band in PET_BANDS:
+            if d_p_creatinine < ceiling:
+                category = band
+                break
+        self.pd[patient_id]["pet"] = {"day": day,
+                                      "d_p_creatinine": d_p_creatinine,
+                                      "category": category}
+        return dict(self.pd[patient_id]["pet"])
+
+    def record_peritonitis(self, patient_id, *, day, cloudy_effluent,
+                           wbc_per_ul, by, organism=None):
+        """An episode is an event with a protocol draft (ISPD: empiric
+        IP antibiotics covering gram+ and gram−, then culture-guided),
+        never a quiet lab line. Diagnosis needs cloudy effluent OR
+        WBC over threshold; neither → record as a ruled-out workup."""
+        if patient_id not in self.pd:
+            raise NephroError(f"{patient_id} is not on PD")
+        if not (0 <= wbc_per_ul <= 100000):
+            raise NephroError(f"implausible effluent WBC: {wbc_per_ul}")
+        confirmed = cloudy_effluent or wbc_per_ul > PERITONITIS_WBC_UL
+        ep = {"patient_id": patient_id, "day": day, "by": by,
+              "cloudy_effluent": bool(cloudy_effluent),
+              "wbc_per_ul": wbc_per_ul, "organism": organism,
+              "confirmed": confirmed,
+              "draft": ({"action": "ip-antibiotics-empiric",
+                         "reason": "ISPD: IP cefazolin + ceftazidime "
+                                   "empiric, culture-guided narrowing; "
+                                   "review dwell technique with the "
+                                   "patient — most peritonitis is "
+                                   "touch contamination"}
+                        if confirmed else None),
+              "note": "culture the effluent BEFORE antibiotics when "
+                      "feasible; the organism changes the drug"}
+        self.peritonitis.append(ep)
+        return dict(ep)
+
+    def peritonitis_report(self, as_of):
+        """Rate per patient-year — the ISPD benchmark denominator.
+        A unit without its rate is a unit not watching its catheters."""
+        pd_days = sum(max(0, as_of - p["start_day"])
+                      for p in self.pd.values())
+        confirmed = [e for e in self.peritonitis if e["confirmed"]]
+        patient_years = pd_days / 365.25
+        return {"pd_patients": len(self.pd),
+                "episodes": len(confirmed),
+                "ruled_out": len(self.peritonitis) - len(confirmed),
+                "patient_years": round(patient_years, 2),
+                "rate_per_patient_year": (
+                    round(len(confirmed) / patient_years, 3)
+                    if patient_years else None),
+                "note": "ISPD target < 0.5 episodes/patient-year; the "
+                        "denominator is PD time, not patient count"}
 
     def _patient(self, pid):
         if pid not in self.patients:

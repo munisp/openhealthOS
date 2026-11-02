@@ -76,7 +76,7 @@ class TestConnectedDay(unittest.TestCase):
     def test_seven_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 7)
+        self.assertEqual(log["seams_proven"], 9)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")

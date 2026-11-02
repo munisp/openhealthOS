@@ -24,7 +24,7 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
-            "teleicu", "mdt"):
+            "teleicu", "mdt", "serial"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -211,7 +211,67 @@ def run_connected_day():
             watch["ticket"]["embryos_at_risk"]] == ["CY1-E1"]
     log["cryo_ticket"] = watch["ticket"]["priority"]
 
-    log["seams_proven"] = 7
+    # ---- 16:30 stimulation monitoring + grading (gap #6) ----
+    clinic.register_couple("CPL2", partner_a="pc", partner_b="pd", day=0)
+    for p in ("pc", "pd"):
+        clinic.grant_consent("CPL2", "cycle-treatment",
+                             method="signed", by=p, day=0)
+    clinic.start_cycle("CY2", couple_id="CPL2", protocol_version="a-v3",
+                       day=1)
+    clinic.advance("CY2", "stimulation", day=1, by="dr-1")
+    clinic.record_monitoring("CY2", day=2, e2_pmol_l=400,
+                             follicles_ge_14mm=0, follicles_total=6,
+                             endometrium_mm=6, fsh_dose_iu=225,
+                             by="son-1")
+    clinic.record_monitoring("CY2", day=4, e2_pmol_l=430,
+                             follicles_ge_14mm=0, follicles_total=6,
+                             endometrium_mm=6, fsh_dose_iu=225,
+                             by="son-1")
+    rec = clinic.monitoring_review("CY2", day=4)
+    assert rec["recommendation"]["action"] == "increase-fsh", rec
+    clinic.advance("CY2", "triggered", day=6, by="dr-1")
+    clinic.advance("CY2", "retrieval", day=8, by="dr-1")
+    clinic.advance("CY2", "fertilization", day=8, by="dr-1")
+    clinic.fertilize("CY2", method="icsi", n_embryos=1, day=8,
+                     embryologist="emb-1")
+    clinic.grade_embryo("CY2-E1", culture_day=1, day=9, by="emb-1",
+                        pn="2PN")
+    clinic.grade_embryo("CY2-E1", culture_day=5, day=13, by="emb-1",
+                        expansion=4, icm="A", te="B")
+    greport = clinic.grade_report("CY2")
+    assert greport["fertilized_2pn"] == 1 and greport["usable"] == 1
+    log["fertility_lab_notebook"] = True
+
+    # ---- 17:00 serial comparison (gap #7) ----
+    from serial import SeriesTracker, compare_ecg, priors
+    chain = priors(pacs_svc, "p-derm", modality="CT")
+    assert chain["count"] == 1, chain
+    st = SeriesTracker()
+    st.record_measurement("1.2.3.9", lesion_id="L1", kind="long-axis",
+                          value_mm=25, day=0, by="rad-on")
+    pacs_svc.register_study(study_uid="1.2.3.10", accession="ACC-10",
+                            patient_id="p-derm", modality="CT",
+                            exam_protocol="ct-head", priority="routine",
+                            facility="phc-1", day=30, instances=32)
+    st.record_measurement("1.2.3.10", lesion_id="L1", kind="long-axis",
+                          value_mm=31, day=30, by="rad-on")
+    delta = st.compare_lesion("1.2.3.9", "1.2.3.10", lesion_id="L1")
+    assert delta["flag"] == "progression", delta
+    # serial ECG: QTc jumped on the follow-up tracing
+    rk.draft("CX-1-ecg-fu", template_id="ecg-12lead@1.0.0",
+             answers={"rate_bpm": 84, "rhythm": "sinus", "pr_ms": 152,
+                      "qrs_ms": 90, "qtc_ms": 470,
+                      "findings": "qt prolongation",
+                      "interpretation": "sinus rhythm, prolonged qt",
+                      "acuity": "urgent"},
+             case_id="CX-1", author_id="rad-on", day=30)
+    rk.sign("CX-1-ecg-fu", signer_id="rad-on", day=30)
+    ecg_delta = compare_ecg(rk.reports["CX-1-report"],
+                            rk.reports["CX-1-ecg-fu"])
+    assert any("QTc +65" in f for f in ecg_delta["flags"]), ecg_delta
+    log["serial_flags"] = len(ecg_delta["flags"])
+
+    log["seams_proven"] = 9
     return log
 
 
