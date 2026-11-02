@@ -11,6 +11,7 @@ owns the order classes and the intervention loop.
 """
 
 from teleread import DomainConfig, ReadingService, TeleReadError
+from drugkb import check_order
 
 HIGH_RISK = ("anticoagulant", "insulin", "opioid", "nephrotoxic",
              "paediatric-weight-based", "chemotherapy", "aminoglycoside")
@@ -30,24 +31,63 @@ class PharmacyReview:
 
     def submit_order(self, case_id, *, patient_id, drug, dose, route,
                      risk_class, prescriber, facility, day,
-                     priority="urgent"):
+                     priority="urgent", dose_mg_per_day=None,
+                     current_meds=(), allergies=(), egfr=None):
         if risk_class not in HIGH_RISK:
             raise TeleReadError(
                 f"{risk_class} is not a high-risk class — routine orders "
                 "do not queue for remote review")
         if not drug or dose is None:
             raise TeleReadError("drug and dose required")
+        # the knowledge base meets the order BEFORE it queues:
+        # interactions, duplication, allergy, dose ceiling, renal.
+        # A contraindicated finding escalates the review to STAT —
+        # the meeting is automatic and loud, never a quiet queue line.
+        safety = check_order(drug, dose_mg_per_day=dose_mg_per_day,
+                             current_meds=current_meds,
+                             allergies=allergies, egfr=egfr)
+        contra = [f for f in safety["findings"]
+                  if f["severity"] == "contraindicated"]
+        if contra:
+            priority = "stat"
         self.orders[case_id] = {
             "patient_id": patient_id, "drug": drug, "dose": dose,
             "route": route, "risk_class": risk_class,
-            "prescriber": prescriber, "intervention": None}
+            "prescriber": prescriber, "intervention": None,
+            "safety": safety}
         return self.reading.order(
             case_id, priority=priority,
             question=f"verify {drug} {dose} ({risk_class})",
             facility=facility, referrer=prescriber, day=day,
             artifact="prescription",
             meta={"patient_id": patient_id, "drug": drug,
-                  "risk_class": risk_class})
+                  "risk_class": risk_class,
+                  "safety_findings": len(safety["findings"]),
+                  "contraindicated": bool(contra)})
+
+    def queue_timeout(self, course, *, day):
+        """A stewardship antibiotic timeout lands in the pharmacist
+        queue. Idempotent per due-day: a continued course that comes
+        due again queues a NEW review (due_day is in the case id)."""
+        cid = f"timeout-{course['course_id']}-due{course['due_day']}"
+        if cid in self.orders:
+            return {"case_id": cid, "already_queued": True}
+        self.orders[cid] = {
+            "patient_id": course["patient_id"],
+            "drug": course["drug_code"], "dose": "timeout-review",
+            "route": course["route"], "risk_class": "antibiotic-timeout",
+            "prescriber": course["prescriber"], "intervention": None,
+            "timeout": dict(course)}
+        out = self.reading.order(
+            cid, priority="urgent",
+            question=(f"antibiotic timeout: {course['drug_code']} "
+                      f"{course['overdue_days']}d past the 48h review"),
+            facility="timeout-clock", referrer=course["prescriber"],
+            day=day, artifact="prescription",
+            meta={"patient_id": course["patient_id"],
+                  "drug": course["drug_code"],
+                  "aware": course["aware"]})
+        return dict(out, already_queued=False)
 
     def intervene(self, case_id, *, pharmacist, day, recommendation,
                   reason):

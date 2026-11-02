@@ -11,6 +11,7 @@ shaped so that silence is a finding, never a default.
     5. chair_plan         scheduling demand  → dialysis chairs (HBV-safe)
     6. on_shift_readers   rota             → teleread candidate pool
     7. escalate_events    trigger events   → tele-ICU oversight
+    8. timeouts_to_review steward timeout  → pharmacy review queue
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -26,32 +27,11 @@ class CrosslinkError(Exception):
 # nephrology → pharmacy: the latest eGFR meets the drug order.
 #
 # Rules are DATA, versioned — a dosing rule without a version is an
-# unaccountable intervention. Thresholds are checked ascending; the
-# first band the eGFR falls below wins (most restrictive match).
-RENAL_RULES_VERSION = "renal-rules@1.0.0"
-EGFR_STALE_DAYS = 90   # an eGFR from last quarter is history, not chemistry
-
-RENAL_RULES = {
-    # drug: [(below_egfr, verdict, note), ...] ascending thresholds
-    "metformin": [
-        (30, "contraindicated", "eGFR <30: lactic acidosis risk"),
-        (45, "dose-adjust", "eGFR 30-44: halve dose, recheck renal fn")],
-    "nsaid": [
-        (30, "contraindicated", "eGFR <30: haemodynamic AKI risk"),
-        (60, "dose-adjust", "eGFR 30-59: avoid chronic use, hydrate, monitor")],
-    "enoxaparin": [
-        (15, "contraindicated", "eGFR <15: accumulation, bleeding"),
-        (30, "dose-adjust", "eGFR 15-29: once-daily, anti-Xa monitoring")],
-    "spironolactone": [
-        (30, "contraindicated", "eGFR <30: hyperkalaemia risk")],
-    "vancomycin": [
-        (30, "dose-adjust", "eGFR <30: extend interval, dose by trough")],
-    "gentamicin": [
-        (30, "dose-adjust", "eGFR <30: extended interval + levels; "
-                            "nephrotoxic — reassess indication")],
-    "acyclovir": [
-        (30, "dose-adjust", "eGFR <30: extend interval; crystalluria risk")],
-}
+# unaccountable intervention. The table's ONE home is the formulary
+# package (drug knowledge lives with drug knowledge); crosslink
+# re-exports it here so the seam keeps its import surface.
+from drugkb import (RENAL_RULES, RENAL_RULES_VERSION,  # noqa: E402,F401
+                    EGFR_STALE_DAYS, renal_verdict)
 
 
 def renal_check(unit, patient_id, drug, *, day):
@@ -73,22 +53,22 @@ def renal_check(unit, patient_id, drug, *, day):
         flags.append(f"egfr-stale-{day - egfr_day}d — recheck before "
                      "trusting this verdict")
 
-    rules = RENAL_RULES.get(drug.strip().lower())
-    if rules is None:
+    # the formulary resolves drug AND class (ibuprofen → nsaid);
+    # most-restrictive match wins
+    rv = renal_verdict(drug, egfr)
+    if rv is None:
         return {"patient_id": patient_id, "drug": drug, "egfr": egfr,
                 "ckd_stage": p["ckd_stage"], "verdict": "unrated",
                 "flags": flags, "rule_version": RENAL_RULES_VERSION,
                 "note": "absence of a rule is not clearance — route to "
                         "pharmacist review"}
-    for below, verdict, note in rules:
-        if egfr < below:
-            return {"patient_id": patient_id, "drug": drug, "egfr": egfr,
-                    "ckd_stage": p["ckd_stage"], "verdict": verdict,
-                    "reason": note, "flags": flags,
-                    "rule_version": RENAL_RULES_VERSION}
-    return {"patient_id": patient_id, "drug": drug, "egfr": egfr,
-            "ckd_stage": p["ckd_stage"], "verdict": "clear",
-            "flags": flags, "rule_version": RENAL_RULES_VERSION}
+    out = {"patient_id": patient_id, "drug": drug, "egfr": egfr,
+           "ckd_stage": p["ckd_stage"], "verdict": rv["verdict"],
+           "flags": flags, "rule_version": rv["rule_version"],
+           "matched": rv["matched"]}
+    if rv["verdict"] != "clear":
+        out["reason"] = rv["note"]
+    return out
 
 
 # ---------------------------------------------------------------- 2.
@@ -389,3 +369,20 @@ def escalate_events(engine, icu, *, facility, day, opened):
     return {"opened": opened_now, "already_open": already,
             "note": "an unacknowledged alarm gets a doctor, not just a "
                     "louder alarm"}
+
+
+# ---------------------------------------------------------------- 8.
+# steward → pharmreview: the 48h antibiotic timeout joins the queue.
+def timeouts_to_review(pharm, clock, *, day):
+    """Stewardship timeouts become pharmacist review cases. The clock
+    decides WHAT is due; pharmreview decides WHO reviews. Idempotent
+    per due-day (pharmreview's queue_timeout owns the dedup) — the
+    second ring of the bell is not a second case."""
+    due = clock.timeouts_due(day)
+    queued = [pharm.queue_timeout(c, day=day) for c in due]
+    return {"due": len(due),
+            "newly_queued": sum(1 for q in queued
+                                if not q.get("already_queued")),
+            "case_ids": [q["case_id"] for q in queued],
+            "note": "an antibiotic past its timeout gets a pharmacist, "
+                    "not a shrug"}

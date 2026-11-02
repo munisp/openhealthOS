@@ -8,13 +8,15 @@ import unittest
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
-            "devicereg", "teleicu", "mdt", "duelgrade"):
+            "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
+            "steward", "pharmreview"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
                        biopsy_to_path, case_pack, submit_with_pack,
                        cryo_watch, chair_plan, on_shift_readers,
-                       assign_on_shift, escalate_events)
+                       assign_on_shift, escalate_events,
+                       timeouts_to_review)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -45,6 +47,12 @@ class TestRenalCheck(unittest.TestCase):
     def test_dose_adjust_band(self):
         r = renal_check(self.unit, "p2", "metformin", day=1)
         self.assertEqual(r["verdict"], "dose-adjust")
+
+    def test_class_resolution_via_formulary(self):
+        # ibuprofen has no drug-level row; the nsaid class row applies
+        r = renal_check(self.unit, "p1", "ibuprofen", day=1)
+        self.assertEqual(r["verdict"], "contraindicated")
+        self.assertIn("nsaid", r["matched"])
 
     def test_clear_above_all_bands(self):
         self.assertEqual(renal_check(self.unit, "p3", "metformin",
@@ -379,6 +387,36 @@ class TestTriggerToTeleICU(unittest.TestCase):
         out = escalate_events(self.engine, self.icu, facility="phc-1",
                               day=1, opened={})
         self.assertEqual(out["opened"], [])
+
+
+class TestTimeoutsToReview(unittest.TestCase):
+    def setUp(self):
+        from steward import TimeoutClock
+        from pharmreview import PharmacyReview
+        self.clock = TimeoutClock()
+        self.clock.start_course("ABX-1", patient_id="p1",
+                                drug_code="NG-CIPRO500", route="iv",
+                                day=0, indication="pyelonephritis",
+                                prescriber="mo-1")
+        readers = ReaderRegistry()
+        readers.register("pharm-1", licence_id="PCN-1",
+                         licence_expiry_day=400,
+                         scopes=("clinical-pharmacist",))
+        self.pharm = PharmacyReview(readers)
+
+    def test_due_course_lands_in_the_queue_once(self):
+        out = timeouts_to_review(self.pharm, self.clock, day=3)
+        self.assertEqual(out["due"], 1)
+        self.assertEqual(out["newly_queued"], 1)
+        self.assertEqual(out["case_ids"], ["timeout-ABX-1-due2"])
+        # the second ring of the bell is not a second case
+        out = timeouts_to_review(self.pharm, self.clock, day=3)
+        self.assertEqual(out["newly_queued"], 0)
+
+    def test_nothing_due_queues_nothing(self):
+        out = timeouts_to_review(self.pharm, self.clock, day=1)
+        self.assertEqual(out["due"], 0)
+        self.assertEqual(out["case_ids"], [])
 
 
 if __name__ == "__main__":

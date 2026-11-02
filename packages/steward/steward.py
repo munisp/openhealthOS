@@ -39,6 +39,100 @@ def adr_report(patient_id: str, drug_code: str, reaction: str, severity: str,
             "reaction": reaction, "severity": severity, "onset": onset,
             "reporter": reporter, "outcome": outcome, "format": "nafdac-e-reporting/v1"}
 
+
+# ---- antibiotic timeout (the 48-72h review) ----
+TIMEOUT_DAYS = 2          # 48h — the classic antibiotic timeout
+TIMEOUT_OUTCOMES = ("continue", "stop", "de-escalate", "iv-to-oral")
+ROUTE_KINDS = ("iv", "oral", "im")
+
+
+class TimeoutClock:
+    """Every antibiotic course earns a scheduled review at 48h; an
+    unreviewed course is a loud overdue item, not a quiet continuation.
+    Reviews are append-only and re-arm the clock when the course is
+    continued — 'continue' is a decision, not a default."""
+
+    def __init__(self, timeout_days: int = TIMEOUT_DAYS):
+        if timeout_days < 1:
+            raise ValueError("a timeout shorter than a day is noise")
+        self.timeout_days = timeout_days
+        self.courses = {}
+
+    def start_course(self, course_id: str, *, patient_id: str,
+                     drug_code: str, route: str, day, indication: str,
+                     prescriber: str) -> dict:
+        if course_id in self.courses:
+            raise ValueError(f"duplicate course: {course_id}")
+        if route not in ROUTE_KINDS:
+            raise ValueError(f"unknown route: {route}")
+        if not indication or not indication.strip():
+            raise ValueError("an antibiotic without a named indication "
+                             "is how resistance breeds")
+        if not prescriber:
+            raise ValueError("unsigned antibiotics do not start")
+        c = {"course_id": course_id, "patient_id": patient_id,
+             "drug_code": drug_code, "route": route,
+             "start_day": day, "indication": indication,
+             "prescriber": prescriber,
+             "aware": AWARE.get(drug_code, "Unclassified"),
+             "reviews": [], "stopped": None}
+        self.courses[course_id] = c
+        return dict(c)
+
+    def review_timeout(self, course_id: str, *, day, by: str,
+                       outcome: str, note: str = "") -> dict:
+        c = self.courses.get(course_id)
+        if not c:
+            raise ValueError(f"unknown course: {course_id}")
+        if c["stopped"] is not None:
+            raise ValueError("course stopped — a stopped course reviews "
+                             "nothing")
+        if outcome not in TIMEOUT_OUTCOMES:
+            raise ValueError(f"unknown outcome: {outcome}")
+        if not by:
+            raise ValueError("unsigned reviews are rumours")
+        rev = {"day": day, "by": by, "outcome": outcome, "note": note}
+        c["reviews"].append(rev)
+        if outcome == "stop":
+            c["stopped"] = day
+        if outcome == "iv-to-oral":
+            c["route"] = "oral"
+        return dict(rev)
+
+    def timeouts_due(self, as_of) -> list[dict]:
+        """Courses at/past their timeout with no review since — most
+        overdue first. A 'continued' course re-arms: the next review
+        comes due timeout_days after the last decision."""
+        due = []
+        for c in self.courses.values():
+            if c["stopped"] is not None:
+                continue
+            anchor = (c["reviews"][-1]["day"] if c["reviews"]
+                      else c["start_day"])
+            next_due = anchor + self.timeout_days
+            if next_due <= as_of:
+                due.append({"course_id": c["course_id"],
+                            "patient_id": c["patient_id"],
+                            "drug_code": c["drug_code"],
+                            "route": c["route"], "aware": c["aware"],
+                            "due_day": next_due,
+                            "overdue_days": as_of - next_due,
+                            "reviews_so_far": len(c["reviews"]),
+                            "prescriber": c["prescriber"]})
+        due.sort(key=lambda c: (-c["overdue_days"], c["course_id"]))
+        return due
+
+    def timeout_report(self, as_of) -> dict:
+        active = [c for c in self.courses.values()
+                  if c["stopped"] is None]
+        return {"courses": len(self.courses), "active": len(active),
+                "stopped": len(self.courses) - len(active),
+                "timeout_reviews": sum(len(c["reviews"])
+                                       for c in self.courses.values()),
+                "overdue_now": len(self.timeouts_due(as_of)),
+                "note": "the overdue number is the stewardship "
+                        "programme's pulse; 0 is the only good score"}
+
 def main(argv):
     doc = json.load(sys.stdin)
     out = {**aware_report(doc.get("prescriptions", [])),

@@ -18,6 +18,8 @@ one operational arc across NINE packages, each hand-off a public seam:
          a third pair of eyes arbitrates → referral + recall (gap #8)
   18:00  RADPEER-scored peer review (self-review refused) lands on the
          reader's scorecard, denominators attached (gap #9)
+  18:30  the formulary meets the order BEFORE it queues; an antibiotic
+         rings its 48h timeout into the pharmacist queue (gap #10)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -29,7 +31,7 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "teleicu", "mdt", "serial", "duelgrade", "drscreen",
-            "scorecard"):
+            "scorecard", "drugkb", "steward", "pharmreview"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -39,6 +41,9 @@ from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E40
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
+from pharmreview import PharmacyReview  # noqa: E402
+from steward import TimeoutClock  # noqa: E402
+from crosslink import timeouts_to_review  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import DomainConfig, ReaderRegistry, ReadingService, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -74,6 +79,8 @@ def run_connected_day():
                          scopes=("dr-grader",))
     readers.register("rad-peer", licence_id="MDCN-R3",
                      licence_expiry_day=400, scopes=("chest",))
+    readers.register("pharm-1", licence_id="PCN-1",
+                     licence_expiry_day=400, scopes=("clinical-pharmacist",))
 
     radiology = ReadingService(
         DomainConfig("radiology", scopes=("chest",),
@@ -344,7 +351,46 @@ def run_connected_day():
     assert card["capture_qa"]["n"] == 0  # rad-on shot nothing: honest zero
     log["scorecard_peer_review"] = True
 
-    log["seams_proven"] = 11
+    # ---- 18:30 the formulary meets the queue; the timeout rings ----
+    # (gap #10)
+    pharm = PharmacyReview(readers)
+    # warfarin with ibuprofen on board and CKD on the chart: the
+    # knowledge base finds the interaction BEFORE the order queues
+    egfr = unit.patients["p-ckd"]["egfr"]
+    order = pharm.submit_order("RX-1", patient_id="p-ckd",
+                               drug="warfarin", dose=5, route="po",
+                               risk_class="anticoagulant",
+                               prescriber="mo-1", facility="phc-1",
+                               day=1, current_meds=("ibuprofen",),
+                               egfr=egfr)
+    safety = pharm.orders["RX-1"]["safety"]
+    assert any(f["kind"] == "interaction" for f in safety["findings"])
+    log["formulary_findings"] = len(safety["findings"])
+    # enoxaparin into a G5 patient: contraindicated → STAT, not a
+    # quiet queue line
+    unit.register_patient("p-ckd5", dry_weight_kg=60, egfr=10, day=0)
+    order2 = pharm.submit_order("RX-2", patient_id="p-ckd5",
+                                drug="enoxaparin", dose=40, route="sc",
+                                risk_class="anticoagulant",
+                                prescriber="mo-1", facility="phc-1",
+                                day=1, egfr=unit.patients["p-ckd5"]["egfr"])
+    assert order2["priority"] == "stat", order2
+    log["contraindicated_went_stat"] = True
+    # an antibiotic course rings its 48h timeout into the same queue
+    clock = TimeoutClock()
+    clock.start_course("ABX-1", patient_id="p-ward",
+                       drug_code="NG-CIPRO500", route="iv", day=0,
+                       indication="pyelonephritis", prescriber="mo-1")
+    tq = timeouts_to_review(pharm, clock, day=3)
+    assert tq["newly_queued"] == 1 and tq["due"] == 1, tq
+    again = timeouts_to_review(pharm, clock, day=3)
+    assert again["newly_queued"] == 0  # the second bell is not a case
+    clock.review_timeout("ABX-1", day=3, by="pharm-1", outcome="stop",
+                         note="cultures negative")
+    assert clock.timeouts_due(as_of=99) == []
+    log["timeout_queued"] = tq["case_ids"][0]
+
+    log["seams_proven"] = 12
     return log
 
 
