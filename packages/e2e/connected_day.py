@@ -45,6 +45,12 @@ one operational arc across NINE packages, each hand-off a public seam:
   23:50  a pregnant diabetic's clock accelerates to trimester rhythm;
          an anti-VEGF series counts its injections and names the
          broken gap (P1)
+  00:30  admission starts the medication reconciliation — the ward
+         census drives it; 'ordered-despite-withhold' is loud (P1)
+  01:00  terminology binding: LOINC/ICD seed codes bind; an unbound
+         coded answer REFUSES the export (cross-cutting #9)
+  01:30  mammography programme: BI-RADS drives the interval, BI-RADS 0
+         is a debt not a negative, the audit shows every n (P1)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -58,7 +64,8 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "teleicu", "mdt", "serial", "duelgrade", "drscreen",
             "scorecard", "drugkb", "steward", "pharmreview",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
-            "sepsis", "acuity"):
+            "sepsis", "acuity", "medrec", "inpatient", "terminology",
+            "mammoprog"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -72,7 +79,11 @@ from pharmreview import PharmacyReview  # noqa: E402
 from steward import TimeoutClock  # noqa: E402
 from crosslink import (timeouts_to_review, deterioration_to_icu,  # noqa: E402
                        order_with_priors, screens_to_register,
-                       colpo_biopsy_to_path)
+                       colpo_biopsy_to_path, admissions_to_medrec)
+from medrec import MedRec  # noqa: E402
+from inpatient import Ward  # noqa: E402
+from terminology import TerminologyMap  # noqa: E402
+from mammoprog import MammoProgram  # noqa: E402
 from earlywarn import EarlyWarner  # noqa: E402
 from cervixscreen import CervixScreening  # noqa: E402
 from usguard import UltrasoundQA, ANOMALY_PLANES  # noqa: E402
@@ -725,7 +736,87 @@ def run_connected_day():
     log["dr_series_broken_gaps"] = series["broken_gaps"]
     log["dr_pregnancy_override"] = True
 
-    log["seams_proven"] = 23
+    # ---- 00:30 admission starts the med list, not the amnesia (P1) --
+    ward = Ward("phc-1")
+    ward.add_bed("WA-1", "ward-a")
+    ward.add_bed("WA-2", "ward-a")
+    ward.admit("p-ward5", "WA-1", "nurse-1")
+    ward.admit("p-ward6", "WA-2", "nurse-1")
+    med = MedRec()
+    med_started = set()
+    mr = admissions_to_medrec(ward, med, day=0, by="clerk-1",
+                              started=med_started)
+    assert sorted(mr["started"]) == ["p-ward5", "p-ward6"]
+    again = admissions_to_medrec(ward, med, day=1, by="clerk-1",
+                                 started=med_started)
+    assert again["started"] == []   # the bell rings once
+    med.record_home_med("p-ward5", "metformin", setting="admission",
+                        dose="500 bd", source="brought-in-medications",
+                        day=0)
+    med.record_home_med("p-ward5", "amlodipine", setting="admission",
+                        dose="5 od", source="patient-report", day=0)
+    med.reconcile("p-ward5", "metformin", setting="admission",
+                  decision="withhold", day=0, by="mo-1",
+                  reason="AKI on admission; restart when creat settles")
+    med.note_order("p-ward5", "metformin", setting="admission", day=1)
+    disc = med.discrepancies("p-ward5")
+    kinds = {d["drug"]: d["kind"] for d in disc}
+    assert kinds["metformin"] == "ordered-despite-withhold", disc
+    assert kinds["amlodipine"] == "undecided"
+    assert med.unreconciled(as_of=2)[0]["patient_id"] == "p-ward5"
+    log["medrec_discrepancy"] = kinds["metformin"]
+
+    # ---- 01:00 terminology: unbound is not a code (cross-cutting #9)
+    tmap = TerminologyMap("nigeria-pilot-v1", deployment="nigeria-pilot")
+    obs_template = {"id": "observation@1.0.0",
+                    "sections": [
+                        {"type": "code", "key": "kind",
+                         "options": {"spo2": "SpO2",
+                                     "heart-rate": "HR",
+                                     "cvp": "CVP"}},
+                        {"type": "number", "key": "value"}]}
+    coded = tmap.bind_report(obs_template, {"kind": "spo2",
+                                            "value": 98})
+    assert coded["codings"][0]["code"] == "59408-5"
+    # a CVP observation has no binding: the coded export REFUSES
+    # rather than smuggle semantics past the audit
+    try:
+        tmap.bind_report(obs_template, {"kind": "cvp", "value": 8})
+        raise AssertionError("unbound coded field must refuse")
+    except Exception as exc:
+        assert "unbound" in str(exc).lower()
+        log["terminology_unbound_refused"] = True
+    cov = tmap.coverage(obs_template)
+    assert cov["coded_values"] == 3 and cov["bound"] == 2
+    log["terminology_coverage"] = cov["coverage_rate"]
+
+    # ---- 01:30 mammography programme: category → interval → audit --
+    mammo = MammoProgram()
+    mammo.record_screen("w-m1", day=0, birads="1", by="rad-on",
+                        facility="phc-1", image_ref="mammo://1")
+    mammo.record_screen("w-m0", day=0, birads="0", by="rad-on",
+                        facility="phc-1", image_ref="mammo://0")
+    mammo.record_screen("w-m4", day=0, birads="4", by="rad-on",
+                        facility="phc-1", image_ref="mammo://4")
+    # BI-RADS 4 owes a biopsy in 14 days; BI-RADS 0 owes imaging in 30
+    mdue = mammo.due(as_of=40)
+    assert [d["patient_id"] for d in mdue] == ["w-m4", "w-m0"], mdue
+    # completing the WRONG step closes nothing
+    try:
+        mammo.complete_pathway("w-m0", day=35, what="biopsy-referral")
+        raise AssertionError("wrong step must refuse")
+    except Exception as exc:
+        assert "owes" in str(exc)
+    mammo.complete_pathway("w-m0", day=35, what="additional-imaging")
+    mammo.record_biopsy_outcome("w-m4", day=20, outcome="malignant")
+    audit = mammo.audit()
+    assert audit["screens"] == 3 and audit["recall_numerator"] == 1
+    assert audit["biopsy_ppv"] == 1.0
+    assert audit["detection_per_1000"] == round(1 / 3 * 1000, 2)
+    log["mammo_audit_ppv"] = audit["biopsy_ppv"]
+    log["mammo_overdue_first"] = mdue[0]["patient_id"]
+
+    log["seams_proven"] = 26
     return log
 
 

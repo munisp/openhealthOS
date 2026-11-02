@@ -10,7 +10,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
             "steward", "pharmreview", "earlywarn", "serial",
-            "cervixscreen", "callrecall"):
+            "cervixscreen", "callrecall", "inpatient", "medrec"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
@@ -19,7 +19,7 @@ from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa
                        assign_on_shift, escalate_events,
                        timeouts_to_review, deterioration_to_icu,
                        order_with_priors, screens_to_register,
-                       colpo_biopsy_to_path)
+                       colpo_biopsy_to_path, admissions_to_medrec)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -35,6 +35,8 @@ from teleicu import TeleICU  # noqa: E402
 from mdt import TumourBoard  # noqa: E402
 from cervixscreen import CervixScreening  # noqa: E402
 from callrecall import CallRecallRegister  # noqa: E402
+from inpatient import Ward  # noqa: E402
+from medrec import MedRec  # noqa: E402
 
 
 class TestRenalCheck(unittest.TestCase):
@@ -598,6 +600,33 @@ class TestColpoBiopsyToPath(unittest.TestCase):
             colpo_biopsy_to_path(self.cervix, self.path, "w-1",
                                  specimen_id="SP-11",
                                  collector="colpo-1", day=2)
+
+
+class TestAdmissionsToMedRec(unittest.TestCase):
+    """Seam 13: the census drives reconciliation — the transition is
+    the moment the med list is lost, so the list is made then."""
+
+    def test_admission_starts_reconciliation_idempotently(self):
+        ward = Ward("f1")
+        ward.add_bed("B1", "ward-a")
+        ward.add_bed("B2", "ward-a")
+        ward.admit("p-1", "B1", "nurse-1")
+        ward.admit("p-2", "B2", "nurse-1")
+        med = MedRec()
+        started = set()
+        out = admissions_to_medrec(ward, med, day=0, by="clerk-1",
+                                   started=started)
+        self.assertEqual(sorted(out["started"]), ["p-1", "p-2"])
+        again = admissions_to_medrec(ward, med, day=1, by="clerk-1",
+                                     started=started)
+        self.assertEqual(again["started"], [])
+        self.assertEqual(sorted(again["already_started"]),
+                         ["p-1", "p-2"])
+        # discharge removes from census → no discharge-day restart
+        ward.discharge("EP-00001", "nurse-1")
+        third = admissions_to_medrec(ward, med, day=2, by="clerk-1",
+                                     started=started)
+        self.assertEqual(third["started"], [])
 
 
 if __name__ == "__main__":

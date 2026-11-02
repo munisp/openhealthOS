@@ -492,3 +492,26 @@ def colpo_biopsy_to_path(cervix, path, patient_id, *, specimen_id,
             "histology_pending": True,
             "note": "the loop is open: specimen in custody, histology "
                     "owed; it stays visible until the result lands"}
+
+
+# ---------------------------------------------------------------- 13.
+# inpatient → medrec: admission STARTS the reconciliation, always.
+def admissions_to_medrec(ward, medrec, *, day, by, started):
+    """Every patient on the census without an open admission
+    reconciliation gets one started — the transition of care is the
+    moment the med list is lost, so the list is made at the moment of
+    transition. Idempotent via the caller-owned `started` set: the
+    second ring of the bell is not a second case."""
+    started_now, already = [], []
+    for row in ward.census():
+        pid = row["patient"]
+        if pid in started:
+            already.append(pid)
+            continue
+        medrec.start(pid, setting="admission", day=day, by=by)
+        started.add(pid)
+        started_now.append(pid)
+    return {"started": started_now, "already_started": sorted(already),
+            "note": "the undecided drug at admission is the one that "
+                    "silently stops; the one at discharge is the one "
+                    "that silently disappears"}
