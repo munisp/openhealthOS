@@ -42,6 +42,32 @@ DOSE_ALERT_MGY = {"ct": 50.0, "fluoroscopy": 100.0}   # per-study alert
 DOSE_CUMULATIVE_ALERT_MGY = 500.0                      # rolling per patient
 
 
+
+# Hanging protocols: per-protocol layout presets as versioned data.
+# The layout is part of the read — the priors pane exists because the
+# protocol demands it, not because the reader remembered to open it.
+HANGING_VERSION = "hanging@1.0.0"
+HANGING_PROTOCOLS = {
+    "ct-chest": {"name": "ct-chest-comparison",
+                 "panes": [{"role": "current", "position": 0},
+                           {"role": "most-recent-prior", "position": 1}],
+                 "sync_scrolling": True},
+    "ct-head": {"name": "ct-head-comparison",
+                "panes": [{"role": "current", "position": 0},
+                          {"role": "most-recent-prior", "position": 1}],
+                "sync_scrolling": True},
+    "cr-chest": {"name": "chest-pa-with-prior",
+                 "panes": [{"role": "current", "position": 0},
+                           {"role": "most-recent-prior", "position": 1}],
+                 "sync_scrolling": False},
+    "mg-mammo": {"name": "mammo-bilateral-with-priors",
+                 "panes": [{"role": "current", "position": 0},
+                           {"role": "current-mirror", "position": 1},
+                           {"role": "most-recent-prior", "position": 2},
+                           {"role": "prior-mirror", "position": 3}],
+                 "sync_scrolling": True},
+}
+
 class PACSError(Exception):
     pass
 
@@ -322,6 +348,82 @@ class StudyRegistry:
                 "malformed": malformed, "reconciliation": recon,
                 "note": "garbage in the archive is a finding, not a "
                         "crash; sync never overwrites governed state"}
+
+    # ---- 9. hanging protocols: the layout is part of the read ----
+    def hanging_protocol(self, study_uid):
+        """The layout the reader opens with, resolved against the
+        patient's archive: current + priors in named panes. A pane
+        with no prior says so EXPLICITLY — an empty pane is a fact
+        about the archive, not a blank wall."""
+        s = self._study(study_uid)
+        proto = HANGING_PROTOCOLS.get(s["exam_protocol"])
+        if not proto:
+            raise PACSError(
+                f"no hanging protocol for {s['exam_protocol']} — a "
+                "reader improvising layout per study is a reader "
+                "missing the priors pane when it matters")
+        priors = sorted(
+            [x for x in self.studies.values()
+             if x["patient_id"] == s["patient_id"]
+             and x["modality"] == s["modality"]
+             and x["study_uid"] != study_uid
+             and x["day"] < s["day"]],   # a future study is not a
+                                         # prior
+            key=lambda x: -x["day"])
+        panes = []
+        for pane in proto["panes"]:
+            if pane["role"] == "current":
+                panes.append({**pane, "study_uid": study_uid})
+            elif priors:
+                panes.append({**pane,
+                              "study_uid": priors[0]["study_uid"]})
+                priors = priors[1:]
+            else:
+                panes.append({**pane, "study_uid": None,
+                              "empty": "no prior in archive"})
+        return {"study_uid": study_uid,
+                "protocol": proto["name"], "panes": panes,
+                "sync_scrolling": proto["sync_scrolling"],
+                "protocol_version": HANGING_VERSION}
+
+    # ---- 10. key-image pushback: annotations belong to the study ----
+    def push_key_images(self, study_uid, *, selections, by, day):
+        """Key images are pushed BACK to the study record — an
+        annotation that lives only in our registry is invisible to the
+        next reader, the referring clinician, and the archive. With an
+        archive adapter the set is STOWed immediately; without one it
+        is marked pending-archive-sync — honestly, not optimistically.
+        Selections reference instances by index; pixels are never
+        burned in (burned-in annotation is the export-refusal rule
+        this registry already enforces)."""
+        s = self._study(study_uid)
+        if not by:
+            raise PACSError("unsigned key images are no key images")
+        if not selections:
+            raise PACSError("an empty key-image set annotates nothing")
+        for sel in selections:
+            idx = sel.get("instance_index")
+            if idx is None or not (0 <= idx < s["instances"]):
+                raise PACSError(
+                    f"instance_index {idx} outside 0.."
+                    f"{s['instances'] - 1} — a key image pointing "
+                    "nowhere annotates nothing")
+            if not sel.get("label"):
+                raise PACSError("a key image without a label is a "
+                                "bookmark nobody can read")
+        record = {"selections": [dict(x) for x in selections],
+                  "by": by, "day": day,
+                  "sync": "pending-archive-sync"}
+        if self.adapter is not None and self.adapter.base and \
+                self.adapter.fetch:
+            self.adapter.stow([{"study_uid": study_uid,
+                                "key_images": selections}])
+            record["sync"] = "pushed"
+        s.setdefault("key_image_sets", []).append(record)
+        return dict(record)
+
+    def key_images(self, study_uid):
+        return list(self._study(study_uid).get("key_image_sets", []))
 
     def _study(self, uid):
         if uid not in self.studies:

@@ -51,6 +51,14 @@ one operational arc across NINE packages, each hand-off a public seam:
          coded answer REFUSES the export (cross-cutting #9)
   01:30  mammography programme: BI-RADS drives the interval, BI-RADS 0
          is a debt not a negative, the audit shows every n (P1)
+  02:00  offline specialist: checkout claims the cases, a mid-flight
+         escalation collides at sync and is KEPT, never merged (P2)
+  02:30  teaching files: only verified reports teach, anonymization is
+         proven (no patient id, no absolute day, no burned-in pixels),
+         retraction is append-only (P2)
+  03:00  vocabulary convergence: cpoe's 'acei' and drugkb's
+         'ace-inhibitor' resolve to one class — the interaction fires
+         instead of presenting as clearance (P2)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -65,7 +73,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "scorecard", "drugkb", "steward", "pharmreview",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
-            "mammoprog"):
+            "mammoprog", "offlinespec", "teachfile", "cpoe"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -84,6 +92,10 @@ from medrec import MedRec  # noqa: E402
 from inpatient import Ward  # noqa: E402
 from terminology import TerminologyMap  # noqa: E402
 from mammoprog import MammoProgram  # noqa: E402
+from offlinespec import OfflineReader  # noqa: E402
+from teachfile import TeachingLibrary, TeachFileError  # noqa: E402
+from drugkb import canonical_class  # noqa: E402
+from formulary import Formulary  # noqa: E402
 from earlywarn import EarlyWarner  # noqa: E402
 from cervixscreen import CervixScreening  # noqa: E402
 from usguard import UltrasoundQA, ANOMALY_PLANES  # noqa: E402
@@ -816,7 +828,84 @@ def run_connected_day():
     log["mammo_audit_ppv"] = audit["biopsy_ppv"]
     log["mammo_overdue_first"] = mdue[0]["patient_id"]
 
-    log["seams_proven"] = 26
+    # ---- 02:00 offline specialist: checkout is a claim, conflicts
+    # are loud, offline is not an alibi (P2)
+    radiology.order("CX-O1", priority="routine", question="TB?",
+                    facility="phc-1", referrer="dr-a", day=0)
+    radiology.order("CX-O2", priority="routine", question="nodule?",
+                    facility="phc-1", referrer="dr-a", day=0)
+    offline = OfflineReader(radiology)
+    offline.checkout("bundle-1", "rad-off", ["CX-O1", "CX-O2"], day=1)
+    assert radiology.cases["CX-O1"]["assigned_to"] == "rad-off"
+    for cid, imp in (("CX-O1", "active TB"), ("CX-O2", "benign nodule")):
+        offline.draft_offline("bundle-1", cid,
+                              findings="see report", impression=imp,
+                              template_version="cxr@1.0.0", day=2)
+    # while the reader was offline, the hub escalated CX-O1 to stat:
+    # the collision is the finding — the draft is KEPT, never merged
+    radiology.cases["CX-O1"]["priority"] = "stat"
+    sync = offline.sync_back("bundle-1", day=3)
+    assert len(sync["landed"]) == 1, sync  # CX-O2's report id
+    assert [c["case_id"] for c in sync["conflicts"]] == ["CX-O1"]
+    assert radiology.cases["CX-O2"]["state"] == "reported-draft"
+    assert "CX-O1" not in radiology.reports  # no silent merge
+    log["offline_synced"] = len(sync["landed"])
+    log["offline_conflict_kept"] = sync["conflicts"][0]["case_id"]
+
+    # ---- 02:30 teaching files: only verified reports teach;
+    # anonymization is proven, not promised; retraction is append-only
+    pacs_svc.register_study(study_uid="1.2.840.T1", accession="ACC-T1",
+                            patient_id="p-teach", modality="CR",
+                            exam_protocol="chest-pa", priority="routine",
+                            facility="phc-1", day=0, instances=2)
+    teach = TeachingLibrary(radiology, pacs_svc)
+    # the draft-only conflict case cannot teach
+    try:
+        teach.contribute("CX-O1", "1.2.840.T1", title="draft case",
+                         consent_basis="explicit-consent",
+                         contributed_by="rad-off", day=3)
+        raise RuntimeError("unverified case must not teach")
+    except TeachFileError as exc:
+        assert "verified" in str(exc)
+    # verify CX-O2's synced report, then contribute — anonymized
+    radiology.verify_report("CX-O2", reader_id="rad-off", day=3)
+    tid = teach.contribute("CX-O2", "1.2.840.T1",
+                           title="Solitary pulmonary nodule",
+                           consent_basis="anonymized-irreversible",
+                           contributed_by="rad-off", day=4,
+                           tags=("nodule",))["teaching_id"]
+    entry = teach.library()[0]
+    assert "p-teach" not in str(entry)
+    assert entry["case_age_days"] == 4  # relative day, never absolute
+    # free text carrying the patient id refuses before storage
+    try:
+        teach.contribute("CX-O2", "1.2.840.T1",
+                         title="nodule in p-teach",
+                         consent_basis="explicit-consent",
+                         contributed_by="rad-off", day=4)
+        raise RuntimeError("patient id in free text must refuse")
+    except TeachFileError as exc:
+        assert "identifier" in str(exc)
+        log["teach_leak_refused"] = True
+    teach.record_use(tid, by="student-1", day=5, purpose="training")
+    teach.retract(tid, by="rad-off", day=6, reason="consent-withdrawn")
+    try:
+        teach.record_use(tid, by="student-2", day=7, purpose="training")
+        raise RuntimeError("retracted file must not circulate")
+    except TeachFileError as exc:
+        assert "retracted" in str(exc)
+        log["teach_retract_blocks_use"] = True
+    assert teach.usage_report()["retracted"] == 1
+    log["teach_contributed"] = teach.usage_report()["contributed"]
+
+    # ---- 03:00 vocabulary convergence: cpoe and drugkb speak ONE
+    # class language — an unmatched synonym presents as clearance (P2)
+    assert canonical_class("acei") == "ace-inhibitor"
+    f_hits = Formulary().check_interactions(["NG-LISIN10", "NG-IBU400"])
+    assert f_hits, "acei/nsaid pair lost to vocabulary drift"
+    log["vocab_converged"] = f_hits[0]["severity"] == "major"
+
+    log["seams_proven"] = 29
     return log
 
 

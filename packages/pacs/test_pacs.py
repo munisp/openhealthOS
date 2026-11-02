@@ -192,5 +192,88 @@ class TestRegistry(unittest.TestCase):
         self.assertEqual(recon["orphans_in_appliance"], [])
 
 
+class TestHangingProtocols(unittest.TestCase):
+    def setUp(self):
+        self.r = StudyRegistry()
+        self.r.register_study(study_uid="P1", accession="A1",
+                              patient_id="p1", modality="CT",
+                              exam_protocol="ct-chest",
+                              priority="routine", facility="f", day=0,
+                              instances=40)
+        self.r.register_study(study_uid="P2", accession="A2",
+                              patient_id="p1", modality="CT",
+                              exam_protocol="ct-chest",
+                              priority="routine", facility="f", day=30,
+                              instances=42)
+
+    def test_priors_pane_resolves_against_archive(self):
+        h = self.r.hanging_protocol("P2")
+        self.assertEqual(h["panes"][0]["study_uid"], "P2")
+        self.assertEqual(h["panes"][1]["study_uid"], "P1")
+        self.assertTrue(h["sync_scrolling"])
+
+    def test_no_prior_is_stated_not_blank(self):
+        h = self.r.hanging_protocol("P1")
+        self.assertIsNone(h["panes"][1]["study_uid"])
+        self.assertEqual(h["panes"][1]["empty"], "no prior in archive")
+
+    def test_unknown_protocol_refuses(self):
+        self.r.register_study(study_uid="P9", accession="A9",
+                              patient_id="p1", modality="US",
+                              exam_protocol="us-weird",
+                              priority="routine", facility="f", day=0)
+        with self.assertRaises(PACSError):
+            self.r.hanging_protocol("P9")
+
+
+class TestKeyImagePushback(unittest.TestCase):
+    def setUp(self):
+        self.r = StudyRegistry()
+        self.r.register_study(study_uid="K1", accession="AK1",
+                              patient_id="p1", modality="CT",
+                              exam_protocol="ct-chest",
+                              priority="routine", facility="f", day=0,
+                              instances=40)
+
+    def test_pushback_validates_and_records(self):
+        with self.assertRaises(PACSError):   # out of range
+            self.r.push_key_images(
+                "K1", selections=[{"instance_index": 99,
+                                   "label": "x"}], by="rad-1", day=1)
+        with self.assertRaises(PACSError):   # unlabeled
+            self.r.push_key_images(
+                "K1", selections=[{"instance_index": 5, "label": ""}],
+                by="rad-1", day=1)
+        out = self.r.push_key_images(
+            "K1", selections=[{"instance_index": 5,
+                               "label": "nodule, RUL"},
+                              {"instance_index": 6,
+                               "label": "nodule, measurement"}], 
+            by="rad-1", day=1)
+        self.assertEqual(out["sync"], "pending-archive-sync")
+        self.assertEqual(len(self.r.key_images("K1")), 1)
+
+    def test_adapter_stows_immediately(self):
+        class FakeAdapter:
+            base = "https://pacs.example"   # configured → stows live
+            fetch = True
+
+            def __init__(self):
+                self.stowed = []
+
+            def stow(self, instances):
+                self.stowed.extend(instances)
+        r = StudyRegistry(adapter=FakeAdapter())
+        r.register_study(study_uid="K2", accession="AK2",
+                         patient_id="p1", modality="CT",
+                         exam_protocol="ct-chest", priority="routine",
+                         facility="f", day=0, instances=10)
+        out = r.push_key_images(
+            "K2", selections=[{"instance_index": 3, "label": "bleed"}],
+            by="rad-1", day=1)
+        self.assertEqual(out["sync"], "pushed")
+        self.assertEqual(len(r.adapter.stowed), 1)
+
+
 if __name__ == "__main__":
     unittest.main()

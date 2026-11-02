@@ -6,7 +6,14 @@ sourced clinical knowledge expressed as data, reviewable in version control.
 Deployers may layer a licensed compendium via Formulary.load_extra().
 """
 from __future__ import annotations
-import json, re
+import json, re, os, sys
+
+# flat-package layout: drug knowledge lives one directory over, and
+# this module must import it whether loaded by a test harness (which
+# sets sys.path) or run as a CLI subprocess (which does not)
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "drugkb"))
+from drugkb import canonical_class  # one home for drug-class names
 
 # (code, name, class, form, strength, who_eml)
 DRUGS = [
@@ -100,14 +107,22 @@ class Formulary:
                     f"ALLERGY: patient allergic to '{a}' — {d['name']} ({d['class']}) contraindicated")
 
     def check_interactions(self, codes):
-        """Return warn-level findings; never blocks (warn-and-override doctrine)."""
+        """Return warn-level findings; never blocks (warn-and-override doctrine).
+
+        Class names are canonicalized through drugkb before matching:
+        this formulary says 'acei', the knowledge base says
+        'ace-inhibitor', and a string compare between synonyms matches
+        NOTHING — an unmatched pair looks like clearance. One concept,
+        one name.
+        """
         classes = []
         for c in codes:
             d = self.drugs.get(c)
             if d:
-                classes.append((c, d["class"]))
+                classes.append((c, canonical_class(d["class"])))
         findings = []
         for a, b, sev, msg in self.class_interactions:
+            a, b = canonical_class(a), canonical_class(b)
             for ca, ka in classes:
                 for cb, kb in classes:
                     if ca != cb and {ka, kb} == {a, b}:

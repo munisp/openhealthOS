@@ -76,7 +76,7 @@ class TestConnectedDay(unittest.TestCase):
     def test_ten_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 26)
+        self.assertEqual(log["seams_proven"], 29)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")
@@ -110,3 +110,9 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(log["terminology_coverage"], round(2 / 3, 3))
         self.assertEqual(log["mammo_audit_ppv"], 1.0)
         self.assertEqual(log["mammo_overdue_first"], "w-m4")
+        self.assertEqual(log["offline_synced"], 1)
+        self.assertEqual(log["offline_conflict_kept"], "CX-O1")
+        self.assertTrue(log["teach_leak_refused"])
+        self.assertTrue(log["teach_retract_blocks_use"])
+        self.assertEqual(log["teach_contributed"], 1)
+        self.assertTrue(log["vocab_converged"])

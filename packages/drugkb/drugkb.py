@@ -62,7 +62,32 @@ DRUG_CLASSES = {
     "loop-diuretic": ("furosemide", "bumetanide"),
     "opioid": ("morphine", "tramadol", "codeine", "pethidine"),
     "benzodiazepine": ("diazepam", "lorazepam", "midazolam"),
+    # aspirin is BOTH an nsaid and an antiplatelet — a drug may carry
+    # more than one class; pretending otherwise loses the bleeding
+    # interaction with anticoagulants
+    "antiplatelet": ("aspirin",),
 }
+
+# ---- vocabulary convergence ------------------------------------------------
+# Other packages (cpoe's formulary among them) coined their own class
+# names before this registry existed. Two names for one concept is how
+# an interaction check silently matches nothing: "acei" never equals
+# "ace-inhibitor" in a string compare, and the missed pair looks like
+# clearance. Aliases converge on THIS registry's names — drug knowledge
+# has one home.
+CLASS_ALIASES = {
+    "acei": "ace-inhibitor",
+    "ace-inhibitors": "ace-inhibitor",
+    "nsaids": "nsaid",
+    "quinolone": "fluoroquinolone",
+}
+
+
+def canonical_class(name):
+    """The one name for a drug class. Unknown names pass through
+    unchanged — convergence fixes KNOWN synonyms; it does not pretend
+    to know classes outside the registry."""
+    return CLASS_ALIASES.get(name, name)
 
 # ---- interaction pairs: drug-or-class × drug-or-class ----
 # (a, b, severity, mechanism, evidence_ref) — curated open subset only;
