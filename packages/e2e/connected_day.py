@@ -20,6 +20,10 @@ one operational arc across NINE packages, each hand-off a public seam:
          reader's scorecard, denominators attached (gap #9)
   18:30  the formulary meets the order BEFORE it queues; an antibiotic
          rings its 48h timeout into the pharmacist queue (gap #10)
+  19:00  derm suspicion starts the 14-day clock; an unseen melanoma
+         breaches, loudly (gap #11)
+  19:30  NEWS2 trajectory rises 1 → high; tele-ICU oversight opens
+         exactly once (gap #12)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -31,7 +35,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "teleicu", "mdt", "serial", "duelgrade", "drscreen",
-            "scorecard", "drugkb", "steward", "pharmreview"):
+            "scorecard", "drugkb", "steward", "pharmreview",
+            "earlywarn"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -43,7 +48,8 @@ from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
 from pharmreview import PharmacyReview  # noqa: E402
 from steward import TimeoutClock  # noqa: E402
-from crosslink import timeouts_to_review  # noqa: E402
+from crosslink import timeouts_to_review, deterioration_to_icu  # noqa: E402
+from earlywarn import EarlyWarner  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import DomainConfig, ReaderRegistry, ReadingService, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -390,7 +396,54 @@ def run_connected_day():
     assert clock.timeouts_due(as_of=99) == []
     log["timeout_queued"] = tq["case_ids"][0]
 
-    log["seams_proven"] = 12
+    # ---- 19:00 the two-week-wait clock starts on suspicion (gap #11)
+    derm.raise_suspicion("DC-1", finding="suspected-scc", day=1,
+                         by="derm-1")
+    derm.advance_pathway("DC-1", "referred", day=1, ref="REF-LAG-77")
+    derm.advance_pathway("DC-1", "attended", day=10)
+    derm.advance_pathway("DC-1", "diagnosed", day=12, diagnosis="scc",
+                         confirmed_by="histology")
+    # a second lesion crosses the target unseen → breach, loudly
+    derm.assess_capture("img://10", day=0, by="nurse-1",
+                        passed=DERM_CHECKS)
+    derm.submit_lesion("DC-2", patient_id="p-derm2",
+                       body_site="right calf", image_ref="img://10",
+                       consent="signed", facility="phc-1",
+                       referrer="mo-1", day=0, duration_days=200)
+    derm.raise_suspicion("DC-2", finding="suspected-melanoma", day=0,
+                         by="derm-1")
+    breaches = derm.two_week_breaches(as_of=20)
+    assert [b["case_id"] for b in breaches] == ["DC-2"], breaches
+    assert breaches[0]["overdue_days"] == 6
+    rep = derm.pathway_report(as_of=20)
+    assert rep["suspected"] == 2 and rep["breaches_now"] == 1, rep
+    log["tww_breach"] = breaches[0]["case_id"]
+
+    # ---- 19:30 NEWS2: the trajectory is the finding (gap #12) ----
+    ew = EarlyWarner(vitals)
+    for d, vals in ((0, {"respiratory-rate": 15, "spo2": 98,
+                         "temperature": 37.0, "systolic-bp": 122,
+                         "heart-rate": 74}),
+                    (1, {"respiratory-rate": 27, "spo2": 90,
+                         "temperature": 39.1, "systolic-bp": 95,
+                         "heart-rate": 118})):
+        for vital, val in vals.items():
+            vitals.record("p-ward2", vital, val, day=d,
+                          ts=f"2026-11-0{2 + d}T20:00:00Z")
+        ew.score_now("p-ward2", day=d, ts=f"2026-11-0{2 + d}T20:05:00Z",
+                     avpu="A")
+    trend = ew.trend("p-ward2")
+    assert trend["direction"] == "rising" and trend["band_now"] == "high"
+    opened2 = {}
+    icu_out = deterioration_to_icu(ew, icu, facility="phc-1", day=1,
+                                   opened=opened2)
+    assert icu_out["opened"] == ["icu-news2-p-ward2"], icu_out
+    again = deterioration_to_icu(ew, icu, facility="phc-1", day=2,
+                                 opened=opened2)
+    assert again["opened"] == []  # a rising trend is not a second case
+    log["news2_icu_case"] = icu_out["opened"][0]
+
+    log["seams_proven"] = 14
     return log
 
 

@@ -22,6 +22,12 @@ CONSENT_KINDS = ("signed", "verbal-witnessed")
 DERM_CHECKS = ("scale-marker", "focus", "whole-lesion-in-frame",
                "dermoscopic-or-clinical-view")
 
+# the two-week-wait cancer pathway — the metric the whole pathway
+# exists for: suspicion → specialist seen within 14 days, tracked.
+TWW_TARGET_DAYS = 14
+PATHWAY_STAGES = ("suspected", "referred", "attended", "diagnosed")
+DIAGNOSIS_CONFIRMED_BY = ("histology", "clinical")
+
 CONFIG = DomainConfig(
     "dermatology",
     scopes=("derm-reader",),
@@ -35,6 +41,7 @@ class TeleDerm:
         self.reading = ReadingService(CONFIG, readers)
         self.qa = CaptureQA("derm", DERM_CHECKS)
         self.lesions = {}
+        self.pathway = {}   # case_id -> {stage: day, ...}
 
     def assess_capture(self, image_ref, *, day, by, passed=(), failed=()):
         return self.qa.assess(image_ref, day=day, by=by,
@@ -84,3 +91,94 @@ class TeleDerm:
         return {"counts": counts, "cases_flagged": len(self.lesions),
                 "note": "aggregate-only; individual cases stay with "
                         "the care team"}
+
+    # ---- the two-week-wait cancer pathway ----
+    def raise_suspicion(self, case_id, *, finding, day, by):
+        """A named clinician raises a cancer suspicion on a lesion case;
+        the 14-day clock starts NOW. 'Suspected' without a clock is a
+        worry, not a pathway."""
+        if case_id not in self.lesions:
+            raise TeleReadError(f"unknown lesion case: {case_id}")
+        if finding not in CONFIG.critical_findings:
+            raise TeleReadError(
+                f"'{finding}' is not a cancer-pathway finding — the "
+                "clock is for suspected cancer, not everything worrying")
+        if not by:
+            raise TeleReadError("suspicion without a named clinician is "
+                                "a rumour")
+        if case_id in self.pathway:
+            raise TeleReadError("pathway already open — the clock does "
+                                "not restart to hide a breach")
+        self.pathway[case_id] = {
+            "patient_id": self.lesions[case_id]["patient_id"],
+            "finding": finding, "by": by, "suspected": day,
+            "target_day": day + TWW_TARGET_DAYS}
+        return dict(self.pathway[case_id])
+
+    def advance_pathway(self, case_id, stage, *, day, ref=None,
+                        diagnosis=None, confirmed_by=None):
+        p = self.pathway.get(case_id)
+        if not p:
+            raise TeleReadError("no open pathway — suspicion comes first")
+        idx = PATHWAY_STAGES.index(stage)
+        done = [s for s in PATHWAY_STAGES if s in p]
+        if len(done) != idx:
+            raise TeleReadError(
+                f"the pathway is sequential: '{stage}' requires "
+                f"'{PATHWAY_STAGES[idx - 1]}' first — an attendance "
+                "without a referral is unverifiable")
+        if stage == "referred" and not ref:
+            raise TeleReadError("a referral without a reference id is a "
+                                "letter nobody can trace")
+        if stage == "diagnosed":
+            if not diagnosis:
+                raise TeleReadError("diagnosis required — the pathway "
+                                    "ends in an answer, not a shrug")
+            if confirmed_by not in DIAGNOSIS_CONFIRMED_BY:
+                raise TeleReadError(
+                    "diagnosis must say how it was confirmed: "
+                    f"{DIAGNOSIS_CONFIRMED_BY}")
+            p["diagnosis"] = diagnosis
+            p["confirmed_by"] = confirmed_by
+        if ref:
+            p["referral_ref"] = ref
+        p[stage] = day
+        return dict(p)
+
+    def two_week_breaches(self, as_of):
+        """Past the 14-day target without attending — most overdue
+        first. The breach list is the pathway's whole point."""
+        out = []
+        for cid, p in self.pathway.items():
+            if "attended" in p:
+                continue
+            if p["target_day"] < as_of:
+                out.append({"case_id": cid, "patient_id": p["patient_id"],
+                            "finding": p["finding"],
+                            "suspected": p["suspected"],
+                            "target_day": p["target_day"],
+                            "overdue_days": as_of - p["target_day"],
+                            "stage": [s for s in PATHWAY_STAGES
+                                      if s in p][-1]})
+        out.sort(key=lambda b: (-b["overdue_days"], b["case_id"]))
+        return out
+
+    def pathway_report(self, as_of):
+        n = len(self.pathway)
+        attended = [p for p in self.pathway.values() if "attended" in p]
+        within = [p for p in attended
+                  if p["attended"] - p["suspected"] <= TWW_TARGET_DAYS]
+        days = sorted(p["attended"] - p["suspected"] for p in attended)
+        median = (days[len(days) // 2] if days else None)
+        return {"suspected": n,
+                "referred": sum(1 for p in self.pathway.values()
+                                if "referred" in p),
+                "attended": len(attended),
+                "attended_within_14d": len(within),
+                "within_target_rate": (round(len(within) / len(attended), 3)
+                                       if attended else None),
+                "median_days_to_attend": median,
+                "breaches_now": len(self.two_week_breaches(as_of)),
+                "note": "the rate's denominator is attendances; the "
+                        "breach count's denominator is every suspicion "
+                        "ever raised"}

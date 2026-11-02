@@ -9,14 +9,14 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
-            "steward", "pharmreview"):
+            "steward", "pharmreview", "earlywarn"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
                        biopsy_to_path, case_pack, submit_with_pack,
                        cryo_watch, chair_plan, on_shift_readers,
                        assign_on_shift, escalate_events,
-                       timeouts_to_review)
+                       timeouts_to_review, deterioration_to_icu)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -417,6 +417,52 @@ class TestTimeoutsToReview(unittest.TestCase):
         out = timeouts_to_review(self.pharm, self.clock, day=1)
         self.assertEqual(out["due"], 0)
         self.assertEqual(out["case_ids"], [])
+
+
+class TestDeteriorationToICU(unittest.TestCase):
+    def setUp(self):
+        from earlywarn import EarlyWarner
+        self.vitals = VitalsIngest()
+        self.ew = EarlyWarner(self.vitals)
+        readers = ReaderRegistry()
+        readers.register("icu-1", licence_id="MDCN-I1",
+                         licence_expiry_day=400, scopes=("intensivist",))
+        self.icu = TeleICU(readers)
+
+    def _score(self, pid, day, **kw):
+        base = {"respiratory-rate": 16, "spo2": 98, "temperature": 37.0,
+                "systolic-bp": 120, "heart-rate": 72}
+        base.update(kw)
+        for vital, val in base.items():
+            self.vitals.record(pid, vital, val, day=day,
+                               ts=f"2026-11-02T{8 + day:02d}:00:00Z")
+        return self.ew.score_now(pid, day=day, ts=f"t{day}", avpu="A")
+
+    def test_deterioration_opens_oversight_once(self):
+        self._score("p1", 0)
+        self._score("p1", 1, **{"respiratory-rate": 27, "spo2": 90,
+                                "systolic-bp": 88, "heart-rate": 118})
+        opened = {}
+        out = deterioration_to_icu(self.ew, self.icu, facility="phc-1",
+                                   day=1, opened=opened)
+        self.assertEqual(out["opened"], ["icu-news2-p1"])
+        ov = self.icu.oversight["icu-news2-p1"]
+        self.assertTrue(ov["trigger_ref"].startswith("news2:"))
+        # rising further does not open a second case
+        self._score("p1", 2, **{"respiratory-rate": 30, "spo2": 88,
+                                "systolic-bp": 85, "heart-rate": 125})
+        out = deterioration_to_icu(self.ew, self.icu, facility="phc-1",
+                                   day=2, opened=opened)
+        self.assertEqual(out["opened"], [])
+        self.assertEqual(out["already_open"], ["icu-news2-p1"])
+        self.assertEqual(len(self.icu.oversight), 1)
+
+    def test_stable_patients_open_nothing(self):
+        self._score("p2", 0)
+        self._score("p2", 1)
+        out = deterioration_to_icu(self.ew, self.icu, facility="phc-1",
+                                   day=1, opened={})
+        self.assertEqual(out["opened"], [])
 
 
 if __name__ == "__main__":

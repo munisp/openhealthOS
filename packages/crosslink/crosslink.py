@@ -12,6 +12,7 @@ shaped so that silence is a finding, never a default.
     6. on_shift_readers   rota             → teleread candidate pool
     7. escalate_events    trigger events   → tele-ICU oversight
     8. timeouts_to_review steward timeout  → pharmacy review queue
+    9. deterioration_to_icu NEWS2 trend   → tele-ICU oversight
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -386,3 +387,29 @@ def timeouts_to_review(pharm, clock, *, day):
             "case_ids": [q["case_id"] for q in queued],
             "note": "an antibiotic past its timeout gets a pharmacist, "
                     "not a shrug"}
+
+
+# ---------------------------------------------------------------- 9.
+# earlywarn → tele-ICU: a deteriorating trajectory gets oversight.
+def deterioration_to_icu(warner, icu, *, facility, day, threshold=5,
+                         opened):
+    """NEWS2 deterioration (score ≥ threshold, or a band climbing)
+    opens a tele-ICU oversight case. Idempotent per patient via the
+    caller-owned `opened` map — the trajectory may keep rising; the
+    case opens once."""
+    opened_now, already = [], []
+    for p in warner.deteriorating(day, threshold=threshold):
+        pid = p["patient_id"]
+        if pid in opened:
+            already.append(opened[pid])
+            continue
+        case_id = f"icu-news2-{pid}"
+        icu.open_oversight(
+            case_id, patient_id=pid, facility=facility,
+            trigger_ref=f"news2:{p['score']}:{p['band']}", day=day,
+            severity="stat" if p["band"] == "high" else "urgent")
+        opened[pid] = case_id
+        opened_now.append(case_id)
+    return {"opened": opened_now, "already_open": already,
+            "note": "the trajectory is the finding — a rising score "
+                    "gets a doctor, not a larger font"}
