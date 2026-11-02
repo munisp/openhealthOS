@@ -30,6 +30,13 @@ one operational arc across NINE packages, each hand-off a public seam:
          refuses to masquerade (gap #14)
   21:00  the priors chain is attached at ORDER time; zero priors is
          stated, never silent (gap #15)
+  21:30  the call/recall register drives the cervix cohort: the ladder
+         hunts the woman who never came; screens close rounds (P1)
+  22:00  colposcopy biopsy enters pathology custody; histology CIN3
+         closes the loop and authorizes same-day LEEP (P1)
+  22:30  sepsis bundle clocks: cultures-before-antibiotics flagged,
+         conditional elements waived with reasons, breaches
+         overdue-first (P1)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -42,7 +49,8 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "teleicu", "mdt", "serial", "duelgrade", "drscreen",
             "scorecard", "drugkb", "steward", "pharmreview",
-            "earlywarn", "cervixscreen", "usguard"):
+            "earlywarn", "cervixscreen", "usguard", "callrecall",
+            "sepsis"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -55,10 +63,13 @@ from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
 from pharmreview import PharmacyReview  # noqa: E402
 from steward import TimeoutClock  # noqa: E402
 from crosslink import (timeouts_to_review, deterioration_to_icu,  # noqa: E402
-                       order_with_priors)
+                       order_with_priors, screens_to_register,
+                       colpo_biopsy_to_path)
 from earlywarn import EarlyWarner  # noqa: E402
 from cervixscreen import CervixScreening  # noqa: E402
 from usguard import UltrasoundQA, ANOMALY_PLANES  # noqa: E402
+from callrecall import CallRecallRegister  # noqa: E402
+from sepsis import SepsisClock  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import DomainConfig, ReaderRegistry, ReadingService, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -526,7 +537,87 @@ def run_connected_day():
     assert ghost["priors"]["count"] == 0
     log["priors_attached"] = prio["priors"]["count"]
 
-    log["seams_proven"] = 17
+    # ---- 21:30 the register drives the programme (gap: call/recall) --
+    register = CallRecallRegister("cervix")
+    register.enroll("p-cx1", birth_day=-35 * 365, day=0,
+                    hiv_positive=True)
+    register.enroll("p-cx2", birth_day=-40 * 365, day=0,
+                    hiv_positive=True)
+    register.enroll("p-cx-never", birth_day=-38 * 365, day=0)
+    register.record_step("p-cx-never", step="invite", day=0,
+                         channel="sms")
+    # the women who screened at 20:00 close their rounds via the seam —
+    # the register keeps hunting only the one who never came
+    marked = {}
+    scr = screens_to_register(cervix, register, day=0, marked=marked)
+    assert set(scr["marked_screened"]) == {"p-cx1", "p-cx2"}, scr
+    again = screens_to_register(cervix, register, day=1, marked=marked)
+    assert again["marked_screened"] == []   # the bell rings once
+    # a late invite does not pause the ladder: reminder-1 already due
+    steps = register.steps_due(as_of=15)
+    assert [(s["patient_id"], s["step"]) for s in steps] == \
+        [("p-cx-never", "reminder-1")], steps
+    cov = register.coverage(as_of=1)
+    assert cov["eligible"] == 3 and cov["screened_in_interval"] == 2
+    assert cov["never_screened"] == 1, cov
+    log["callrecall_coverage"] = cov["coverage_rate"]
+    log["callrecall_never_came"] = "p-cx-never"
+
+    # ---- 22:00 colposcopy biopsy: custody begins, histology closes (P1)
+    cervix.screen("p-cx3", facility="phc-1", screener="nurse-2", day=0,
+                  modality="hpv-dna")
+    cervix.record_hpv("p-cx3", result="positive", day=0)
+    cervix.triage("p-cx3", method="colposcopy", day=0)
+    cervix.refer("p-cx3", destination="colpo-clinic", day=0,
+                 reason="hpv-positive triage")
+    cervix.record_colposcopy("p-cx3", impression="high-grade",
+                             decision="biopsy", day=1, by="cervix-1")
+    bio = colpo_biopsy_to_path(cervix, path, "p-cx3",
+                               specimen_id="SP-CX3",
+                               collector="cervix-1", day=1)
+    assert bio["state"] == "collected", bio
+    loops = cervix.open_loops(as_of=20)
+    assert "histology-pending" in {l["result"] for l in loops}
+    hist = cervix.record_histology("p-cx3", result="cin3", day=9)
+    assert hist["histology"]["management"] == "treat"
+    tx3 = cervix.treat("p-cx3", method="leep", day=9)
+    assert tx3["treatment"]["same_visit"] is True
+    loops2 = cervix.open_loops(as_of=20)
+    assert "p-cx3" not in {l["patient_id"] for l in loops2}
+    log["histology_loop_closed"] = "p-cx3"
+
+    # ---- 22:30 sepsis bundle: every hour accountable (P1) ----
+    sepsis = SepsisClock()
+    sepsis.start_clock("p-ward2", zero_hour=0, by="mo-1",
+                       source="news2-escalation")
+    sepsis.complete("p-ward2", "lactate", hour=0, by="mo-1")
+    sepsis.complete("p-ward2", "blood-cultures", hour=0, by="mo-1")
+    abx = sepsis.complete("p-ward2", "broad-spectrum-antibiotics",
+                          hour=1, by="mo-1")
+    assert abx["met"] and abx["sequence_violation"] is None
+    sepsis.complete("p-ward2", "fluids-30mlkg", hour=2, by="mo-1")
+    sepsis.waive("p-ward2", "vasopressors", hour=2, by="mo-1",
+                 reason="MAP 71 after fluids")
+    sepsis.complete("p-ward2", "repeat-lactate", hour=5, by="mo-1")
+    # next door: antibiotics before cultures — recorded, flagged,
+    # never erased; the rest of the bundle simply never happens
+    sepsis.start_clock("p-ward3", zero_hour=0, by="mo-1",
+                       source="clinical-gestalt")
+    out_of_order = sepsis.complete("p-ward3",
+                                   "broad-spectrum-antibiotics",
+                                   hour=0, by="mo-1")
+    assert out_of_order["sequence_violation"] == ["blood-cultures"]
+    br = sepsis.breaches(as_of=8)
+    assert len(br) == 5 and all(b["patient_id"] == "p-ward3"
+                                for b in br), br
+    assert br[0]["element"] == "lactate"      # most overdue first
+    rep = sepsis.report(as_of=8)
+    assert rep["all_or_nothing"] == {"n": 2, "met": 1, "rate": 0.5}
+    assert rep["sequence_violations"] == 1
+    log["sepsis_breaches_open"] = len(br)
+    log["sepsis_all_or_nothing_met"] = rep["all_or_nothing"]["met"]
+
+    log["seams_proven"] = 20
     return log
 
 

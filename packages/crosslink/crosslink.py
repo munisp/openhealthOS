@@ -434,3 +434,61 @@ def order_with_priors(reading_svc, pacs_svc, case_id, *, patient_id,
                       "pulled_at_order": True}
     out = reading_svc.order(case_id, meta=meta, **order_kwargs)
     return dict(out, priors=chain)
+
+
+# ---------------------------------------------------------------- 11.
+# cervixscreen → callrecall: a screen closes the register's round.
+def screens_to_register(cervix, register, *, day, marked):
+    """Every woman the screening module has seen closes her invitation
+    round on the call/recall register — automatically, so the register
+    keeps inviting only the women who have NOT come. Idempotent via
+    the caller-owned `marked` map: the second ring of the bell is not
+    a second case."""
+    marked_now, already = [], []
+    for pid, c in cervix.cascade.items():
+        if pid in marked:
+            already.append(pid)
+            continue
+        try:
+            register.mark_screened(pid, day=c["day"])
+        except Exception:
+            continue   # not on this register — screening out-of-cohort
+                       # is care, not an error; the register only tracks
+                       # its own
+        marked[pid] = c["day"]
+        marked_now.append(pid)
+    return {"marked_screened": marked_now, "already_marked": already,
+            "note": "the register exists to find the women who did NOT "
+                    "come — a screen must stop the invitations"}
+
+
+# ---------------------------------------------------------------- 12.
+# cervixscreen → telepath: the colposcopy biopsy enters custody.
+def colpo_biopsy_to_path(cervix, path, patient_id, *, specimen_id,
+                         collector, day):
+    """A colposcopy decision of 'biopsy' opens TWO things: the
+    histology loop on the screening cascade, and a specimen in the
+    pathology custody chain. Both, or neither — a biopsy in a coolbox
+    with no custody record is a woman the programme is about to lose.
+    Site is fixed: cervix."""
+    c = cervix.cascade.get(patient_id)
+    if not c:
+        raise CrosslinkError(f"unknown screening patient: {patient_id}")
+    if not c["histology_pending"]:
+        raise CrosslinkError(
+            "no biopsy decision on record — custody cannot begin for a "
+            "specimen nobody decided to take")
+    if c["specimen_id"]:
+        raise CrosslinkError(
+            "a specimen is already attached — validate BOTH sides "
+            "before mutating either; a half-registered biopsy is a "
+            "custody lie")
+    spec = path.register_specimen(
+        specimen_id, patient_id=patient_id, specimen_type="biopsy",
+        site="cervix", collector=collector,
+        facility=c["facility"], day=day)
+    cervix.attach_specimen(patient_id, specimen_id=specimen_id)
+    return {"specimen": spec["specimen_id"], "state": spec["state"],
+            "histology_pending": True,
+            "note": "the loop is open: specimen in custody, histology "
+                    "owed; it stays visible until the result lands"}

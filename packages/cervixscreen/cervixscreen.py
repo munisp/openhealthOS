@@ -26,6 +26,28 @@ HPV_RECALL_MONTHS = {("negative", False): 60, ("negative", True): 36,
                      ("positive-via-negative", True): 12}
 MODALITIES = ("via", "hpv-dna")
 
+# ---- colposcopy + histology confirmation loop ----
+# The biopsy that never comes back is how screening programmes lose
+# women at the last step. The loop stays open — and visible — until
+# histology lands.
+COLPO_IMPRESSIONS = ("normal", "low-grade", "high-grade",
+                     "suspicious-of-cancer")
+COLPO_DECISIONS = ("discharge", "treat", "biopsy")
+HISTOLOGY_RESULTS = ("normal", "cin1", "cin2", "cin3",
+                     "invasive-cancer")
+HISTOLOGY_VERSION = "cin-histology@1.0.0"
+# impression → decisions it permits: treating a normal colpo is harm;
+# treating a cancer-suspect on sight, without tissue, is worse
+COLPO_RULES = {"normal": ("discharge",),
+               "low-grade": ("discharge", "treat"),
+               "high-grade": ("treat", "biopsy"),
+               "suspicious-of-cancer": ("biopsy",)}
+# histology → what MUST happen next
+HISTOLOGY_MANAGEMENT = {"normal": "routine-recall",
+                        "cin1": "recall-12m",
+                        "cin2": "treat", "cin3": "treat",
+                        "invasive-cancer": "refer-oncology"}
+
 CONFIG = DomainConfig(
     "cervix-screening",
     scopes=("cervix-reviewer",),
@@ -52,7 +74,9 @@ class CervixScreening:
             "via_result": None, "treatment": None, "referred": False,
             "overread_case": None,
             "hpv_history": [], "hpv_result": None, "triage": None,
-            "recall": None}
+            "recall": None, "colpo": None, "specimen_id": None,
+            "histology": None, "histology_pending": False,
+            "oncology_referred": False}
         rec = self.cascade[patient_id]
         if image_ref:
             rec["overread_case"] = self.reading.order(
@@ -121,14 +145,23 @@ class CervixScreening:
 
     def treat(self, patient_id, *, method, day, same_visit=None):
         c = self._c(patient_id)
-        if c["via_result"] != "positive":
+        via_pos = c["via_result"] == "positive"
+        colpo_ok = bool(c["colpo"]) and c["colpo"]["decision"] == "treat"
+        histo_ok = bool(c["histology"]) and \
+            c["histology"]["result"] in ("cin2", "cin3")
+        if not (via_pos or colpo_ok or histo_ok):
             raise TeleReadError(
-                "treatment requires a positive VIA — treating a negative "
-                "screen is harm, not care")
+                "treatment requires a positive VIA, a colposcopy treat "
+                "decision, or CIN2/3 histology — treating without "
+                "evidence is harm, not care")
         if method not in TREATMENTS:
             raise TeleReadError(f"unknown treatment: {method}")
+        ref_day = c.get("result_day")
+        if not via_pos:
+            ref_day = (c["colpo"]["day"] if colpo_ok
+                       else c["histology"]["day"])
         c["treatment"] = {"method": method, "day": day,
-                          "same_visit": (day == c["result_day"]
+                          "same_visit": (day == ref_day
                                          if same_visit is None
                                          else bool(same_visit))}
         return dict(c)
@@ -138,19 +171,97 @@ class CervixScreening:
         suspicious = c["via_result"] == "suspicious-of-cancer"
         to_colpo = (c["hpv_result"] == "positive"
                     and c["triage"] == "colposcopy")
-        if not (suspicious or to_colpo):
+        histo_cancer = bool(c["histology"]) and \
+            c["histology"]["result"] == "invasive-cancer"
+        if not (suspicious or to_colpo or histo_cancer):
             raise TeleReadError(
-                "referral is for suspicious-of-cancer or HPV+ triaged "
-                "to colposcopy; a positive screen should be treated, "
-                "not referred")
+                "referral is for suspicious-of-cancer, HPV+ triaged "
+                "to colposcopy, or histology-confirmed cancer; a "
+                "positive screen should be treated, not referred")
         if not reason:
             raise TeleReadError("referral requires a reason")
         if not destination:
             raise TeleReadError("a referral without a destination is a "
                                 "letter to nowhere")
         c["referred"] = True
+        if histo_cancer:
+            c["oncology_referred"] = True
         c["referral"] = {"day": day, "reason": reason,
                          "destination": destination}
+        return dict(c)
+
+    # ---- colposcopy + histology loop ----
+    def record_colposcopy(self, patient_id, *, impression, decision,
+                          day, by):
+        """The colposcopy exam. Gates: she must have been REFERRED
+        (a colposcopy with no referral is off-pathway); the decision
+        must fit the impression — treating a normal colpo is harm,
+        and treating a cancer-suspect on sight, without tissue, is
+        worse. Append-only: a repeat exam is a new episode, not an
+        edit."""
+        c = self._c(patient_id)
+        if not c["referred"]:
+            raise TeleReadError(
+                "colposcopy follows a referral — an unreferred exam "
+                "is off-pathway and unaccountable")
+        if not by:
+            raise TeleReadError("unsigned colposcopy is no colposcopy")
+        if c["colpo"]:
+            raise TeleReadError("colposcopy already recorded — a repeat "
+                                "exam is a new episode, not an edit")
+        if impression not in COLPO_IMPRESSIONS:
+            raise TeleReadError(f"unknown colposcopy impression: "
+                                f"{impression}")
+        if decision not in COLPO_DECISIONS:
+            raise TeleReadError(f"unknown colposcopy decision: "
+                                f"{decision}")
+        if decision not in COLPO_RULES[impression]:
+            raise TeleReadError(
+                f"impression {impression!r} does not permit decision "
+                f"{decision!r} ({COLPO_RULES[impression]}) — treating "
+                "a normal colpo is harm; treating a cancer-suspect "
+                "without tissue is worse")
+        c["colpo"] = {"impression": impression, "decision": decision,
+                      "day": day, "by": by}
+        if decision == "biopsy":
+            c["histology_pending"] = True   # the loop OPENS, loudly
+        return dict(c)
+
+    def attach_specimen(self, patient_id, *, specimen_id):
+        """Custody of the biopsy begins (registered via the crosslink
+        seam into telepath). One specimen per loop."""
+        c = self._c(patient_id)
+        if not c["histology_pending"]:
+            raise TeleReadError("no biopsy pending — a specimen without "
+                                "a decision is a crossed wire")
+        if c["specimen_id"]:
+            raise TeleReadError("specimen already attached")
+        c["specimen_id"] = specimen_id
+        return dict(c)
+
+    def record_histology(self, patient_id, *, result, day):
+        """Histology CLOSES the loop the biopsy opened. Append-only:
+        a report stands; a corrected report is an addendum, not an
+        edit."""
+        if result not in HISTOLOGY_RESULTS:
+            raise TeleReadError(f"unknown histology result: {result}")
+        c = self._c(patient_id)
+        if not c["histology_pending"]:
+            raise TeleReadError("no biopsy pending — histology without "
+                                "a specimen is a crossed wire")
+        if c["histology"]:
+            raise TeleReadError("histology already recorded — the lab "
+                                "notebook does not erase")
+        if not c["specimen_id"]:
+            raise TeleReadError("no specimen attached — a result with "
+                                "no custody chain is uninterpretable")
+        c["histology"] = {"result": result, "day": day,
+                          "management": HISTOLOGY_MANAGEMENT[result],
+                          "histology_version": HISTOLOGY_VERSION}
+        c["histology_pending"] = False      # the loop CLOSES
+        if result == "cin1":
+            c["recall"] = self._recall_plan("positive-via-negative",
+                                            c["hiv_positive"], day)
         return dict(c)
 
     def hpv_recall_due(self, as_of):
@@ -187,6 +298,27 @@ class CervixScreening:
                             "result": "hpv-invalid-awaiting-retest",
                             "days_open": as_of - c.get("hpv_day",
                                                        c["day"])})
+            # ---- the colposcopy/histology loops: mutually exclusive
+            # with each other, so independent checks ----
+            if c["histology_pending"] \
+                    and as_of - c["colpo"]["day"] >= days:
+                out.append({"patient_id": pid, "facility": c["facility"],
+                            "result": "histology-pending",
+                            "days_open": as_of - c["colpo"]["day"]})
+            elif c["histology"] \
+                    and c["histology"]["result"] in ("cin2", "cin3") \
+                    and not c["treatment"] \
+                    and as_of - c["histology"]["day"] >= days:
+                out.append({"patient_id": pid, "facility": c["facility"],
+                            "result": "cin-awaiting-treatment",
+                            "days_open": as_of - c["histology"]["day"]})
+            elif c["histology"] \
+                    and c["histology"]["result"] == "invasive-cancer" \
+                    and not c["oncology_referred"] \
+                    and as_of - c["histology"]["day"] >= days:
+                out.append({"patient_id": pid, "facility": c["facility"],
+                            "result": "cancer-awaiting-oncology-referral",
+                            "days_open": as_of - c["histology"]["day"]})
         return sorted(out, key=lambda x: -x["days_open"])
 
     def program_stats(self):

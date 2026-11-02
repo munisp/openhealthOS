@@ -9,7 +9,8 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
-            "steward", "pharmreview", "earlywarn", "serial"):
+            "steward", "pharmreview", "earlywarn", "serial",
+            "cervixscreen", "callrecall"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
@@ -17,7 +18,8 @@ from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa
                        cryo_watch, chair_plan, on_shift_readers,
                        assign_on_shift, escalate_events,
                        timeouts_to_review, deterioration_to_icu,
-                       order_with_priors)
+                       order_with_priors, screens_to_register,
+                       colpo_biopsy_to_path)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -31,6 +33,8 @@ from triggers import Rule, TriggerEngine  # noqa: E402
 from vitals import VitalsIngest  # noqa: E402
 from teleicu import TeleICU  # noqa: E402
 from mdt import TumourBoard  # noqa: E402
+from cervixscreen import CervixScreening  # noqa: E402
+from callrecall import CallRecallRegister  # noqa: E402
 
 
 class TestRenalCheck(unittest.TestCase):
@@ -508,6 +512,92 @@ class TestOrderWithPriors(unittest.TestCase):
         self.assertEqual(out["priors"]["count"], 0)
         self.assertEqual(self.svc.cases["CX-2"]["meta"]["priors"]
                          ["count"], 0)
+
+
+class TestScreensToRegister(unittest.TestCase):
+    """Seam 11: a screen closes the invitation round; the register
+    keeps hunting only the women who have not come."""
+
+    def setUp(self):
+        readers = ReaderRegistry()
+        readers.register("cx-1", licence_id="L1", licence_expiry_day=400,
+                         scopes=("cervix-reviewer",))
+        self.cervix = CervixScreening(readers)
+        self.reg = CallRecallRegister("cervix")
+
+    def test_screen_closes_round_and_is_idempotent(self):
+        # born 30 years before day 0 → eligible, due immediately
+        self.reg.enroll("w-1", birth_day=-30 * 365, day=0)
+        self.reg.enroll("w-2", birth_day=-30 * 365, day=0)
+        self.cervix.screen("w-1", facility="f", screener="s", day=5,
+                           modality="hpv-dna")
+        marked = {}
+        out = screens_to_register(self.cervix, self.reg, day=5,
+                                  marked=marked)
+        self.assertEqual(out["marked_screened"], ["w-1"])
+        self.assertEqual(self.reg.due_day("w-1"), 5 + 30 * 60)
+        # second run: the bell does not ring twice
+        again = screens_to_register(self.cervix, self.reg, day=6,
+                                    marked=marked)
+        self.assertEqual(again["marked_screened"], [])
+        self.assertEqual(again["already_marked"], ["w-1"])
+        # w-2 never came — she is exactly who the ladder is for
+        due = self.reg.steps_due(as_of=6)
+        self.assertEqual([d["patient_id"] for d in due], ["w-2"])
+
+    def test_out_of_cohort_screen_is_care_not_error(self):
+        self.cervix.screen("w-walkin", facility="f", screener="s",
+                           day=5, modality="via")
+        out = screens_to_register(self.cervix, self.reg, day=5,
+                                  marked={})
+        self.assertEqual(out["marked_screened"], [])
+
+
+class TestColpoBiopsyToPath(unittest.TestCase):
+    """Seam 12: a biopsy decision opens the histology loop AND the
+    custody chain — both, or neither."""
+
+    def setUp(self):
+        readers = ReaderRegistry()
+        readers.register("cx-1", licence_id="L1", licence_expiry_day=400,
+                         scopes=("cervix-reviewer",))
+        readers.register("path-1", licence_id="P1",
+                         licence_expiry_day=400,
+                         scopes=("histopathologist",))
+        self.cervix = CervixScreening(readers)
+        self.path = PathologyService(readers)
+        self.cervix.screen("w-1", facility="f", screener="s", day=0,
+                           modality="hpv-dna")
+        self.cervix.record_hpv("w-1", result="positive", day=0)
+        self.cervix.triage("w-1", method="colposcopy", day=1)
+        self.cervix.refer("w-1", destination="colpo-clinic", day=1,
+                          reason="hpv-positive triage")
+
+    def test_biopsy_enters_custody_and_loop_opens(self):
+        self.cervix.record_colposcopy("w-1", impression="high-grade",
+                                      decision="biopsy", day=2,
+                                      by="colpo-1")
+        out = colpo_biopsy_to_path(self.cervix, self.path, "w-1",
+                                   specimen_id="SP-9",
+                                   collector="colpo-1", day=2)
+        self.assertEqual(out["specimen"], "SP-9")
+        self.assertEqual(out["state"], "collected")
+        self.assertEqual(self.cervix.cascade["w-1"]["specimen_id"],
+                         "SP-9")
+        self.assertEqual(self.path.specimens["SP-9"]["site"], "cervix")
+        with self.assertRaises(CrosslinkError):  # specimen attached
+            colpo_biopsy_to_path(self.cervix, self.path, "w-1",
+                                 specimen_id="SP-10",
+                                 collector="colpo-1", day=3)
+
+    def test_no_biopsy_decision_no_custody(self):
+        self.cervix.record_colposcopy("w-1", impression="normal",
+                                      decision="discharge", day=2,
+                                      by="colpo-1")
+        with self.assertRaises(CrosslinkError):
+            colpo_biopsy_to_path(self.cervix, self.path, "w-1",
+                                 specimen_id="SP-11",
+                                 collector="colpo-1", day=2)
 
 
 if __name__ == "__main__":

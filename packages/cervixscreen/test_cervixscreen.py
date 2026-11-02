@@ -132,5 +132,107 @@ class TestHPVPathway(unittest.TestCase):
         self.assertEqual(stats["hpv_positivity_rate"], 0.5)
 
 
+class TestColposcopyLoop(unittest.TestCase):
+    """HPV+ → triage colposcopy → biopsy → histology → treat/refer:
+    the loop stays open — and visible — until histology lands."""
+
+    def setUp(self):
+        from teleread import ReaderRegistry
+        readers = ReaderRegistry()
+        readers.register("cx-1", licence_id="L1", licence_expiry_day=400,
+                         scopes=("cervix-reviewer",))
+        self.svc = CervixScreening(readers)
+        self.svc.screen("w1", facility="f", screener="s", day=0,
+                        modality="hpv-dna")
+        self.svc.record_hpv("w1", result="positive", day=0)
+        self.svc.triage("w1", method="colposcopy", day=1)
+        self.svc.refer("w1", destination="colpo-clinic", day=1,
+                       reason="hpv-positive triage")
+
+    def test_colposcopy_requires_referral_and_signature(self):
+        self.svc.screen("w2", facility="f", screener="s", day=0,
+                        modality="hpv-dna")
+        self.svc.record_hpv("w2", result="positive", day=0)
+        self.svc.triage("w2", method="colposcopy", day=1)
+        with self.assertRaises(TeleReadError):   # never referred
+            self.svc.record_colposcopy(
+                "w2", impression="high-grade", decision="biopsy",
+                day=2, by="colpo-1")
+        with self.assertRaises(TeleReadError):   # unsigned
+            self.svc.record_colposcopy(
+                "w1", impression="high-grade", decision="biopsy",
+                day=2, by="")
+
+    def test_decision_must_fit_impression(self):
+        with self.assertRaises(TeleReadError):   # treating normal = harm
+            self.svc.record_colposcopy(
+                "w1", impression="normal", decision="treat", day=2,
+                by="colpo-1")
+        with self.assertRaises(TeleReadError):   # cancer needs tissue
+            self.svc.record_colposcopy(
+                "w1", impression="suspicious-of-cancer",
+                decision="treat", day=2, by="colpo-1")
+        out = self.svc.record_colposcopy(
+            "w1", impression="high-grade", decision="biopsy", day=2,
+            by="colpo-1")
+        self.assertTrue(out["histology_pending"])
+        with self.assertRaises(TeleReadError):   # no rewrite
+            self.svc.record_colposcopy(
+                "w1", impression="normal", decision="discharge", day=3,
+                by="colpo-1")
+
+    def test_histology_requires_custody_and_closes_loop(self):
+        self.svc.record_colposcopy("w1", impression="high-grade",
+                                   decision="biopsy", day=2,
+                                   by="colpo-1")
+        with self.assertRaises(TeleReadError):   # no specimen attached
+            self.svc.record_histology("w1", result="cin3", day=10)
+        self.svc.attach_specimen("w1", specimen_id="SP-1")
+        with self.assertRaises(TeleReadError):
+            self.svc.attach_specimen("w1", specimen_id="SP-2")
+        out = self.svc.record_histology("w1", result="cin3", day=10)
+        self.assertFalse(out["histology_pending"])
+        self.assertEqual(out["histology"]["management"], "treat")
+        with self.assertRaises(TeleReadError):   # append-only
+            self.svc.record_histology("w1", result="cin1", day=11)
+
+    def test_cin3_authorizes_treatment_and_cancer_referral(self):
+        self.svc.record_colposcopy("w1", impression="high-grade",
+                                   decision="biopsy", day=2,
+                                   by="colpo-1")
+        self.svc.attach_specimen("w1", specimen_id="SP-1")
+        self.svc.record_histology("w1", result="cin3", day=10)
+        tx = self.svc.treat("w1", method="leep", day=10)
+        self.assertTrue(tx["treatment"]["same_visit"])
+        # cancer pathway: oncology referral gated on histology
+        self.svc.screen("w3", facility="f", screener="s", day=0,
+                        modality="hpv-dna")
+        self.svc.record_hpv("w3", result="positive", day=0)
+        self.svc.triage("w3", method="colposcopy", day=1)
+        self.svc.refer("w3", destination="colpo-clinic", day=1,
+                       reason="hpv-positive triage")
+        self.svc.record_colposcopy("w3", impression="suspicious-of-cancer",
+                                   decision="biopsy", day=2, by="colpo-1")
+        self.svc.attach_specimen("w3", specimen_id="SP-3")
+        self.svc.record_histology("w3", result="invasive-cancer", day=9)
+        loops = self.svc.open_loops(as_of=30)
+        self.assertIn("cancer-awaiting-oncology-referral",
+                      {l["result"] for l in loops})
+        ref = self.svc.refer("w3", destination="oncology-unit", day=30,
+                             reason="invasive-cancer on histology")
+        self.assertTrue(ref["oncology_referred"])
+        loops2 = self.svc.open_loops(as_of=30)
+        self.assertNotIn("w3", {l["patient_id"] for l in loops2})
+
+    def test_histology_pending_stays_visible(self):
+        self.svc.record_colposcopy("w1", impression="high-grade",
+                                   decision="biopsy", day=2,
+                                   by="colpo-1")
+        self.svc.attach_specimen("w1", specimen_id="SP-1")
+        loops = self.svc.open_loops(as_of=20)
+        self.assertEqual(loops[0]["result"], "histology-pending")
+        self.assertEqual(loops[0]["days_open"], 18)
+
+
 if __name__ == "__main__":
     unittest.main()
