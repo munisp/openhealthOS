@@ -10,7 +10,8 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
             "steward", "pharmreview", "earlywarn", "serial",
-            "cervixscreen", "callrecall", "inpatient", "medrec"):
+            "cervixscreen", "callrecall", "inpatient", "medrec",
+            "cpoe"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
@@ -20,7 +21,7 @@ from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa
                        timeouts_to_review, deterioration_to_icu,
                        order_with_priors, screens_to_register,
                        colpo_biopsy_to_path, admissions_to_medrec,
-                       synoptic_signout)
+                       synoptic_signout, decision_to_orders)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -735,3 +736,113 @@ class TestSynopticSignout(unittest.TestCase):
                              template_id="cap-colon-resection@1.0.0",
                              answers=dict(self.ANSWERS),
                              signer="path-1", day=4)
+
+
+class TestDecisionToOrders(unittest.TestCase):
+    """Seam 15: a board decision to treat lands as real screened,
+    placed orders — or the action stays an open loop."""
+
+    def _decided_board(self):
+        from mdt import TumourBoard
+        from reportkit import ReportKit
+        b = TumourBoard("tb")
+        b.add_member("chair-1", role="chair", specialty="oncology")
+        b.add_member("onc-1", role="member", specialty="oncology")
+        b.add_member("rad-1", role="member", specialty="radiology")
+        rk = ReportKit(signing_key=b"k")
+        rk.draft("R-1", template_id="ct-head-acute@1.0.0",
+                 answers={"technique": "t", "hemorrhage": "no",
+                          "midline_shift": "no", "mass_effect": "no",
+                          "acute_infarct": "no", "impression": "i"},
+                 case_id="CX-9", author_id="rad-1", day=0)
+        rk.sign("R-1", signer_id="rad-1", day=0)
+        b.submit_case("MDT-C1", patient_id="p-ca",
+                      question="treat?",
+                      evidence_refs=["report:R-1@signed"],
+                      submitted_by="chair-1", day=0)
+        b.hold_meeting("M-1", day=1, chair="chair-1",
+                       attendees=["chair-1", "onc-1", "rad-1"],
+                       case_ids=["MDT-C1"])
+        b.record_decision("M-1", "MDT-C1", day=1,
+                          decision="start FOLFOX",
+                          actions=["start chemo", "book chair"],
+                          recorder="onc-1")
+        return b
+
+    def _orders(self):
+        from orders import OrderService
+        return OrderService()
+
+    def test_decision_becomes_placed_orders(self):
+        b = self._decided_board()
+        o = self._orders()
+        out = decision_to_orders(
+            b, o, "MDT-C1", prescriber_id="onc-1", day=2,
+            prescriptions=[("NG-PARA500", 1000, 3, 5)])
+        self.assertEqual(len(out["orders"]), 1)
+        self.assertEqual(o.orders[out["orders"][0]].status, "placed")
+        self.assertEqual(o.orders[out["orders"][0]].indication,
+                         "mdt-decision:MDT-C1")
+        self.assertEqual(b._case("MDT-C1")["orders"], out["orders"])
+
+    def test_undecided_case_cannot_order(self):
+        b = self._decided_board()
+        b.submit_case("MDT-C2", patient_id="p-ca2", question="treat?",
+                      evidence_refs=["report:R-1@signed"],
+                      submitted_by="chair-1", day=0)
+        with self.assertRaises(CrosslinkError):
+            decision_to_orders(b, self._orders(), "MDT-C2",
+                               prescriber_id="onc-1", day=2,
+                               prescriptions=[("NG-PARA500", 1000, 3, 5)])
+
+    def test_allergy_refuses_before_any_draft(self):
+        b = self._decided_board()
+        o = self._orders()
+        with self.assertRaises(Exception):
+            decision_to_orders(
+                b, o, "MDT-C1", prescriber_id="onc-1", day=2,
+                prescriptions=[("NG-AMOX500", 500, 3, 7)],
+                patient_allergies=["penicillin"])
+        self.assertEqual(o.orders, {})  # nothing drafted at all
+
+    def test_major_findings_block_the_whole_batch(self):
+        b = self._decided_board()
+        o = self._orders()
+        # lisinopril + ibuprofen = major interaction in one batch
+        with self.assertRaises(CrosslinkError):
+            decision_to_orders(
+                b, o, "MDT-C1", prescriber_id="onc-1", day=2,
+                prescriptions=[("NG-LISIN10", 10, 1, 30),
+                               ("NG-IBU400", 400, 3, 5)])
+        for od in o.orders.values():
+            self.assertNotEqual(od.status, "placed")
+        self.assertIsNone(b._case("MDT-C1").get("orders"))
+
+    def test_override_places_with_reasons_recorded(self):
+        b = self._decided_board()
+        o = self._orders()
+        out = decision_to_orders(
+            b, o, "MDT-C1", prescriber_id="onc-1", day=2,
+            prescriptions=[("NG-LISIN10", 10, 1, 30),
+                           ("NG-IBU400", 400, 3, 5)],
+            override_reasons=["board weighs benefit > risk; renal "
+                              "monitoring booked"])
+        for oid in out["orders"]:
+            self.assertEqual(o.orders[oid].status, "placed")
+        # the order that screened against the other batch member
+        # carries the documented override
+        with_overrides = [oid for oid in out["orders"]
+                          if o.orders[oid].overrides]
+        self.assertTrue(with_overrides)
+        self.assertIn("board weighs benefit",
+                      o.orders[with_overrides[0]].overrides[0]
+                      ["reason"])
+
+    def test_unknown_code_refuses_before_mutation(self):
+        b = self._decided_board()
+        o = self._orders()
+        with self.assertRaises(CrosslinkError):
+            decision_to_orders(b, o, "MDT-C1", prescriber_id="onc-1",
+                               day=2,
+                               prescriptions=[("NG-NOPE", 1, 1, 1)])
+        self.assertEqual(o.orders, {})

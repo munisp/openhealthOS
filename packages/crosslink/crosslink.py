@@ -561,3 +561,82 @@ def synoptic_signout(path, rk, *, case_id, report_id, template_id,
             "content_hash": signed["signature"]["content_hash"],
             "note": "the hash is the contract — any post-signature "
                     "edit invalidates verification"}
+
+
+# ---------------------------------------------------------------- 15.
+# mdt → cpoe: a board decision to treat lands as real orders — "start
+# chemo regimen X" cannot stay a sentence with an owner.
+def decision_to_orders(board, orders, case_id, *, prescriber_id, day,
+                       prescriptions, patient_allergies=(),
+                       active_codes=(), id_prefix=None,
+                       override_reasons=None):
+    """Turn a recorded MDT decision into drafted, screened, placed
+    CPOE orders.
+
+    prescriptions: [(code, dose_mg, doses_per_day, days), ...].
+
+    Both sides validated before either mutates: the case must be
+    DECIDED, every drug code must exist in the formulary, and allergy
+    screening runs BEFORE any order is placed (allergy is fail-closed;
+    a single conflict refuses the whole batch — a half-placed regimen
+    is a dosing lie). Placed order ids are recorded back onto the
+    case, so execution tracking counts orders, not intentions."""
+    c = board._case(case_id)
+    if c["state"] != "decided":
+        raise CrosslinkError(
+            f"{case_id} is {c['state']} — orders follow a recorded "
+            "decision, not hallway consensus")
+    if c.get("orders"):
+        raise CrosslinkError(
+            f"{case_id} already has orders {c['orders']} — a second "
+            "round is a new decision, not a silent re-issue")
+    if not prescriptions:
+        raise CrosslinkError("a treat decision with no prescriptions "
+                             "is a sentiment, not an order")
+    # pre-validate every code BEFORE drafting anything
+    for code, *_ in prescriptions:
+        if not orders.fx.lookup(code):
+            raise CrosslinkError(f"unknown drug code {code} — the "
+                                 "formulary refuses before any order "
+                                 "exists")
+    # allergy is fail-closed and checked BEFORE any draft exists —
+    # a half-drafted regimen is still a half-state
+    for code, *_ in prescriptions:
+        orders.fx.check_allergy(code, patient_allergies)
+    prefix = id_prefix or f"MDT-{case_id}"
+    # interaction screening must see what the patient is ALREADY on:
+    # the caller's list plus this service's placed orders for them
+    active = set(active_codes)
+    for other in orders.orders.values():
+        if other.patient_id == c["patient_id"] \
+                and other.status == "placed":
+            active.add(other.code)
+    drafted = []
+    for i, (code, dose_mg, doses_per_day, days) in \
+            enumerate(prescriptions):
+        o = orders.draft(f"{prefix}-{i}", c["patient_id"],
+                         prescriber_id, code, dose_mg, doses_per_day,
+                         days, indication=f"mdt-decision:{case_id}")
+        orders.screen(o.oid, patient_allergies, sorted(active))
+        active.add(code)  # batch members screen against each other
+        drafted.append(o.oid)
+    # major findings need documented overrides; check the WHOLE batch
+    # before placing ANY — a half-placed regimen is a dosing lie
+    needs_override = [oid for oid in drafted
+                      if any(f["severity"] in ("major", "contraindicated")
+                             for f in orders.orders[oid].findings)]
+    if needs_override and not override_reasons:
+        raise CrosslinkError(
+            f"{len(needs_override)} order(s) carry major findings "
+            f"({needs_override}) — the batch waits for documented "
+            "override reasons; a half-placed regimen is a dosing lie")
+    placed = [orders.place(
+        oid,
+        override_reasons=[{"finding": f["message"], "reason": r}
+                          for f in orders.orders[oid].findings
+                          for r in (override_reasons or [])]
+        or None).oid for oid in drafted]
+    c["orders"] = placed
+    return {"case_id": case_id, "orders": placed,
+            "note": "the board decides; the formulary screens; the "
+                    "order either exists or the action is an open loop"}

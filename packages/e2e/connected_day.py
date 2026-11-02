@@ -70,6 +70,15 @@ one operational arc across NINE packages, each hand-off a public seam:
          a diagnosis (P1)
   05:00  dictation: speech lands as a provenanced DRAFT; verification
          stays human (P1)
+  05:30  the board's treat decision becomes real screened orders;
+         an allergy kills the batch before anything drafts (seam 15)
+  05:45  TNM staging: the edition is part of the stage; restaging
+         never erases the first stage
+  06:00  frozen section: own clock, documented read-back, paraffin
+         concordance with denominators
+  06:15  blocks and slides are physical assets with a location trail
+  06:30  reflex IHC ordered from the verified report returns as an
+         addendum — never an orphan result
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -85,15 +94,20 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
-            "teleecg", "dictate"):
+            "teleecg", "dictate", "staging"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
                        case_pack, submit_with_pack, cryo_watch,
                        chair_plan, on_shift_readers, assign_on_shift,
-                       escalate_events, synoptic_signout)
+                       escalate_events, synoptic_signout,
+                       decision_to_orders)
 from dictate import DictationService  # noqa: E402
 from teleecg import ECGService  # noqa: E402
+from staging import StagingRegistry  # noqa: E402
+from orders import OrderService  # noqa: E402
+from telepath import (FrozenSectionLog, DerivativeInventory,  # noqa: E402
+                      ReflexLog)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
@@ -667,25 +681,25 @@ def run_connected_day():
     log["sepsis_all_or_nothing_met"] = rep["all_or_nothing"]["met"]
 
     # ---- 23:00 the bed board: who needs WHAT today (P1) ----
-    board = BedBoard("icu-1")
-    board.admit("p-ward2", bed="B1", day=0)
-    board.device_start("p-ward2", "ventilator", day=0)
-    board.device_start("p-ward2", "central-line", day=0)
-    board.admit("p-ward3", bed="B2", day=0)
-    board.device_start("p-ward3", "urinary-catheter", day=1)
-    rl = board.rounding_list(as_of=1)
+    beds = BedBoard("icu-1")
+    beds.admit("p-ward2", bed="B1", day=0)
+    beds.device_start("p-ward2", "ventilator", day=0)
+    beds.device_start("p-ward2", "central-line", day=0)
+    beds.admit("p-ward3", bed="B2", day=0)
+    beds.device_start("p-ward3", "urinary-catheter", day=1)
+    rl = beds.rounding_list(as_of=1)
     # vented + lined: 6 must-dos vs the catheter patient's 3
     assert rl[0]["patient_id"] == "p-ward2" and rl[0]["n_open"] == 6, rl
     for chk in ("sedation-interruption", "spontaneous-breathing-trial",
                 "head-of-bed-30", "dvt-prophylaxis-review",
                 "family-update"):
-        board.record_check("p-ward2", chk, day=1, by="icu-1")
+        beds.record_check("p-ward2", chk, day=1, by="icu-1")
     # 'contraindicated' is a decision with a reason, not a skip
-    board.record_check("p-ward2", "line-necessity-review", day=1,
+    beds.record_check("p-ward2", "line-necessity-review", day=1,
                        by="icu-1", outcome="contraindicated",
                        reason="no alternate access; antibiotics running")
-    assert board.rounding_list(as_of=1)[0]["patient_id"] == "p-ward3"
-    drep = board.device_report(as_of=2)
+    assert beds.rounding_list(as_of=1)[0]["patient_id"] == "p-ward3"
+    drep = beds.device_report(as_of=2)
     assert drep["patient_days"] == 4
     assert drep["device_days"] == {"ventilator": 2, "central-line": 2,
                                    "urinary-catheter": 1}, drep
@@ -1037,7 +1051,121 @@ def run_connected_day():
     log["dictation_engine"] = dout["provenance"]["engine"] + "@" + \
         dout["provenance"]["engine_version"]
 
-    log["seams_proven"] = 30
+    # ---- 05:30 the board's treat decision becomes real orders
+    # (seam 15): screened, placed, traced back onto the case — a
+    # decision nobody executes is an open loop (P1, MDT)
+    board.add_member("onc-1", role="member", specialty="oncology")
+    board.add_member("rad-1", role="member", specialty="radiology")
+    board.hold_meeting("M-1", day=2, chair="chair-1",
+                       attendees=["chair-1", "onc-1", "rad-1"],
+                       case_ids=["MDT-1"])
+    board.record_decision("M-1", "MDT-1", day=2,
+                          decision="wide excision + adjuvant "
+                                   "analgesia protocol",
+                          actions=["start analgesia", "book theatre"],
+                          recorder="onc-1")
+    cpoe = OrderService()
+    out = decision_to_orders(
+        board, cpoe, "MDT-1", prescriber_id="onc-1", day=2,
+        prescriptions=[("NG-PARA500", 1000, 3, 5)])
+    assert cpoe.orders[out["orders"][0]].status == "placed"
+    # an allergy kills the whole batch BEFORE anything drafts — on a
+    # separate decided case (the first already carries its orders)
+    board.submit_case("MDT-2", patient_id="p-derm2",
+                      question="adjuvant antibiotics?",
+                      evidence_refs=submitted["evidence_refs"],
+                      submitted_by="chair-1", day=2)
+    board.hold_meeting("M-2", day=2, chair="chair-1",
+                       attendees=["chair-1", "onc-1", "rad-1"],
+                       case_ids=["MDT-2"])
+    board.record_decision("M-2", "MDT-2", day=2,
+                          decision="adjuvant amoxicillin course",
+                          actions=["start amoxicillin"],
+                          recorder="onc-1")
+    allergic_orders = OrderService()
+    try:
+        decision_to_orders(
+            board, allergic_orders, "MDT-2", prescriber_id="onc-1",
+            day=3, prescriptions=[("NG-AMOX500", 500, 3, 7)],
+            patient_allergies=["penicillin"])
+        raise RuntimeError("allergy must refuse the batch")
+    except Exception as exc:
+        assert "ALLERGY" in str(exc).upper()
+    assert allergic_orders.orders == {}  # nothing drafted at all
+    log["mdt_allergy_refused"] = True
+    log["mdt_orders_placed"] = len(out["orders"])
+
+    # ---- 05:45 TNM staging: the edition is part of the stage (P1)
+    stg = StagingRegistry()
+    st = stg.stage("p-colon", site="colon", t="3", n="1a", m="0",
+                   basis="pathological", by="path-1", day=2,
+                   evidence_ref="SYN-1")
+    assert st["notation"] == "pT3N1AM0"
+    try:
+        stg.stage("p-colon", site="colon", t="3", n="1a", m="0",
+                  basis="clinical", by="onc-1", day=2,
+                  evidence_ref="ct-1", edition="ajcc-7")
+        raise RuntimeError("unshaped edition must refuse")
+    except Exception as exc:
+        assert "edition" in str(exc)
+        log["tnm_edition_refused"] = True
+    stg.stage("p-colon", site="colon", t="3", n="1a", m="1b",
+              basis="clinical", by="onc-1", day=92,
+              evidence_ref="ct-scan-92")
+    cur = stg.current_stage("p-colon", site="colon")
+    assert cur["restaged"] and cur["history"][0]["m"] == "0"
+    log["tnm_restaged"] = cur["current"]["notation"]
+
+    # ---- 06:00 frozen section: its own clock, a documented
+    # read-back, and a paraffin correlation that counts (P1)
+    fsz = FrozenSectionLog()
+    fsz.request("FS-1", patient_id="p-theatre", site="breast lump",
+                surgeon="surg-1", facility="phc-1", day=2, minute=600)
+    res = fsz.report_result("FS-1", finding="malignant", by="path-1",
+                            day=2, minute=624, read_back_by="surg-1")
+    assert res["within_target"]
+    try:
+        fsz.request("FS-2", patient_id="p-theatre2", site="ovary",
+                    surgeon="surg-1", facility="phc-1", day=2,
+                    minute=700)
+        fsz.report_result("FS-2", finding="benign", by="path-1",
+                          day=2, minute=710, read_back_by="")
+        raise RuntimeError("no read-back must refuse")
+    except TeleReadError:
+        log["frozen_readback_refused"] = True
+    fsz.correlate_permanent("FS-1", permanent_finding="malignant",
+                            by="path-1", day=4)
+    log["frozen_tat_minutes"] = res["tat_minutes"]
+
+    # ---- 06:15 derivatives: blocks and slides are physical assets
+    # with a location trail (P1)
+    inv = DerivativeInventory(path)
+    inv.register_block("B-COLON-1", specimen_id="SP-COLON",
+                       location="paraffin-store-A", day=2, by="lab-1")
+    slides = inv.cut_slides("B-COLON-1", n_slides=4, stain="h-and-e",
+                            location="lab-bench-2", day=2, by="lab-1")
+    inv.move(slides[0], to_location="scanner-1", day=2, by="lab-2")
+    assert inv.locate(slides[0])["location"] == "scanner-1"
+    assert len(inv.locate(slides[0])["trail"]) == 2
+    log["derivative_slides"] = len(slides)
+
+    # ---- 06:30 reflex testing: ordered from the verified report,
+    # returning as an addendum — never an orphan result (P1)
+    rx = ReflexLog(path.reading)
+    rx.order("RX-C1", case_id="PC-COLON", test="ihc-MLH1",
+             reason="Lynch syndrome screen", by="path-1", day=2)
+    try:
+        rx.order("RX-C2", case_id="PC-COLON", test="fish-HER2",
+                 reason="r", by="path-1", day=2)
+        raise RuntimeError("off-menu test must refuse")
+    except TeleReadError:
+        log["reflex_off_menu_refused"] = True
+    rx.record_result("RX-C1", result="loss of expression",
+                     by="path-1", day=5)
+    assert path.reading.reports["PC-COLON"]["state"] == "addended"
+    log["reflex_addended"] = "PC-COLON"
+
+    log["seams_proven"] = 31
     return log
 
 
