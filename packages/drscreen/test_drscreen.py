@@ -126,5 +126,132 @@ class TestDR(unittest.TestCase):
                             referrer="n1", day=0)
 
 
+
+
+class TestPregnancyPathway(unittest.TestCase):
+    def setUp(self):
+        r = ReaderRegistry()
+        for g in ("gr-1", "gr-2"):
+            r.register(g, licence_id="G", licence_expiry_day=400,
+                       scopes=("dr-grader",))
+        self.svc = DRScreening(r)
+
+    def _graded(self, pid, grade, day=0):
+        self.svc.assess_capture(f"i-{pid}", day=day, by="ph",
+                                passed=FC)
+        self.svc.screen(pid, eye="both", image_ref=f"i-{pid}",
+                        facility="f", referrer="n1", day=day)
+        self.svc.record_grade(pid, grade=grade, by="gr-1", day=day)
+        return self.svc.record_grade(pid, grade=grade, by="gr-2",
+                                     day=day)
+
+    def test_pregnancy_overrides_interval_and_preserves_grade_plan(self):
+        out = self._graded("w1", "no-dr")
+        self.assertEqual(out["recall"]["interval_months"], 12)
+        self.svc.mark_pregnant("w1", day=5, lmp_day=5 - 60)
+        plan = self.svc.recall["w1"]
+        self.assertEqual(plan["interval_months"], 3)
+        self.assertEqual(plan["due_day"], 5 + 90)
+        self.assertTrue(plan["pregnancy_override"])
+        self.assertEqual(plan["grade_plan_months"], 12)  # preserved
+
+    def test_pregnancy_at_finalize_overrides(self):
+        self.svc.mark_pregnant("w2", day=0, lmp_day=-30)
+        out = self._graded("w2", "mild-npdr")
+        self.assertTrue(out["pregnancy_override"])
+        self.assertEqual(out["recall"]["interval_months"], 3)
+
+    def test_lmp_sanity_and_double_mark_refuse(self):
+        with self.assertRaises(TeleReadError):
+            self.svc.mark_pregnant("w3", day=0, lmp_day=-400)
+        self.svc.mark_pregnant("w3", day=0, lmp_day=-30)
+        with self.assertRaises(TeleReadError):
+            self.svc.mark_pregnant("w3", day=1, lmp_day=-29)
+
+    def test_end_pregnancy_restores_grade_clock(self):
+        self._graded("w4", "mild-npdr")
+        self.svc.mark_pregnant("w4", day=5, lmp_day=-30)
+        self.assertEqual(self.svc.recall["w4"]["interval_months"], 3)
+        self.svc.end_pregnancy("w4", day=250, outcome="delivered")
+        plan = self.svc.recall["w4"]
+        self.assertNotIn("pregnancy_override", plan)
+        self.assertEqual(plan["interval_months"], 12)  # mild again
+        self.assertEqual(plan["due_day"], 250 + 360)
+        with self.assertRaises(TeleReadError):
+            self.svc.end_pregnancy("w4", day=251, outcome="delivered")
+
+    def test_pregnancy_does_not_slow_a_referral_grade(self):
+        # PDR is urgent whether or not she is pregnant — pregnancy
+        # accelerates surveillance; it never decelerates referral
+        self.svc.mark_pregnant("w5", day=0, lmp_day=-30)
+        out = self._graded("w5", "pdr")
+        self.assertTrue(out["referred"])
+        self.assertNotIn("pregnancy_override", out)
+        self.assertEqual(out["recall"]["interval_months"], 1)
+
+
+class TestTreatmentTracking(unittest.TestCase):
+    def setUp(self):
+        r = ReaderRegistry()
+        for g in ("gr-1", "gr-2"):
+            r.register(g, licence_id="G", licence_expiry_day=400,
+                       scopes=("dr-grader",))
+        self.svc = DRScreening(r)
+
+    def _referred(self, pid, grade="pdr", day=0):
+        self.svc.assess_capture(f"i-{pid}", day=day, by="ph",
+                                passed=FC)
+        self.svc.screen(pid, eye="both", image_ref=f"i-{pid}",
+                        facility="f", referrer="n1", day=day)
+        self.svc.record_grade(pid, grade=grade, by="gr-1", day=day)
+        self.svc.record_grade(pid, grade=grade, by="gr-2", day=day)
+
+    def test_treatment_requires_referral_grade(self):
+        self._referred("m1", grade="mild-npdr")
+        with self.assertRaises(TeleReadError):
+            self.svc.record_treatment("m1", kind="laser-prp",
+                                      eye="left", day=10, by="oph-1")
+        with self.assertRaises(TeleReadError):   # unsited
+            self.svc.record_treatment("m1", kind="laser-prp",
+                                      eye="the-left-one", day=10,
+                                      by="oph-1")
+
+    def test_treatment_closes_cascade_via_attendance(self):
+        self._referred("t1")
+        self.svc.advance("t1", "attended", day=10)
+        ep = self.svc.record_treatment("t1", kind="laser-prp",
+                                       eye="left", day=10, by="oph-1")
+        self.assertEqual(self.svc.cascade["t1"]["treated"], 10)
+        self.assertEqual(ep["kind"], "laser-prp")
+
+    def test_injection_series_counts_and_flags_gaps(self):
+        self._referred("t2", grade="maculopathy")
+        self.svc.advance("t2", "attended", day=5)
+        for d in (5, 33, 61):
+            self.svc.record_treatment("t2", kind="anti-vegf-injection",
+                                      eye="right", day=d, by="oph-1")
+        self.svc.record_treatment("t2", kind="anti-vegf-injection",
+                                  eye="right", day=200, by="oph-1")
+        series = self.svc.injection_series("t2", "right")
+        self.assertEqual(series["injections"], 4)
+        self.assertEqual(series["gaps_days"], [28, 28, 139])
+        self.assertEqual(series["broken_gaps"], [139])
+        with self.assertRaises(TeleReadError):   # series append-only
+            self.svc.record_treatment("t2", kind="anti-vegf-injection",
+                                      eye="right", day=100, by="oph-1")
+
+    def test_treatment_due_overdue_first(self):
+        self._referred("t3", grade="maculopathy")
+        self.svc.advance("t3", "attended", day=0)
+        self.svc.record_treatment("t3", kind="anti-vegf-injection",
+                                  eye="left", day=0, by="oph-1")
+        self._referred("t4", grade="pdr")   # never treated at all
+        due = self.svc.treatment_due(as_of=60)
+        reasons = {d["patient_id"]: d["reason"] for d in due}
+        self.assertEqual(reasons["t3"], "injection-due")
+        self.assertEqual(reasons["t4"], "referred-never-treated")
+        self.assertEqual(due[0]["patient_id"], "t4")  # most overdue
+
+
 if __name__ == "__main__":
     unittest.main()

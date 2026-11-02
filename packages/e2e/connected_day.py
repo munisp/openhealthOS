@@ -37,6 +37,14 @@ one operational arc across NINE packages, each hand-off a public seam:
   22:30  sepsis bundle clocks: cultures-before-antibiotics flagged,
          conditional elements waived with reasons, breaches
          overdue-first (P1)
+  23:00  the ICU bed board answers who-needs-what-today; device days
+         carry the denominators infection control divides by (P1)
+  23:30  admission acuity scores (APACHE-II-shaped, missing vitals
+         refuse); mortality reported stratified by band — no invented
+         SMR (P1)
+  23:50  a pregnant diabetic's clock accelerates to trimester rhythm;
+         an anti-VEGF series counts its injections and names the
+         broken gap (P1)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -50,7 +58,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "teleicu", "mdt", "serial", "duelgrade", "drscreen",
             "scorecard", "drugkb", "steward", "pharmreview",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
-            "sepsis"):
+            "sepsis", "acuity"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -70,6 +78,8 @@ from cervixscreen import CervixScreening  # noqa: E402
 from usguard import UltrasoundQA, ANOMALY_PLANES  # noqa: E402
 from callrecall import CallRecallRegister  # noqa: E402
 from sepsis import SepsisClock  # noqa: E402
+from teleicu import BedBoard  # noqa: E402
+from acuity import AcuityRegistry, AcuityError, apache2  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import DomainConfig, ReaderRegistry, ReadingService, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -617,7 +627,105 @@ def run_connected_day():
     log["sepsis_breaches_open"] = len(br)
     log["sepsis_all_or_nothing_met"] = rep["all_or_nothing"]["met"]
 
-    log["seams_proven"] = 20
+    # ---- 23:00 the bed board: who needs WHAT today (P1) ----
+    board = BedBoard("icu-1")
+    board.admit("p-ward2", bed="B1", day=0)
+    board.device_start("p-ward2", "ventilator", day=0)
+    board.device_start("p-ward2", "central-line", day=0)
+    board.admit("p-ward3", bed="B2", day=0)
+    board.device_start("p-ward3", "urinary-catheter", day=1)
+    rl = board.rounding_list(as_of=1)
+    # vented + lined: 6 must-dos vs the catheter patient's 3
+    assert rl[0]["patient_id"] == "p-ward2" and rl[0]["n_open"] == 6, rl
+    for chk in ("sedation-interruption", "spontaneous-breathing-trial",
+                "head-of-bed-30", "dvt-prophylaxis-review",
+                "family-update"):
+        board.record_check("p-ward2", chk, day=1, by="icu-1")
+    # 'contraindicated' is a decision with a reason, not a skip
+    board.record_check("p-ward2", "line-necessity-review", day=1,
+                       by="icu-1", outcome="contraindicated",
+                       reason="no alternate access; antibiotics running")
+    assert board.rounding_list(as_of=1)[0]["patient_id"] == "p-ward3"
+    drep = board.device_report(as_of=2)
+    assert drep["patient_days"] == 4
+    assert drep["device_days"] == {"ventilator": 2, "central-line": 2,
+                                   "urinary-catheter": 1}, drep
+    log["bedboard_open_first"] = "p-ward3"
+    log["bedboard_device_days"] = sum(drep["device_days"].values())
+
+    # ---- 23:30 acuity: mortality stratified, denominators shown (P1)
+    acu = AcuityRegistry()
+    s_normal = apache2(temp_c=37.0, map_mmhg=90, hr=80, rr=14,
+                       fio2=0.21, pao2=95, ph=7.40, na=140, k=4.0,
+                       creat_mgdl=1.0, hct=40, wbc=8, gcs=15, age=40)
+    s_sick = apache2(temp_c=39.5, map_mmhg=55, hr=125, rr=28, fio2=0.4,
+                     pao2=58, ph=7.28, na=152, k=5.7, creat_mgdl=2.2,
+                     arf=True, hct=26, wbc=17, gcs=12, age=70,
+                     chronic_health="nonsurgical-or-emergency")
+    assert s_normal["total"] == 0 and s_sick["total"] == 37
+    acu.record_score("icu-1", "p-ward2", day=0, score=s_sick)
+    acu.record_score("icu-1", "p-ward4", day=0, score=s_normal)
+    acu.record_outcome("icu-1", "p-ward2", day=3, outcome="survived")
+    acu.record_outcome("icu-1", "p-ward4", day=2, outcome="survived")
+    try:
+        acu.record_score("icu-1", "p-ward5", day=0, score=37)
+        raise AssertionError("a bare integer must refuse")
+    except AcuityError:
+        log["acuity_bare_score_refused"] = True
+    mort = acu.mortality_by_band("icu-1")
+    assert mort["scored"] == 2
+    assert mort["bands"][3]["n"] == 1 and \
+        mort["bands"][3]["mortality_rate"] == 0.0, mort
+    log["acuity_high_band_n"] = mort["bands"][3]["n"]
+
+    # ---- 23:50 DR: pregnancy clock + the anti-VEGF series (P1) ----
+    # p-dm (PDR, arbitrated at 17:30) attends and starts treatment —
+    # the cascade closes through attendance, not around it
+    drs.advance("p-dm", "attended", day=10)
+    drs.record_treatment("p-dm", kind="laser-prp", eye="left", day=10,
+                         by="oph-1")
+    assert drs.cascade["p-dm"]["treated"] == 10
+    # a pregnant diabetic graded mild: her clock accelerates to the
+    # trimester rhythm; the grade plan is preserved, not rewritten
+    drs.assess_capture("fundus://9", day=0, by="photog-1",
+                       passed=FUNDUS_CHECKS)
+    drs.screen("p-dm-preg", eye="both", image_ref="fundus://9",
+               facility="phc-1", referrer="mo-1", day=0)
+    drs.mark_pregnant("p-dm-preg", day=0, lmp_day=-45)
+    drs.record_grade("p-dm-preg", grade="mild-npdr", by="dr-1", day=1)
+    preg_out = drs.record_grade("p-dm-preg", grade="mild-npdr",
+                                by="dr-2", day=1)
+    assert preg_out["pregnancy_override"] is True
+    assert preg_out["recall"]["interval_months"] == 3
+    assert preg_out["recall"]["grade_plan_months"] == 12
+    # an anti-VEGF series is a rhythm: 28-day intervals, the 139-day
+    # gap flagged as broken
+    drs.assess_capture("fundus://10", day=0, by="photog-1",
+                       passed=FUNDUS_CHECKS)
+    drs.screen("p-dm-mac", eye="both", image_ref="fundus://10",
+               facility="phc-1", referrer="mo-1", day=0)
+    drs.record_grade("p-dm-mac", grade="maculopathy", by="dr-1", day=1)
+    drs.record_grade("p-dm-mac", grade="maculopathy", by="dr-2", day=1)
+    drs.advance("p-dm-mac", "attended", day=5)
+    for d in (5, 33, 61):
+        drs.record_treatment("p-dm-mac", kind="anti-vegf-injection",
+                             eye="right", day=d, by="oph-1")
+    # the next injection was due at 89; at day 100 the worklist names
+    # her, overdue-first
+    due_tx = drs.treatment_due(as_of=100)
+    assert due_tx[0]["patient_id"] == "p-dm-mac"
+    assert due_tx[0]["reason"] == "injection-due"
+    assert due_tx[0]["overdue_days"] == 11, due_tx
+    # she returns at day 200: the 139-day gap is flagged as a broken
+    # series — a relapse risk, not a scheduling detail
+    drs.record_treatment("p-dm-mac", kind="anti-vegf-injection",
+                         eye="right", day=200, by="oph-1")
+    series = drs.injection_series("p-dm-mac", "right")
+    assert series["injections"] == 4 and series["broken_gaps"] == [139]
+    log["dr_series_broken_gaps"] = series["broken_gaps"]
+    log["dr_pregnancy_override"] = True
+
+    log["seams_proven"] = 23
     return log
 
 
