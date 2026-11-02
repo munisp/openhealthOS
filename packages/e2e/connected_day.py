@@ -59,6 +59,17 @@ one operational arc across NINE packages, each hand-off a public seam:
   03:00  vocabulary convergence: cpoe's 'acei' and drugkb's
          'ace-inhibitor' resolve to one class — the interaction fires
          instead of presenting as clearance (P2)
+  03:30  ECG intervals: named QTc method, block/conduction flags,
+         implausible values refused (P0, cardiology)
+  04:00  synoptic sign-out: verified histology read leaves as a SIGNED
+         CAP-shaped synoptic; self-contradiction refuses before either
+         side mutates (seam 14, P0 pathology)
+  04:30  obstetric biometry meets the reference envelope; low CPR
+         flags the brain-sparing pattern (P0)
+  04:45  semen analysis: below-limit is a flag; a single zero is not
+         a diagnosis (P1)
+  05:00  dictation: speech lands as a provenanced DRAFT; verification
+         stays human (P1)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -73,13 +84,16 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "scorecard", "drugkb", "steward", "pharmreview",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
-            "mammoprog", "offlinespec", "teachfile", "cpoe"):
+            "mammoprog", "offlinespec", "teachfile", "cpoe",
+            "teleecg", "dictate"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
                        case_pack, submit_with_pack, cryo_watch,
                        chair_plan, on_shift_readers, assign_on_shift,
-                       escalate_events)
+                       escalate_events, synoptic_signout)
+from dictate import DictationService  # noqa: E402
+from teleecg import ECGService  # noqa: E402
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
@@ -144,6 +158,8 @@ def run_connected_day():
                      licence_expiry_day=400, scopes=("cervix-reviewer",))
     readers.register("us-1", licence_id="MDCN-U1",
                      licence_expiry_day=400, scopes=("us-overreader",))
+    readers.register("card-1", licence_id="MDCN-K1",
+                     licence_expiry_day=400, scopes=("cardiac-reader",))
 
     radiology = ReadingService(
         DomainConfig("radiology", scopes=("chest",),
@@ -905,7 +921,123 @@ def run_connected_day():
     assert f_hits, "acei/nsaid pair lost to vocabulary drift"
     log["vocab_converged"] = f_hits[0]["severity"] == "major"
 
-    log["seams_proven"] = 29
+    # ---- 03:30 ECG intervals: a read without intervals is not a
+    # read; the QTc method is always named (P0, cardiology)
+    ecg = ECGService(readers)
+    ecg.record_tracing("T-77", patient_id="p-ecg", kind="12-lead",
+                       device_id=None, waveform_ref="wave://t77",
+                       facility="phc-1", referrer="dr-a", day=2)
+    m = ecg.record_measurements("T-77", by="tech-1", day=2,
+                                rate_bpm=88, pr_ms=230, qrs_ms=126,
+                                qt_ms=400, rr_ms=682,
+                                qtc_method="bazett", axis_deg=40,
+                                patient_sex="male")
+    assert m["qtc_ms"] > 400  # Bazett overcorrects at 88bpm
+    assert any("first-degree" in f for f in m["flags"])
+    assert any("conduction delay" in f for f in m["flags"])
+    try:
+        ecg.record_measurements("T-77", by="tech-1", day=2,
+                                rate_bpm=9, pr_ms=160, qrs_ms=90,
+                                qtc_ms=410, qtc_method="bazett")
+        raise RuntimeError("implausible intervals must refuse")
+    except TeleReadError:
+        log["ecg_implausible_refused"] = True
+    log["ecg_qtc_method"] = m["qtc_method"]
+
+    # ---- 04:00 synoptic sign-out (seam 14): the verified histology
+    # read leaves as a SIGNED synoptic; contradiction refuses BEFORE
+    # either side mutates (P0, pathology)
+    path.register_specimen("SP-COLON", patient_id="p-colon",
+                           specimen_type="resection", site="colon",
+                           collector="surg-1", facility="phc-1", day=0)
+    for st in ("fixed", "processed", "sectioned", "stained",
+               "scanned"):
+        kw = {"fixation_hours": 12} if st == "processed" else {}
+        path.advance("SP-COLON", st, day=1, by="lab-1", **kw)
+    path.submit_for_reading("SP-COLON", case_id="PC-COLON",
+                            priority="routine", referrer="surg-1",
+                            question="colon ca resection",
+                            artifact="wsi", day=1)
+    path.reading.assign("PC-COLON", day=1, prefer="path-1")
+    path.reading.draft_report("PC-COLON", reader_id="path-1",
+                              findings="3cm tumor, 1/14 nodes",
+                              impression="adenocarcinoma",
+                              template_version="freeform@1", day=2)
+    path.reading.verify_report("PC-COLON", reader_id="path-1", day=2)
+    syn_bad = {"specimen_type": "right hemicolectomy",
+               "tumor_site": "ascending colon",
+               "histologic_type": "adenocarcinoma", "grade": "g2",
+               "tumor_extent_pt": "pT3", "margins": "negative",
+               "lymph_nodes_examined": 2, "lymph_nodes_positive": 5,
+               "lymphovascular_invasion": "absent",
+               "perineural_invasion": "absent",
+               "tnm_stage": "pT3 N1a (AJCC 8th)"}
+    try:
+        synoptic_signout(path, rk, case_id="PC-COLON",
+                         report_id="SYN-BAD",
+                         template_id="cap-colon-resection@1.0.0",
+                         answers=syn_bad, signer="path-1", day=2)
+        raise RuntimeError("5 positive of 2 examined must refuse")
+    except Exception as exc:
+        assert "cannot find more than you looked at" in str(exc)
+    assert "SYN-BAD" not in rk.reports  # no half-state
+    assert path._spec("SP-COLON").get("synoptic_report") is None
+    syn_ok = dict(syn_bad, lymph_nodes_examined=14,
+                  lymph_nodes_positive=1)
+    out = synoptic_signout(path, rk, case_id="PC-COLON",
+                           report_id="SYN-1",
+                           template_id="cap-colon-resection@1.0.0",
+                           answers=syn_ok, signer="path-1", day=2)
+    assert rk.verify("SYN-1")["valid"]
+    log["synoptic_signed"] = out["report_id"]
+
+    # ---- 04:30 obstetric biometry: measurements meet the reference
+    # envelope; a small AC flags growth review, not a diagnosis (P0)
+    usg.register_scan("US-B1", patient_id="p-ob2",
+                      sonographer="son-1", facility="phc-1",
+                      gestational_weeks=30, image_ref="img://b1",
+                      day=2)
+    bio = usg.record_biometry("US-B1",
+                              measurements={"bpd": 75, "hc": 275,
+                                            "ac": 200, "fl": 55},
+                              day=2, by="son-1")
+    assert any("ac" in f for f in bio["flags"]), bio
+    dop = usg.record_doppler("US-B1", day=2, by="son-1",
+                             umbilical_pi=1.6, mca_pi=1.4, cpr=0.875)
+    assert any("brain-sparing" in f for f in dop["flags"])
+    log["biometry_flagged"] = "US-B1"
+
+    # ---- 04:45 semen analysis: below a reference limit is a flag,
+    # and a single zero is not a diagnosis (P1, fertility)
+    clinic.register_couple("CPL3", partner_a="pe", partner_b="pf",
+                           day=0)
+    sa = clinic.record_semen_analysis(
+        "CPL3", day=1, by="lab-1", abstinence_days=3, volume_ml=2.0,
+        concentration_m_per_ml=0.0, total_motility_pct=0.0,
+        progressive_motility_pct=0.0, normal_forms_pct=0.0)
+    assert sa["azoospermia_needs_confirmation"]
+    assert not clinic.semen_summary("CPL3")["azoospermia_confirmed"]
+    log["semen_single_zero_held"] = True
+
+    # ---- 05:00 dictation: speech becomes a DRAFT with provenance;
+    # the ceiling is reported-draft, verification stays human (P1)
+    dict_svc = DictationService(radiology)
+    radiology.order("CX-D1", priority="routine", question="effusion?",
+                    facility="phc-1", referrer="dr-a", day=2)
+    radiology.assign("CX-D1", day=2, prefer="rad-on")
+    dout = dict_svc.dictate("CX-D1", reader_id="rad-on",
+                     transcript="Small right pleural effusion. "
+                                "Clinical correlation advised.",
+                     engine="whisper", engine_version="large-v3",
+                     day=2, template_version="cxr@1.0.0")
+    assert dout["state"] == "draft"
+    assert radiology.cases["CX-D1"]["state"] == "reported-draft"
+    assert dict_svc.sessions[-1]["transcript"].startswith("Small right")
+    log["dictation_landed_draft"] = dout["report_id"]
+    log["dictation_engine"] = dout["provenance"]["engine"] + "@" + \
+        dout["provenance"]["engine_version"]
+
+    log["seams_proven"] = 30
     return log
 
 

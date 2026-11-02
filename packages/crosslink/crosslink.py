@@ -515,3 +515,49 @@ def admissions_to_medrec(ward, medrec, *, day, by, started):
             "note": "the undecided drug at admission is the one that "
                     "silently stops; the one at discharge is the one "
                     "that silently disappears"}
+
+
+# ---------------------------------------------------------------- 14.
+# telepath → reportkit: a verified histology read leaves the system as
+# a SIGNED synoptic, or it has not left.
+def synoptic_signout(path, rk, *, case_id, report_id, template_id,
+                     answers, signer, day):
+    """Bind a verified pathology read to a signed structured synoptic.
+
+    Both sides are validated before EITHER mutates (the seam's rule):
+    the case must be reported-verified with its specimen's custody
+    chain complete, and the answers must validate against the template
+    — only then is the report drafted and signed, and only after the
+    signature exists is the report id bound onto the specimen. A
+    synoptic that fails validation mid-way must not leave a
+    half-signed report pointing at a specimen."""
+    case = path.reading.cases.get(case_id)
+    if case is None:
+        raise CrosslinkError(f"unknown pathology case: {case_id}")
+    if case["state"] != "reported-verified":
+        raise CrosslinkError(
+            f"{case_id} is {case['state']} — a synoptic formalizes a "
+            "VERIFIED read; signing a draft is signing a rumour")
+    specimen_id = case.get("meta", {}).get("specimen_id")
+    if specimen_id:
+        spec = path._spec(specimen_id)
+        if spec["state"] != "scanned":
+            raise CrosslinkError(
+                f"specimen {specimen_id} is at {spec['state']} — the "
+                "slide is not made; there is nothing to sign out")
+        if spec.get("synoptic_report"):
+            raise CrosslinkError(
+                f"specimen {specimen_id} already signed out as "
+                f"{spec['synoptic_report']} — corrections are addenda, "
+                "never silent re-signs")
+    # validate FIRST (raises before anything mutates), then draft+sign
+    rk.validate(template_id, answers)
+    rk.draft(report_id, template_id=template_id, answers=answers,
+             case_id=case_id, author_id=signer, day=day)
+    signed = rk.sign(report_id, signer_id=signer, day=day)
+    if specimen_id:
+        path._spec(specimen_id)["synoptic_report"] = report_id
+    return {"report_id": report_id, "specimen_id": specimen_id,
+            "content_hash": signed["signature"]["content_hash"],
+            "note": "the hash is the contract — any post-signature "
+                    "edit invalidates verification"}

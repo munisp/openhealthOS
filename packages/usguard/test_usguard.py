@@ -2,7 +2,7 @@ import os
 import sys
 import unittest
 
-for pkg in ("teleread",):
+for pkg in ("teleread", "serial"):
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", pkg))
 sys.path.insert(0, os.path.dirname(__file__))
 from teleread import ReaderRegistry, TeleReadError
@@ -87,3 +87,62 @@ class TestAnomalyChecklist(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestBiometryDoppler(unittest.TestCase):
+    def setUp(self):
+        self.qa = mk_qa()  # S1 at 21w
+
+    def test_biometry_assessed_against_envelope(self):
+        out = self.qa.record_biometry(
+            "S1", measurements={"bpd": 48, "hc": 185, "ac": 175,
+                                "fl": 38}, day=1, by="son-1")
+        self.assertTrue(all(v["in_envelope"]
+                            for v in out["assessed"].values()))
+        self.assertEqual(out["flags"], [])
+        self.assertEqual(out["ref_version"], "biometry-ref@1.0.0")
+
+    def test_small_for_dates_flags_not_diagnoses(self):
+        out = self.qa.record_biometry(
+            "S1", measurements={"ac": 100}, day=1, by="son-1")
+        self.assertFalse(out["assessed"]["ac"]["in_envelope"])
+        self.assertIn("below p5", out["flags"][0])
+        self.assertIn("growth review", out["flags"][0])
+
+    def test_no_measurements_refused(self):
+        from serial import SerialError
+        with self.assertRaises(SerialError):
+            self.qa.record_biometry("S1", measurements={}, day=1,
+                                    by="son-1")
+
+    def test_biometry_is_append_only(self):
+        self.qa.record_biometry("S1", measurements={"ac": 175}, day=1,
+                                by="son-1")
+        self.qa.record_biometry("S1", measurements={"ac": 180}, day=2,
+                                by="son-2")
+        hist = self.qa._scan("S1")["biometry"]
+        self.assertEqual(len(hist), 2)
+        self.assertEqual(hist[0]["assessed"]["ac"]["value_mm"], 175)
+
+    def test_doppler_flags_low_cpr(self):
+        out = self.qa.record_doppler("S1", day=1, by="son-1",
+                                     umbilical_pi=1.6, mca_pi=1.4,
+                                     cpr=0.9)
+        blob = " ".join(out["flags"])
+        self.assertIn("brain-sparing", blob)
+        self.assertIn("placental-resistance", blob)
+        self.assertEqual(out["ref_version"], "doppler-ref@1.0.0")
+
+    def test_empty_doppler_refused(self):
+        from teleread import TeleReadError as TRErr
+        with self.assertRaises(TRErr):
+            self.qa.record_doppler("S1", day=1, by="son-1")
+
+    def test_growth_flags_aggregated_oldest_first(self):
+        self.qa.record_doppler("S1", day=3, by="son-1", cpr=0.9)
+        self.qa.record_biometry("S1", measurements={"ac": 100}, day=1,
+                                by="son-1")
+        flags = self.qa.growth_flags("S1")
+        self.assertEqual(len(flags), 2)
+        self.assertEqual(flags[0]["kind"], "biometry")  # day 1 first
+        self.assertEqual(flags[1]["kind"], "doppler")

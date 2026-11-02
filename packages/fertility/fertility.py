@@ -569,6 +569,72 @@ class FertilityClinic:
                 "note": "denominators are embryos created; ungraded "
                         "embryos are not assumed viable"}
 
+    # ---- semen analysis: the male side of the couple is data too --
+    def record_semen_analysis(self, couple_id, *, day, by,
+                              abstinence_days, volume_ml,
+                              concentration_m_per_ml,
+                              total_motility_pct,
+                              progressive_motility_pct,
+                              vitality_pct=None, normal_forms_pct,
+                              source="partner"):
+        """WHO 2021 (6th ed.) semen analysis against the versioned
+        lower reference limits. Below a limit is a FLAG, not a
+        verdict — one sample is a snapshot. A zero concentration
+        (azoospermia) requires a confirmatory sample before the label
+        stands; the record says so."""
+        c = self._couple(couple_id)
+        if not by:
+            raise FertilityError("unsigned lab results are no result")
+        lo, hi = ABSTINENCE_RANGE_DAYS
+        if not (lo <= abstinence_days <= hi):
+            raise FertilityError(
+                f"abstinence {abstinence_days}d outside {lo}-{hi}d — "
+                "the sample metadata is wrong, not the patient")
+        values = {"volume_ml": volume_ml,
+                  "concentration_m_per_ml": concentration_m_per_ml,
+                  "total_motility_pct": total_motility_pct,
+                  "progressive_motility_pct": progressive_motility_pct,
+                  "vitality_pct": vitality_pct,
+                  "normal_forms_pct": normal_forms_pct}
+        if progressive_motility_pct > total_motility_pct:
+            raise FertilityError(
+                "progressive motility cannot exceed total motility — "
+                "you cannot find more than you looked at")
+        for k, v in values.items():
+            if v is None:
+                continue
+            _, (plo, phi) = SEMEN_LIMITS[k]
+            if not (plo <= v <= phi):
+                raise FertilityError(f"implausible {k}: {v}")
+        below = {k: {"value": v, "reference": SEMEN_LIMITS[k][0]}
+                 for k, v in values.items()
+                 if v is not None and v < SEMEN_LIMITS[k][0]}
+        needs_confirm = concentration_m_per_ml == 0.0
+        entry = {"day": day, "by": by,
+                 "abstinence_days": abstinence_days, "source": source,
+                 **values, "below_reference": below,
+                 "azoospermia_needs_confirmation": needs_confirm,
+                 "ref_version": SEMEN_REF_VERSION,
+                 "note": "below a reference limit is a flag, not a "
+                         "verdict; a single zero is not a diagnosis"}
+        c.setdefault("semen_analyses", []).append(entry)
+        return dict(entry)
+
+    def semen_summary(self, couple_id):
+        """Serial semen analyses with denominators: how many samples,
+        how many below reference, whether azoospermia was confirmed."""
+        c = self._couple(couple_id)
+        rows = c.get("semen_analyses", [])
+        if not rows:
+            raise FertilityError(f"{couple_id} has no semen analysis "
+                                 "— absence is not a normal result")
+        below = sum(1 for r in rows if r["below_reference"])
+        az = [r for r in rows if r["concentration_m_per_ml"] == 0.0]
+        return {"samples": len(rows), "below_reference": below,
+                "below_reference_rate": round(below / len(rows), 3),
+                "azoospermia_confirmed": len(az) >= 2,
+                "ref_version": SEMEN_REF_VERSION}
+
     def _couple(self, cid):
         if cid not in self.couples:
             raise FertilityError(f"unknown couple: {cid}")
@@ -583,3 +649,23 @@ class FertilityClinic:
         if eid not in self.embryos:
             raise FertilityError(f"unknown embryo: {eid}")
         return self.embryos[eid]
+
+
+# ---- WHO 2021 (6th ed.) semen analysis ------------------------------------
+# Lower reference limits, re-typed from the published table — versioned
+# data, not embedded authority: bind the lab's own validated reference
+# at deployment.
+SEMEN_REF_VERSION = "who-semen-2021@1.0.0"
+# parameter -> (lower reference limit, plausible range)
+SEMEN_LIMITS = {
+    "volume_ml": (1.4, (0.1, 20.0)),
+    "concentration_m_per_ml": (16.0, (0.0, 1000.0)),
+    "total_motility_pct": (42.0, (0.0, 100.0)),
+    "progressive_motility_pct": (30.0, (0.0, 100.0)),
+    "vitality_pct": (54.0, (0.0, 100.0)),
+    "normal_forms_pct": (4.0, (0.0, 100.0)),
+}
+ABSTINENCE_RANGE_DAYS = (1, 14)  # WHO collection window is 2-7;
+                                 # outside 1-14 the sample metadata is
+                                 # wrong, refuse
+

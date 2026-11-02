@@ -49,6 +49,12 @@ PLANE_STATES = ("adequate", "inadequate", "not-visualized")
 ANOMALY_GA_WINDOW = (18, 24)   # weeks; outside this it is not the
                                # anomaly scan and must not masquerade
 
+# Doppler flag thresholds — versioned deployment data, not constants
+# to trust blindly; bind local reference charts at deployment
+DOPPLER_REF_VERSION = "doppler-ref@1.0.0"
+DOPPLER_CPR_LOW = 1.08        # ~5th-centile CPR, term-near
+DOPPLER_UA_PI_HIGH = 1.45     # ~95th-centile umbilical PI ≥30w
+
 
 class UltrasoundQA:
     def __init__(self, readers, sample_percent=DEFAULT_SAMPLE_PERCENT):
@@ -186,6 +192,71 @@ class UltrasoundQA:
                 "protocol": ANOMALY_PROTOCOL_VERSION,
                 "note": "the denominator is checklists recorded; a "
                         "plane's gap count is a training signal"}
+
+    # ---- biometry + Doppler: without measurements there is no growth
+    # assessment, only image review ----
+    def record_biometry(self, scan_id, *, measurements, day, by):
+        """Attach measured biometry to the scan, checked against the
+        serial package's reference envelope (biometry-ref@1.0.0,
+        coarse Hadlock-derived; bind a validated local reference at
+        deployment). Outside the envelope is a flag for review, never
+        a diagnosis; outside the table's range the function abstains —
+        no extrapolated confidence. Append-only: a re-measure is a new
+        entry, the first stays on the record."""
+        s = self._scan(scan_id)
+        if not by:
+            raise TeleReadError("unsigned measurements are no "
+                                "measurement")
+        from serial import fetal_biometry
+        result = fetal_biometry(s["ga_weeks"], measurements)
+        entry = {"day": day, "by": by, **result}
+        s.setdefault("biometry", []).append(entry)
+        return dict(entry)
+
+    def record_doppler(self, scan_id, *, day, by, umbilical_pi=None,
+                       mca_pi=None, cpr=None):
+        """Umbilical-artery / middle-cerebral-artery pulsatility
+        indices and the cerebroplacental ratio. At least one index is
+        mandatory — an empty Doppler record is not a Doppler. CPR
+        below DOPPLER_CPR_LOW is a growth-review flag (thresholds are
+        versioned deployment data, DOPPLER_REF_VERSION)."""
+        s = self._scan(scan_id)
+        if not by:
+            raise TeleReadError("unsigned Doppler is no Doppler")
+        if umbilical_pi is None and mca_pi is None and cpr is None:
+            raise TeleReadError("no index supplied — absence is not a "
+                                "reassuring Doppler")
+        for name, v in (("umbilical_pi", umbilical_pi),
+                        ("mca_pi", mca_pi), ("cpr", cpr)):
+            if v is not None and not (0.1 <= v <= 10.0):
+                raise TeleReadError(f"implausible {name}: {v}")
+        flags = []
+        if cpr is not None and cpr < DOPPLER_CPR_LOW:
+            flags.append(f"CPR {cpr} < {DOPPLER_CPR_LOW} — brain-"
+                         "sparing pattern, growth review")
+        if umbilical_pi is not None and s["ga_weeks"] >= 20 \
+                and umbilical_pi > DOPPLER_UA_PI_HIGH:
+            flags.append(f"umbilical PI {umbilical_pi} above "
+                         f"{DOPPLER_UA_PI_HIGH} at {s['ga_weeks']}w — "
+                         "placental-resistance review")
+        entry = {"day": day, "by": by, "umbilical_pi": umbilical_pi,
+                 "mca_pi": mca_pi, "cpr": cpr, "flags": flags,
+                 "ref_version": DOPPLER_REF_VERSION}
+        s.setdefault("dopplers", []).append(entry)
+        return dict(entry)
+
+    def growth_flags(self, scan_id):
+        """Every biometry/Doppler flag on the scan, oldest first —
+        a growth concern must not hide inside the latest entry."""
+        s = self._scan(scan_id)
+        out = []
+        for b in s.get("biometry", []):
+            out += [{"kind": "biometry", "day": b["day"], "flag": f}
+                    for f in b["flags"]]
+        for d in s.get("dopplers", []):
+            out += [{"kind": "doppler", "day": d["day"], "flag": f}
+                    for f in d["flags"]]
+        return sorted(out, key=lambda x: x["day"])
 
     def _scan(self, sid):
         if sid not in self.scans:

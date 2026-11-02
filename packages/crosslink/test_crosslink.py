@@ -19,7 +19,8 @@ from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa
                        assign_on_shift, escalate_events,
                        timeouts_to_review, deterioration_to_icu,
                        order_with_priors, screens_to_register,
-                       colpo_biopsy_to_path, admissions_to_medrec)
+                       colpo_biopsy_to_path, admissions_to_medrec,
+                       synoptic_signout)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -631,3 +632,106 @@ class TestAdmissionsToMedRec(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestSynopticSignout(unittest.TestCase):
+    """Seam 14: verified pathology read -> SIGNED synoptic; both sides
+    validated before either mutates."""
+
+    ANSWERS = {"specimen_type": "right hemicolectomy",
+               "tumor_site": "ascending colon",
+               "histologic_type": "adenocarcinoma", "grade": "g2",
+               "tumor_extent_pt": "pT3", "margins": "negative",
+               "lymph_nodes_examined": 14, "lymph_nodes_positive": 1,
+               "lymphovascular_invasion": "absent",
+               "perineural_invasion": "absent",
+               "tnm_stage": "pT3 N1a (AJCC 8th)"}
+
+    def _verified_path_case(self):
+        readers = ReaderRegistry()
+        readers.register("path-1", licence_id="MDCN-P1",
+                         licence_expiry_day=400,
+                         scopes=("histopathologist",))
+        path = PathologyService(readers)
+        path.register_specimen("SP-1", patient_id="p-1",
+                               specimen_type="resection", site="colon",
+                               collector="surg-1", facility="phc-1",
+                               day=0)
+        for stage in ("fixed", "processed", "sectioned", "stained",
+                      "scanned"):
+            path.advance("SP-1", stage, day=1, by="lab-1",
+                         fixation_hours=12)
+        path.submit_for_reading("SP-1", case_id="PC-1",
+                                priority="routine", referrer="surg-1",
+                                question="colon ca resection",
+                                artifact="wsi", day=1)
+        path.reading.assign("PC-1", day=1, prefer="path-1")
+        path.reading.draft_report("PC-1", reader_id="path-1",
+                                  findings="tumor 3cm",
+                                  impression="adenocarcinoma",
+                                  template_version="freeform@1", day=2)
+        path.reading.verify_report("PC-1", reader_id="path-1", day=2)
+        return path
+
+    def test_verified_read_signs_out_as_synoptic(self):
+        path = self._verified_path_case()
+        rk = ReportKit(signing_key=b"test-key")
+        out = synoptic_signout(path, rk, case_id="PC-1",
+                               report_id="SYN-1",
+                               template_id="cap-colon-resection@1.0.0",
+                               answers=dict(self.ANSWERS),
+                               signer="path-1", day=3)
+        self.assertEqual(out["specimen_id"], "SP-1")
+        self.assertEqual(path._spec("SP-1")["synoptic_report"], "SYN-1")
+        self.assertTrue(rk.verify("SYN-1")["valid"])
+
+    def test_contradicting_synoptic_refuses_before_mutation(self):
+        path = self._verified_path_case()
+        rk = ReportKit(signing_key=b"test-key")
+        bad = dict(self.ANSWERS, lymph_nodes_examined=2,
+                   lymph_nodes_positive=5)
+        with self.assertRaises(Exception) as ctx:
+            synoptic_signout(path, rk, case_id="PC-1",
+                             report_id="SYN-2",
+                             template_id="cap-colon-resection@1.0.0",
+                             answers=bad, signer="path-1", day=3)
+        self.assertIn("cannot find more than you looked at",
+                      str(ctx.exception))
+        # nothing half-mutated on either side
+        self.assertNotIn("SYN-2", rk.reports)
+        self.assertIsNone(path._spec("SP-1").get("synoptic_report"))
+
+    def test_unverified_read_cannot_sign_out(self):
+        path = self._verified_path_case()
+        path.register_specimen("SP-2", patient_id="p-2",
+                               specimen_type="biopsy", site="skin",
+                               collector="d-1", facility="phc-1", day=0)
+        for stage in ("fixed", "processed", "sectioned", "stained",
+                      "scanned"):
+            path.advance("SP-2", stage, day=1, by="lab-1",
+                         fixation_hours=12)
+        path.submit_for_reading("SP-2", case_id="PC-2",
+                                priority="routine", referrer="d-1",
+                                question="skin biopsy",
+                                artifact="wsi", day=1)
+        rk = ReportKit(signing_key=b"test-key")
+        with self.assertRaises(CrosslinkError):
+            synoptic_signout(path, rk, case_id="PC-2",
+                             report_id="SYN-3",
+                             template_id="cap-colon-resection@1.0.0",
+                             answers=dict(self.ANSWERS),
+                             signer="path-1", day=3)
+
+    def test_no_double_signout(self):
+        path = self._verified_path_case()
+        rk = ReportKit(signing_key=b"test-key")
+        synoptic_signout(path, rk, case_id="PC-1", report_id="SYN-1",
+                         template_id="cap-colon-resection@1.0.0",
+                         answers=dict(self.ANSWERS), signer="path-1",
+                         day=3)
+        with self.assertRaises(CrosslinkError):
+            synoptic_signout(path, rk, case_id="PC-1",
+                             report_id="SYN-4",
+                             template_id="cap-colon-resection@1.0.0",
+                             answers=dict(self.ANSWERS),
+                             signer="path-1", day=4)

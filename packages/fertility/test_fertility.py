@@ -326,3 +326,64 @@ class TestEmbryologyGrading(unittest.TestCase):
         self.assertEqual(rep["embryos"], 2)
         self.assertEqual(rep["fertilized_2pn"], 1)
         self.assertEqual(rep["usable"], 1)
+
+
+class TestSemenAnalysis(unittest.TestCase):
+    def setUp(self):
+        self.c = FertilityClinic("f1")
+        self.c.register_couple("C1", partner_a="pa", partner_b="pb",
+                               day=0)
+
+    def _record(self, **kw):
+        base = dict(day=1, by="lab-1", abstinence_days=3,
+                    volume_ml=2.5, concentration_m_per_ml=40.0,
+                    total_motility_pct=55.0,
+                    progressive_motility_pct=40.0,
+                    normal_forms_pct=6.0)
+        base.update(kw)
+        return self.c.record_semen_analysis("C1", **base)
+
+    def test_normal_sample_has_no_flags(self):
+        out = self._record()
+        self.assertEqual(out["below_reference"], {})
+        self.assertFalse(out["azoospermia_needs_confirmation"])
+        self.assertEqual(out["ref_version"], "who-semen-2021@1.0.0")
+
+    def test_below_reference_is_a_flag_not_a_verdict(self):
+        out = self._record(concentration_m_per_ml=10.0,
+                           normal_forms_pct=2.0)
+        self.assertEqual(set(out["below_reference"]),
+                         {"concentration_m_per_ml", "normal_forms_pct"})
+        self.assertIn("flag, not a verdict", out["note"])
+
+    def test_single_zero_is_not_a_diagnosis(self):
+        out = self._record(concentration_m_per_ml=0.0)
+        self.assertTrue(out["azoospermia_needs_confirmation"])
+        self.assertFalse(self.c.semen_summary("C1")
+                         ["azoospermia_confirmed"])
+        self._record(concentration_m_per_ml=0.0, day=30)
+        self.assertTrue(self.c.semen_summary("C1")
+                        ["azoospermia_confirmed"])
+
+    def test_progressive_cannot_exceed_total(self):
+        with self.assertRaises(FertilityError):
+            self._record(total_motility_pct=30.0,
+                         progressive_motility_pct=40.0)
+
+    def test_implausible_and_bad_metadata_refuse(self):
+        with self.assertRaises(FertilityError):
+            self._record(abstinence_days=40)
+        with self.assertRaises(FertilityError):
+            self._record(volume_ml=99.0)
+
+    def test_summary_has_denominators(self):
+        self._record()
+        self._record(concentration_m_per_ml=5.0, day=30)
+        s = self.c.semen_summary("C1")
+        self.assertEqual(s["samples"], 2)
+        self.assertEqual(s["below_reference"], 1)
+        self.assertEqual(s["below_reference_rate"], 0.5)
+
+    def test_absence_is_not_normal(self):
+        with self.assertRaises(FertilityError):
+            self.c.semen_summary("C1")

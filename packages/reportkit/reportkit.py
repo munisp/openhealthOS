@@ -50,8 +50,25 @@ def _num(key, required=True, label=None, minimum=None, maximum=None,
             "min": minimum, "max": maximum, "unit": unit}
 
 
-TEMPLATES = {
-    "birads-mammo@1.0.0": {
+# ---- cross-field rules ----------------------------------------------------
+# Some truths live BETWEEN fields: you cannot find more positive nodes
+# than you examined. Named, versioned-with-the-template, and refusing
+# loudly — a synoptic that contradicts itself is not a report.
+def _rule_nodes_positive_le_examined(answers):
+    ex, pos = answers.get("lymph_nodes_examined"), \
+        answers.get("lymph_nodes_positive")
+    if ex is not None and pos is not None and pos > ex:
+        return (f"lymph_nodes_positive ({pos}) exceeds "
+                f"lymph_nodes_examined ({ex}) — you cannot find more "
+                "than you looked at")
+    return None
+
+
+CROSS_RULES = {
+    "nodes-positive-le-examined": _rule_nodes_positive_le_examined,
+}
+
+TEMPLATES = {    "birads-mammo@1.0.0": {
         "title": "BI-RADS mammography assessment",
         "domain": "radiology",
         "sections": [
@@ -144,6 +161,7 @@ TEMPLATES = {
                   {"present": "present", "absent": "absent"}),
             _text("tnm_stage"),
         ],
+        "cross": ["nodes-positive-le-examined"],
     },
     "who-semen@2021": {
         "title": "Semen analysis (WHO 6th edition reference limits)",
@@ -223,6 +241,17 @@ class ReportKit:
                                   f"{s['max']}{s['unit'] or ''}")
             elif s["type"] == "text" and not str(v).strip():
                 errors.append(f"{k}: empty text is not an answer")
+        # cross-field rules: named in the template, applied after the
+        # per-field pass
+        for rule_name in t.get("cross", []):
+            rule = CROSS_RULES.get(rule_name)
+            if rule is None:
+                errors.append(f"template names unknown cross-rule: "
+                              f"{rule_name}")
+                continue
+            msg = rule(answers)
+            if msg:
+                errors.append(msg)
         if errors:
             raise ReportKitError("; ".join(errors))
         return {k: v for k, v in answers.items() if k in known}
