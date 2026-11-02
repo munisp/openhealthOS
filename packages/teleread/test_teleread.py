@@ -162,11 +162,29 @@ class TestEngine(unittest.TestCase):
         self._verified()
         tat = self.svc.turnaround(0)
         self.assertEqual(tat["by_priority"]["stat"]["n"], 1)
-        with self.assertRaises(TeleReadError):
-            self.svc.peer_review("C1", reviewer="r1", day=1, agree=True)
-        self.svc.peer_review("C1", reviewer="r2", day=1, agree=False,
-                             discrepancy="axis")
-        self.assertEqual(self.svc.discrepancy_rate()["disagreements"], 1)
+        with self.assertRaises(TeleReadError):  # no self review
+            self.svc.peer_review("C1", reviewer="r1", day=1, score=1)
+        with self.assertRaises(TeleReadError):  # off the 1-4 scale
+            self.svc.peer_review("C1", reviewer="r2", day=1, score=7)
+        with self.assertRaises(TeleReadError):  # concordance names nothing
+            self.svc.peer_review("C1", reviewer="r2", day=1, score=1,
+                                 discrepancy="axis")
+        with self.assertRaises(TeleReadError):  # discrepancy must be named
+            self.svc.peer_review("C1", reviewer="r2", day=1, score=3)
+        with self.assertRaises(TeleReadError):  # uncredentialed reviewer
+            self.svc.peer_review("C1", reviewer="ghost", day=1, score=1)
+        with self.assertRaises(TeleReadError):  # bogus direction
+            self.svc.peer_review("C1", reviewer="r2", day=1, score=3,
+                                 discrepancy="axis", direction="sideways")
+        out = self.svc.peer_review("C1", reviewer="r2", day=1, score=3,
+                                   discrepancy="axis", direction="undercall")
+        self.assertFalse(out["agree"])
+        self.assertTrue(out["clinically_significant"])
+        self.assertEqual(out["radpeer"], "radpeer@1.0.0")
+        dr = self.svc.discrepancy_rate()
+        self.assertEqual(dr["disagreements"], 1)
+        self.assertEqual(dr["clinically_significant"], 1)
+        self.assertEqual(dr["score_distribution"][3], 1)
 
     def test_seam_only_verified(self):
         self.svc.assign("C1", day=0, prefer="r1")

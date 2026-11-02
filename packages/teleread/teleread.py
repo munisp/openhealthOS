@@ -22,6 +22,41 @@ class TeleReadError(Exception):
     pass
 
 
+# RADPEER-shaped peer-review scoring — versioned data, because a
+# peer-review programme without standardized semantics records
+# anecdotes, not quality.
+RADPEER_VERSION = "radpeer@1.0.0"
+# score -> (label, clinically_significant)
+RADPEER_SCORES = {1: ("concur", False),
+                  2: ("discrepancy-minor", False),
+                  3: ("discrepancy-major", True),
+                  4: ("discrepancy-major-new-finding", True)}
+RADPEER_DIRECTIONS = ("overcall", "undercall")
+
+
+def validate_radpeer(score, discrepancy, direction, err=TeleReadError):
+    """Fail-closed RADPEER validation; returns the normalized entry."""
+    if score not in RADPEER_SCORES:
+        raise err(f"unknown RADPEER score: {score} — the scale is 1-4 "
+                  "or it is not peer review")
+    label, significant = RADPEER_SCORES[score]
+    if score == 1:
+        if discrepancy:
+            raise err("a concordant read names no discrepancy")
+        if direction:
+            raise err("a concordant read has no direction")
+    else:
+        if not discrepancy:
+            raise err("a discrepancy score without a named difference "
+                      "is gossip, not review")
+        if direction and direction not in RADPEER_DIRECTIONS:
+            raise err(f"unknown direction: {direction}")
+    return {"score": score, "label": label,
+            "clinically_significant": significant,
+            "agree": score == 1, "discrepancy": discrepancy,
+            "direction": direction, "radpeer": RADPEER_VERSION}
+
+
 class DomainConfig:
     """What makes a domain a domain: scopes, critical findings, SLAs,
     artifact kinds. Everything else is the engine."""
@@ -275,29 +310,44 @@ class ReadingService:
                 "note": "means ship with n; an average without a "
                         "denominator is a fiction"}
 
-    # ---- peer review ----
-    def peer_review(self, case_id, *, reviewer, day, agree,
-                    discrepancy=None):
+    # ---- peer review (RADPEER-scored) ----
+    def peer_review(self, case_id, *, reviewer, day, score,
+                    discrepancy=None, direction=None):
         r = self._report(case_id)
         if r["state"] not in ("verified", "addended"):
             raise TeleReadError("peer review applies to verified reports")
         if reviewer == r["reader"]:
             raise TeleReadError("no self peer review")
-        if not agree and not discrepancy:
+        if not self.readers.credentialed(reviewer, day):
             raise TeleReadError(
-                "disagreement requires a named discrepancy")
+                "review by the uncredentialed is not peer review")
+        scope = self._case(case_id).get("scope")
+        if scope and not self.readers.has_scope(reviewer, scope):
+            raise TeleReadError(
+                f"reviewer lacks scope '{scope}' — a peer is a peer in "
+                "the same craft")
         entry = {"case_id": case_id, "reviewer": reviewer, "day": day,
-                 "agree": bool(agree), "discrepancy": discrepancy}
+                 **validate_radpeer(score, discrepancy, direction)}
         r.setdefault("peer_reviews", []).append(entry)
         return dict(entry)
 
     def discrepancy_rate(self):
         prs = [pr for r in self.reports.values()
                for pr in r.get("peer_reviews", [])]
+        dist = {s: 0 for s in RADPEER_SCORES}
+        for pr in prs:
+            if pr.get("score") in dist:
+                dist[pr["score"]] += 1
         return {"reviewed": len(prs),
-                "disagreements": sum(1 for pr in prs if not pr["agree"]),
+                "disagreements": sum(1 for pr in prs
+                                     if not pr.get("agree", True)),
+                "clinically_significant": sum(
+                    1 for pr in prs if pr.get("clinically_significant")),
+                "score_distribution": dist,
+                "radpeer": RADPEER_VERSION,
                 "note": "discrepancy rate = disagreements/reviewed; "
-                        "both shown"}
+                        "both shown; score 3-4 are the ones that change "
+                        "management"}
 
     # ---- transfer: the hash is the contract ----
     def transfer_case(self, case_id, *, destination, day, release_id,

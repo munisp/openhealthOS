@@ -16,6 +16,8 @@ one operational arc across NINE packages, each hand-off a public seam:
   16:00  cryo tank drifts warm                → ticket names WHOSE embryos
   17:30  fundus photo: ungradable = failed screen; two graders dispute,
          a third pair of eyes arbitrates → referral + recall (gap #8)
+  18:00  RADPEER-scored peer review (self-review refused) lands on the
+         reader's scorecard, denominators attached (gap #9)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -26,7 +28,8 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
-            "teleicu", "mdt", "serial", "duelgrade", "drscreen"):
+            "teleicu", "mdt", "serial", "duelgrade", "drscreen",
+            "scorecard"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -69,6 +72,8 @@ def run_connected_day():
                      ("dr-senior", "MDCN-G3")):
         readers.register(rid, licence_id=lic, licence_expiry_day=400,
                          scopes=("dr-grader",))
+    readers.register("rad-peer", licence_id="MDCN-R3",
+                     licence_expiry_day=400, scopes=("chest",))
 
     radiology = ReadingService(
         DomainConfig("radiology", scopes=("chest",),
@@ -313,7 +318,33 @@ def run_connected_day():
     assert drs.recall["p-dm"]["interval_months"] == 1
     log["duel_arbitrated"] = arb["final_grade"]
 
-    log["seams_proven"] = 10
+    # ---- 18:00 RADPEER peer review feeds the scorecard (gap #9) ----
+    from scorecard import clinician_card
+    radiology.draft_report("CX-1", reader_id="rad-on",
+                           findings="small apical pneumothorax",
+                           impression="pneumothorax, small", day=0,
+                           template_version="cxr-v2")
+    radiology.verify_report("CX-1", reader_id="rad-on", day=0)
+    # a self-review is refused; a cross-craft review is refused; a
+    # scored peer review lands
+    try:
+        radiology.peer_review("CX-1", reviewer="rad-on", day=1, score=1)
+        raise AssertionError("self peer review must refuse")
+    except TeleReadError:
+        pass
+    pr = radiology.peer_review("CX-1", reviewer="rad-peer", day=1,
+                               score=2, discrepancy="size undercalled",
+                               direction="undercall")
+    assert pr["radpeer"] == "radpeer@1.0.0" and not pr["agree"], pr
+    card = clinician_card(radiology, "rad-on", as_of=1,
+                          qa=drs.qa, duel=drs.grading)
+    assert card["turnaround"]["stat"]["n"] == 1, card
+    assert card["peer_review"]["reviews_of_my_reports"] == 1, card
+    assert card["peer_review"]["score_distribution"][2] == 1, card
+    assert card["capture_qa"]["n"] == 0  # rad-on shot nothing: honest zero
+    log["scorecard_peer_review"] = True
+
+    log["seams_proven"] = 11
     return log
 
 

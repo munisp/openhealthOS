@@ -41,6 +41,10 @@ CRITICAL_FINDINGS = ("pneumothorax", "intracranial-haemorrhage",
 REPORT_STATES = ("draft", "verified", "addended")
 
 
+from teleread import (RADPEER_SCORES, RADPEER_VERSION,  # noqa: E402
+                      validate_radpeer)
+
+
 class RadiologyError(Exception):
     pass
 
@@ -255,18 +259,26 @@ class RadiologyWorklist:
                 "note": "means ship with n; an average without a "
                         "denominator is a fiction"}
 
-    # ---- 7. peer review ----
-    def peer_review(self, study_uid, *, reviewer, day, agree,
-                    discrepancy=None):
+    # ---- 7. peer review (RADPEER-scored) ----
+    def peer_review(self, study_uid, *, reviewer, day, score,
+                    discrepancy=None, direction=None):
         r = self._report(study_uid)
         if r["state"] not in ("verified", "addended"):
             raise RadiologyError("peer review applies to verified reports")
         if reviewer == r["radiologist"]:
             raise RadiologyError("no self peer review")
-        if not agree and not discrepancy:
-            raise RadiologyError("disagreement requires a named discrepancy")
+        if not self.reg.credentialed(reviewer, day):
+            raise RadiologyError(
+                "review by the uncredentialed is not peer review")
+        sub = self.tasks[study_uid].get("subspecialty")
+        if sub and sub not in self.reg.radiologists.get(
+                reviewer, {}).get("subspecialties", []):
+            raise RadiologyError(
+                f"reviewer lacks subspecialty '{sub}' — a peer is a "
+                "peer in the same craft")
         entry = {"study_uid": study_uid, "reviewer": reviewer, "day": day,
-                 "agree": bool(agree), "discrepancy": discrepancy}
+                 **validate_radpeer(score, discrepancy, direction,
+                                    err=RadiologyError)}
         r.setdefault("peer_reviews", []).append(entry)
         return dict(entry)
 
@@ -275,10 +287,20 @@ class RadiologyWorklist:
                     for r in self.reports.values()
                     for pr in r.get("peer_reviews", [])]
         n = len(reviewed)
-        disagree = sum(1 for _, pr in reviewed if not pr["agree"])
+        disagree = sum(1 for _, pr in reviewed if not pr.get("agree", True))
+        dist = {s: 0 for s in RADPEER_SCORES}
+        for _, pr in reviewed:
+            if pr.get("score") in dist:
+                dist[pr["score"]] += 1
         return {"reviewed": n, "disagreements": disagree,
+                "clinically_significant": sum(
+                    1 for _, pr in reviewed
+                    if pr.get("clinically_significant")),
+                "score_distribution": dist,
+                "radpeer": RADPEER_VERSION,
                 "note": "discrepancy rate = disagreements/reviewed; "
-                        "both shown"}
+                        "both shown; score 3-4 are the ones that change "
+                        "management"}
 
     # ---- 8. cross-facility transfer ----
     def transfer_study(self, study_uid, *, destination, day,

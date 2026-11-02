@@ -3,6 +3,8 @@ import sys
 import unittest
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..",
+                                "teleread"))
 from radiology import (RadiologistRegistry, RadiologyWorklist,
                        RadiologyError)
 
@@ -16,6 +18,9 @@ class TestRadiology(unittest.TestCase):
         self.reg.register("rad-2", licence_id="MDCN-2",
                           licence_expiry_day=400,
                           subspecialties=("neuro",))
+        self.reg.register("rad-4", licence_id="MDCN-4",
+                          licence_expiry_day=400,
+                          subspecialties=("chest",))
         self.reg.register("rad-old", licence_id="MDCN-9",
                           licence_expiry_day=10)
         self.wl = RadiologyWorklist(self.reg)
@@ -113,15 +118,24 @@ class TestRadiology(unittest.TestCase):
                              impression="i", day=0,
                              template_version="chest-ct-v3")
         self.wl.verify_report("S1", rad_id="rad-1", day=0)
-        with self.assertRaises(RadiologyError):
-            self.wl.peer_review("S1", reviewer="rad-1", day=1, agree=True)
-        with self.assertRaises(RadiologyError):
-            self.wl.peer_review("S1", reviewer="rad-2", day=1,
-                                agree=False, discrepancy=None)
-        self.wl.peer_review("S1", reviewer="rad-2", day=1, agree=False,
-                            discrepancy="missed apical cap")
+        with self.assertRaises(RadiologyError):  # no self review
+            self.wl.peer_review("S1", reviewer="rad-1", day=1, score=1)
+        with self.assertRaises(RadiologyError):  # cross-craft review
+            self.wl.peer_review("S1", reviewer="rad-2", day=1, score=2,
+                                discrepancy="missed apical cap")
+        with self.assertRaises(RadiologyError):  # expired licence
+            self.wl.peer_review("S1", reviewer="rad-old", day=1, score=1)
+        with self.assertRaises(RadiologyError):  # off the 1-4 scale
+            self.wl.peer_review("S1", reviewer="rad-4", day=1, score=9)
+        with self.assertRaises(RadiologyError):  # discrepancy must be named
+            self.wl.peer_review("S1", reviewer="rad-4", day=1, score=2)
+        self.wl.peer_review("S1", reviewer="rad-4", day=1, score=3,
+                            discrepancy="missed apical cap",
+                            direction="undercall")
         dr = self.wl.discrepancy_rate()
         self.assertEqual((dr["reviewed"], dr["disagreements"]), (1, 1))
+        self.assertEqual(dr["clinically_significant"], 1)
+        self.assertEqual(dr["score_distribution"][3], 1)
 
     def test_transfer_gated_by_release_and_hash(self):
         with self.assertRaises(RadiologyError):
