@@ -9,18 +9,20 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
-            "steward", "pharmreview", "earlywarn"):
+            "steward", "pharmreview", "earlywarn", "serial"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
                        biopsy_to_path, case_pack, submit_with_pack,
                        cryo_watch, chair_plan, on_shift_readers,
                        assign_on_shift, escalate_events,
-                       timeouts_to_review, deterioration_to_icu)
+                       timeouts_to_review, deterioration_to_icu,
+                       order_with_priors)
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
-from teleread import ReaderRegistry, TeleReadError  # noqa: E402
+from teleread import (ReaderRegistry, TeleReadError, DomainConfig,  # noqa: E402
+                      ReadingService)
 from reportkit import ReportKit  # noqa: E402
 from pacs import StudyRegistry  # noqa: E402
 from fertility import FertilityClinic  # noqa: E402
@@ -463,6 +465,49 @@ class TestDeteriorationToICU(unittest.TestCase):
         out = deterioration_to_icu(self.ew, self.icu, facility="phc-1",
                                    day=1, opened={})
         self.assertEqual(out["opened"], [])
+
+
+class TestOrderWithPriors(unittest.TestCase):
+    def setUp(self):
+        self.pacs = StudyRegistry()
+        self.pacs.register_study(study_uid="1.1", accession="A1",
+                                 patient_id="p1", modality="CT",
+                                 exam_protocol="ct-head",
+                                 priority="routine", facility="f", day=0,
+                                 instances=30)
+        self.pacs.register_study(study_uid="1.2", accession="A2",
+                                 patient_id="p1", modality="CT",
+                                 exam_protocol="ct-head",
+                                 priority="routine", facility="f", day=30,
+                                 instances=30)
+        readers = ReaderRegistry()
+        readers.register("rad-1", licence_id="L1", licence_expiry_day=400,
+                         scopes=("chest",))
+        self.svc = ReadingService(
+            DomainConfig("radiology", scopes=("chest",),
+                         sla_hours={"stat": 2, "urgent": 8,
+                                    "routine": 24}), readers)
+
+    def test_priors_attached_at_order_time(self):
+        out = order_with_priors(self.svc, self.pacs, "CX-1",
+                                patient_id="p1", modality="CT",
+                                priority="routine",
+                                question="?progression", facility="f",
+                                referrer="mo-1", day=31)
+        self.assertEqual(out["priors"]["count"], 2)
+        self.assertEqual([s["study_uid"] for s in
+                          out["priors"]["studies"]], ["1.1", "1.2"])
+        self.assertEqual(self.svc.cases["CX-1"]["meta"]["priors"]
+                         ["study_uids"], ["1.1", "1.2"])
+
+    def test_no_priors_is_stated_not_silent(self):
+        out = order_with_priors(self.svc, self.pacs, "CX-2",
+                                patient_id="ghost", priority="stat",
+                                question="?pneumothorax", facility="f",
+                                referrer="mo-1", day=0)
+        self.assertEqual(out["priors"]["count"], 0)
+        self.assertEqual(self.svc.cases["CX-2"]["meta"]["priors"]
+                         ["count"], 0)
 
 
 if __name__ == "__main__":

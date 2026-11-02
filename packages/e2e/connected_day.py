@@ -24,6 +24,12 @@ one operational arc across NINE packages, each hand-off a public seam:
          breaches, loudly (gap #11)
   19:30  NEWS2 trajectory rises 1 → high; tele-ICU oversight opens
          exactly once (gap #12)
+  20:00  cervix HPV DNA primary: positive → triage → treat same visit;
+         HIV+ negative recalls at 36 months, not 60 (gap #13)
+  20:30  anomaly scan: 20 ISUOG planes accounted for; a 12w dating scan
+         refuses to masquerade (gap #14)
+  21:00  the priors chain is attached at ORDER time; zero priors is
+         stated, never silent (gap #15)
 
 Every refusal is asserted, not assumed. If a seam breaks, this day
 does not end.
@@ -36,7 +42,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "reportkit", "pacs", "fertility", "rota", "triggers", "vitals",
             "teleicu", "mdt", "serial", "duelgrade", "drscreen",
             "scorecard", "drugkb", "steward", "pharmreview",
-            "earlywarn"):
+            "earlywarn", "cervixscreen", "usguard"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -48,8 +54,11 @@ from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from drscreen import DRScreening, FUNDUS_CHECKS  # noqa: E402
 from pharmreview import PharmacyReview  # noqa: E402
 from steward import TimeoutClock  # noqa: E402
-from crosslink import timeouts_to_review, deterioration_to_icu  # noqa: E402
+from crosslink import (timeouts_to_review, deterioration_to_icu,  # noqa: E402
+                       order_with_priors)
 from earlywarn import EarlyWarner  # noqa: E402
+from cervixscreen import CervixScreening  # noqa: E402
+from usguard import UltrasoundQA, ANOMALY_PLANES  # noqa: E402
 from telepath import PathologyService  # noqa: E402
 from teleread import DomainConfig, ReaderRegistry, ReadingService, TeleReadError  # noqa: E402
 from reportkit import ReportKit  # noqa: E402
@@ -87,6 +96,10 @@ def run_connected_day():
                      licence_expiry_day=400, scopes=("chest",))
     readers.register("pharm-1", licence_id="PCN-1",
                      licence_expiry_day=400, scopes=("clinical-pharmacist",))
+    readers.register("cervix-1", licence_id="MDCN-C1",
+                     licence_expiry_day=400, scopes=("cervix-reviewer",))
+    readers.register("us-1", licence_id="MDCN-U1",
+                     licence_expiry_day=400, scopes=("us-overreader",))
 
     radiology = ReadingService(
         DomainConfig("radiology", scopes=("chest",),
@@ -443,7 +456,77 @@ def run_connected_day():
     assert again["opened"] == []  # a rising trend is not a second case
     log["news2_icu_case"] = icu_out["opened"][0]
 
-    log["seams_proven"] = 14
+    # ---- 20:00 cervix: HPV DNA primary, treat before she leaves (gap #13)
+    cervix = CervixScreening(readers)
+    cervix.screen("p-cx1", facility="phc-1", screener="nurse-2", day=0,
+                  modality="hpv-dna", hiv_positive=True)
+    cervix.record_hpv("p-cx1", result="positive", day=0)
+    cervix.triage("p-cx1", method="via", day=0)
+    cervix.record_via("p-cx1", result="positive", day=0)
+    tx = cervix.treat("p-cx1", method="thermal-ablation", day=0)
+    assert tx["treatment"]["same_visit"] is True, tx
+    # HPV-negative WITH HIV: 36-month recall, not the 60 of the general
+    # population — immunosuppression shortens the interval
+    cervix.screen("p-cx2", facility="phc-1", screener="nurse-2", day=0,
+                  modality="hpv-dna", hiv_positive=True)
+    neg = cervix.record_hpv("p-cx2", result="negative", day=0)
+    assert neg["recall"]["interval_months"] == 36, neg["recall"]
+    assert neg["recall"]["due_day"] == 0 + 30 * 36
+    log["hpv_same_visit_treated"] = True
+    log["hpv_hiv_recall_months"] = neg["recall"]["interval_months"]
+
+    # ---- 20:30 anomaly scan: 20 planes accounted for, gaps named (#14)
+    usg = UltrasoundQA(readers)
+    usg.register_scan("US-A1", patient_id="p-obs1", sonographer="sono-1",
+                      facility="phc-1", gestational_weeks=21,
+                      image_ref="us://a1", day=0)
+    planes = {p: "adequate" for p in ANOMALY_PLANES}
+    planes["three-vessel-trachea"] = "not-visualized"
+    chk = usg.record_anomaly_checklist("US-A1", planes=planes, day=0,
+                                       by="sono-1")
+    assert chk["complete"] is False
+    assert chk["gaps"] == ["three-vessel-trachea"], chk
+    inc = usg.incomplete_anomaly_scans()
+    assert [s["scan_id"] for s in inc] == ["US-A1"], inc
+    # a 12w dating scan must not masquerade as the anomaly scan
+    usg.register_scan("US-A2", patient_id="p-obs2", sonographer="sono-1",
+                      facility="phc-1", gestational_weeks=12,
+                      image_ref="us://a2", day=0)
+    try:
+        usg.record_anomaly_checklist(
+            "US-A2", planes={p: "adequate" for p in ANOMALY_PLANES},
+            day=0, by="sono-1")
+        raise AssertionError("12w scan must refuse the anomaly protocol")
+    except TeleReadError:
+        log["anomaly_ga_gate_refused"] = True
+    log["anomaly_incomplete_scan"] = inc[0]["scan_id"]
+
+    # ---- 21:00 the priors chain rides the order, not memory (gap #15)
+    pacs_svc.register_study(study_uid="2.1", accession="B1",
+                            patient_id="p-ward2", modality="CT",
+                            exam_protocol="ct-chest", priority="routine",
+                            facility="phc-1", day=0, instances=40)
+    pacs_svc.register_study(study_uid="2.2", accession="B2",
+                            patient_id="p-ward2", modality="CT",
+                            exam_protocol="ct-chest", priority="routine",
+                            facility="phc-1", day=1, instances=42)
+    prio = order_with_priors(radiology, pacs_svc, "CX-9",
+                             patient_id="p-ward2", modality="CT",
+                             priority="urgent", question="?worsening",
+                             facility="phc-1", referrer="mo-1", day=2,
+                             scope="chest")
+    assert prio["priors"]["count"] == 2, prio["priors"]
+    assert radiology.cases["CX-9"]["meta"]["priors"]["study_uids"] == \
+        ["2.1", "2.2"]
+    # zero priors is stated, never silently absent
+    ghost = order_with_priors(radiology, pacs_svc, "CX-10",
+                              patient_id="p-new", priority="stat",
+                              question="?pneumothorax", facility="phc-1",
+                              referrer="mo-1", day=2, scope="chest")
+    assert ghost["priors"]["count"] == 0
+    log["priors_attached"] = prio["priors"]["count"]
+
+    log["seams_proven"] = 17
     return log
 
 

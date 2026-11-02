@@ -13,6 +13,7 @@ shaped so that silence is a finding, never a default.
     7. escalate_events    trigger events   → tele-ICU oversight
     8. timeouts_to_review steward timeout  → pharmacy review queue
     9. deterioration_to_icu NEWS2 trend   → tele-ICU oversight
+   10. order_with_priors  pacs priors     → teleread worklist item
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -413,3 +414,23 @@ def deterioration_to_icu(warner, icu, *, facility, day, threshold=5,
     return {"opened": opened_now, "already_open": already,
             "note": "the trajectory is the finding — a rising score "
                     "gets a doctor, not a larger font"}
+
+
+# ---------------------------------------------------------------- 10.
+# pacs → teleread: priors ride the worklist item from birth.
+def order_with_priors(reading_svc, pacs_svc, case_id, *, patient_id,
+                      modality=None, **order_kwargs):
+    """Order a read with the patient's priors chain attached at ORDER
+    time — not when the reader remembers to ask. A worklist item that
+    hides the priors sends the reader in with one eye closed; zero
+    priors is stated honestly, never silently absent."""
+    from serial import priors
+    chain = priors(pacs_svc, patient_id, modality=modality)
+    meta = dict(order_kwargs.pop("meta", None) or {})
+    meta["patient_id"] = patient_id
+    meta["priors"] = {"count": chain["count"],
+                      "study_uids": [s["study_uid"]
+                                     for s in chain["studies"]],
+                      "pulled_at_order": True}
+    out = reading_svc.order(case_id, meta=meta, **order_kwargs)
+    return dict(out, priors=chain)

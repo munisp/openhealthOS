@@ -51,5 +51,86 @@ class TestCervix(unittest.TestCase):
         self.assertIsNotNone(out["overread_case"])
 
 
+class TestHPVPathway(unittest.TestCase):
+    def setUp(self):
+        r = ReaderRegistry()
+        r.register("cx-1", licence_id="C1", licence_expiry_day=400,
+                   scopes=("cervix-reviewer",))
+        self.svc = CervixScreening(r)
+        self.svc.screen("w1", facility="f", screener="n1", day=0,
+                        modality="hpv-dna")
+        self.svc.screen("w2", facility="f", screener="n1", day=0,
+                        modality="hpv-dna", hiv_positive=True)
+        self.svc.screen("w3", facility="f", screener="n1", day=0,
+                        modality="via")
+
+    def test_hpv_only_on_hpv_pathway(self):
+        with self.assertRaises(TeleReadError):
+            self.svc.record_hpv("w3", result="negative", day=1)
+        with self.assertRaises(TeleReadError):
+            self.svc.record_hpv("w1", result="borderline", day=1)
+
+    def test_negative_books_recall_by_hiv_status(self):
+        out = self.svc.record_hpv("w1", result="negative", day=1)
+        self.assertEqual(out["recall"]["interval_months"], 60)
+        self.assertEqual(out["recall"]["due_day"], 1 + 1800)
+        out2 = self.svc.record_hpv("w2", result="negative", day=1)
+        self.assertEqual(out2["recall"]["interval_months"], 36)
+
+    def test_valid_result_stands_invalid_retests(self):
+        self.svc.record_hpv("w1", result="invalid", day=1)
+        self.assertTrue(self.svc.cascade["w1"]["awaiting_retest"])
+        self.svc.record_hpv("w1", result="negative", day=3)  # retest ok
+        self.assertFalse(self.svc.cascade["w1"]["awaiting_retest"])
+        with self.assertRaises(TeleReadError):  # a valid result stands
+            self.svc.record_hpv("w1", result="positive", day=4)
+
+    def test_positive_needs_triage_then_via_or_colposcopy(self):
+        self.svc.record_hpv("w1", result="positive", day=1)
+        with self.assertRaises(TeleReadError):  # treat without triage+via
+            self.svc.treat("w1", method="thermal-ablation", day=1)
+        with self.assertRaises(TeleReadError):
+            self.svc.triage("w1", method="guesswork", day=1)
+        self.svc.triage("w1", method="via", day=2)
+        self.svc.record_via("w1", result="positive", day=2)
+        out = self.svc.treat("w1", method="thermal-ablation", day=2)
+        self.assertTrue(out["treatment"]["same_visit"])
+        # w2: HPV+ triaged to colposcopy → referral lawful
+        self.svc.record_hpv("w2", result="positive", day=1)
+        self.svc.triage("w2", method="colposcopy", day=2)
+        with self.assertRaises(TeleReadError):  # no destination
+            self.svc.refer("w2", destination="", day=2,
+                           reason="hpv16+ colpo")
+        ref = self.svc.refer("w2", destination="lagos-teaching", day=2,
+                             reason="hpv-positive, colposcopy triage")
+        self.assertTrue(ref["referred"])
+
+    def test_hpv_positive_via_negative_recalled_12m(self):
+        self.svc.record_hpv("w1", result="positive", day=1)
+        self.svc.triage("w1", method="via", day=2)
+        self.svc.record_via("w1", result="negative", day=2)
+        rec = self.svc.cascade["w1"]["recall"]
+        self.assertEqual(rec["interval_months"], 12)
+        due = self.svc.hpv_recall_due(as_of=2 + 360)
+        self.assertEqual(due[0]["patient_id"], "w1")
+
+    def test_open_loops_catch_untriaged_positive_and_invalid(self):
+        self.svc.record_hpv("w1", result="positive", day=1)
+        self.svc.record_hpv("w2", result="invalid", day=2)
+        loops = self.svc.open_loops(as_of=20)
+        kinds = {l["patient_id"]: l["result"] for l in loops}
+        self.assertEqual(kinds["w1"], "hpv-positive-awaiting-triage")
+        self.assertEqual(kinds["w2"], "hpv-invalid-awaiting-retest")
+        self.assertEqual(loops[0]["patient_id"], "w1")  # older first
+
+    def test_program_stats_hpv_denominators(self):
+        self.svc.record_hpv("w1", result="positive", day=1)
+        self.svc.record_hpv("w2", result="negative", day=1)
+        stats = self.svc.program_stats()
+        self.assertEqual(stats["hpv_tested"], 2)
+        self.assertEqual(stats["hpv_positive"], 1)
+        self.assertEqual(stats["hpv_positivity_rate"], 0.5)
+
+
 if __name__ == "__main__":
     unittest.main()

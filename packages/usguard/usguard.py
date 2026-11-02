@@ -25,6 +25,30 @@ CONFIG = DomainConfig(
     sla_hours={"stat": 4, "urgent": 24, "routine": 168})
 DEFAULT_SAMPLE_PERCENT = 10
 
+# ---- anomaly-scan protocol checklist (ISUOG 20+2-shaped) ----
+# Versioned data: a mid-trimester scan that never looked at the outflow
+# tracts is not an anomaly scan, it is a picture session.
+ANOMALY_PROTOCOL_VERSION = "isuog-20-plus-2-shaped@1.0.0"
+ANOMALY_PLANES = (
+    # head & brain
+    "transthalamic", "transventricular", "transcerebellar",
+    # face
+    "face-coronal-lips", "orbits",
+    # chest & heart
+    "four-chamber", "lvot", "rvot", "three-vessel-trachea",
+    # abdomen
+    "abdominal-situs-stomach", "cord-insertion", "kidneys", "bladder",
+    # spine
+    "spine-longitudinal", "spine-axial",
+    # limbs
+    "upper-limbs", "lower-limbs",
+    # environment
+    "placenta", "amniotic-fluid", "cervix",
+)
+PLANE_STATES = ("adequate", "inadequate", "not-visualized")
+ANOMALY_GA_WINDOW = (18, 24)   # weeks; outside this it is not the
+                               # anomaly scan and must not masquerade
+
 
 class UltrasoundQA:
     def __init__(self, readers, sample_percent=DEFAULT_SAMPLE_PERCENT):
@@ -94,6 +118,74 @@ class UltrasoundQA:
         return {"by_sonographer": by,
                 "note": "concordance = agreed/n per sonographer; "
                         "feedback data, never a league table"}
+
+    # ---- anomaly-scan protocol completeness ----
+    def record_anomaly_checklist(self, scan_id, *, planes, day, by):
+        """The ISUOG-shaped 20-plane protocol, per-plane adequacy.
+        Every plane accounted for — 'did not look' is not 'adequate'.
+        An incomplete scan is not a failed patient: it earns a
+        completion recall, loudly."""
+        s = self._scan(scan_id)
+        if not (ANOMALY_GA_WINDOW[0] <= s["ga_weeks"]
+                <= ANOMALY_GA_WINDOW[1]):
+            raise TeleReadError(
+                f"anomaly protocol applies at "
+                f"{ANOMALY_GA_WINDOW[0]}-{ANOMALY_GA_WINDOW[1]}w; this "
+                f"scan is {s['ga_weeks']}w — do not masquerade a dating "
+                "scan as an anomaly scan")
+        if not by:
+            raise TeleReadError("unsigned checklists are no checklist")
+        if "checklist" in s:
+            raise TeleReadError("checklist already recorded — the "
+                                "completion scan is a NEW scan, not a "
+                                "rewrite")
+        unknown = set(planes) - set(ANOMALY_PLANES)
+        if unknown:
+            raise TeleReadError(f"unknown planes: {sorted(unknown)}")
+        bad_states = {k: v for k, v in planes.items()
+                      if v not in PLANE_STATES}
+        if bad_states:
+            raise TeleReadError(f"bad plane states: {bad_states}")
+        missing = set(ANOMALY_PLANES) - set(planes)
+        if missing:
+            raise TeleReadError(
+                f"checklist incomplete: {sorted(missing)} never "
+                "assessed — an unassessed plane is not an adequate one")
+        gaps = sorted(p for p in ANOMALY_PLANES
+                      if planes[p] != "adequate")
+        s["checklist"] = {"planes": dict(planes), "day": day, "by": by,
+                          "gaps": gaps, "complete": not gaps,
+                          "protocol": ANOMALY_PROTOCOL_VERSION}
+        return dict(s["checklist"])
+
+    def incomplete_anomaly_scans(self):
+        """Scans with plane gaps — completion recall, oldest first."""
+        out = [{"scan_id": sid, "patient_id": s["patient_id"],
+                "sonographer": s["sonographer"], "day": s["day"],
+                "gaps": s["checklist"]["gaps"]}
+               for sid, s in self.scans.items()
+               if s.get("checklist") and not s["checklist"]["complete"]]
+        return sorted(out, key=lambda x: x["day"])
+
+    def anomaly_report(self):
+        """Protocol completeness with denominators — and per-plane gap
+        counts, because the plane nobody gets right is a training
+        finding, not a secret."""
+        done = [s["checklist"] for s in self.scans.values()
+                if s.get("checklist")]
+        per_plane = {p: 0 for p in ANOMALY_PLANES}
+        for c in done:
+            for g in c["gaps"]:
+                per_plane[g] += 1
+        complete = sum(1 for c in done if c["complete"])
+        return {"checklists": len(done), "complete": complete,
+                "completeness_rate": (round(complete / len(done), 3)
+                                      if done else None),
+                "per_plane_gaps": {p: n for p, n in per_plane.items()
+                                   if n},
+                "protocol": ANOMALY_PROTOCOL_VERSION,
+                "note": "the denominator is checklists recorded; a "
+                        "plane's gap count is a training signal"}
 
     def _scan(self, sid):
         if sid not in self.scans:
