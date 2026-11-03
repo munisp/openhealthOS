@@ -167,3 +167,8 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(log["device_identity_crosswalk_proven"])
         self.assertTrue(log["unit_conversion_proven"])
         self.assertTrue(log["astm_lane_proven"])
+        self.assertTrue(log["spool_survives_restart"])
+        self.assertTrue(log["plaintext_mllp_refused"])
+        self.assertTrue(log["order_download_proven"])
+        self.assertTrue(log["serial_lane_proven"])
+        self.assertTrue(log["feed_oversight_seam"].startswith("feed-"))

@@ -53,6 +53,29 @@ def unframe(buffer: bytes):
     return buffer[1:end].decode("utf-8"), buffer[end + 2:]
 
 
+def _is_loopback(host):
+    return host in ("127.0.0.1", "::1", "localhost")
+
+
+def check_tls_posture(host, tls_context, *, allow_plaintext=False,
+                      plaintext_reason=""):
+    """Plaintext MLLP on a routable interface is patient data on the
+    wire in cleartext. Loopback is fine (same box, same trust); anything
+    else needs TLS or an explicit, reasoned exception — never a shrug."""
+    if tls_context is not None or _is_loopback(host):
+        return "tls" if tls_context is not None else "loopback-plaintext"
+    if not allow_plaintext:
+        raise MLLPError(
+            f"plaintext MLLP to {host} — patient results in cleartext "
+            "on a routable network. Supply a TLS context, or pass "
+            "allow_plaintext=True with a reason and accept the audit "
+            "entry that follows")
+    if not plaintext_reason:
+        raise MLLPError("a plaintext exception without a reason is a "
+                        "shrug — name WHY this segment is trusted")
+    return f"plaintext-exception:{plaintext_reason}"
+
+
 class ConnectionRegistry:
     """Who is actually on the wire. Append-only connect/disconnect
     audit — a connection without a record is a rumour."""
@@ -115,10 +138,22 @@ class MLLPListener(socketserver.ThreadingTCPServer):
     allow_reuse_address = True
     daemon_threads = True
 
-    def __init__(self, host, port, dispatch, registry=None):
+    def __init__(self, host, port, dispatch, registry=None,
+                 tls_context=None, allow_plaintext=False,
+                 plaintext_reason=""):
         self.dispatch = dispatch
         self.registry = registry or ConnectionRegistry()
+        self.tls_context = tls_context
+        self.tls_posture = check_tls_posture(
+            host, tls_context, allow_plaintext=allow_plaintext,
+            plaintext_reason=plaintext_reason)
         super().__init__((host, port), _Handler)
+
+    def get_request(self):
+        sock, addr = super().get_request()
+        if self.tls_context is not None:
+            sock = self.tls_context.wrap_socket(sock, server_side=True)
+        return sock, addr
 
     def serve_in_thread(self):
         t = threading.Thread(target=self.serve_forever, daemon=True)
@@ -126,10 +161,16 @@ class MLLPListener(socketserver.ThreadingTCPServer):
         return t
 
 
-def send(host, port, message, *, timeout=10.0):
+def send(host, port, message, *, timeout=10.0, tls_context=None,
+         allow_plaintext=False, plaintext_reason=""):
     """Client side: frame, send, wait for the ACK frame. A send without
-    an ACK is a message into the void — raise, don't assume."""
-    with socket.create_connection((host, port), timeout=timeout) as s:
+    an ACK is a message into the void — raise, don't assume. TLS
+    posture is checked before a single byte moves."""
+    check_tls_posture(host, tls_context, allow_plaintext=allow_plaintext,
+                      plaintext_reason=plaintext_reason)
+    with socket.create_connection((host, port), timeout=timeout) as raw:
+        s = (tls_context.wrap_socket(raw, server_hostname=host)
+             if tls_context is not None else raw)
         s.sendall(frame(message))
         buffer = b""
         deadline = datetime.datetime.now() + datetime.timedelta(

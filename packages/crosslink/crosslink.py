@@ -18,6 +18,7 @@ shaped so that silence is a finding, never a default.
    16. verify_with_pixels viewerlaunch   → teleread verify gate
    17. imported_case_signal travelpass   → surveillance syndromes
    18. poe_entry_screen   poe_screen     → travelpass pass record
+   19. feed_health_to_oversight devicelink → teleicu oversight
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -783,3 +784,54 @@ def clear_public_health_hold(registry, traveler_id, *, day, by,
          "clearance_ref": clearance_ref})
     return {"traveler_id": traveler_id, "hold_cleared_day": day,
             "clearance_ref": clearance_ref}
+
+
+# ---------------------------------------------------------------- 19.
+# devicelink → teleicu: a silent or quarantined device feed is a
+# clinical event. A dialysis unit whose machines stopped reporting is
+# not an IT ticket — it is patients being treated unmonitored. Same
+# idempotent-open discipline as escalate_events: the second bell is
+# not a second case.
+
+def feed_health_to_oversight(health, icu, *, facility, day, opened):
+    """Stale and quarantined feeds open oversight; live and honestly
+    unmonitored feeds do not page anyone.
+
+    `health` is a FeedHealth (or anything with .report(as_of) and a
+    datetime-free report shape); `opened` is caller-owned
+    (feed_id → case_id) so repeat polls are idempotent."""
+    import datetime as _dt
+    as_of = _dt.datetime.now()
+    report = health.report(as_of) if hasattr(health, "report") \
+        else health
+    opened_now, already = [], []
+    for feed in report.get("feeds", []):
+        if feed["state"] not in ("stale", "quarantined"):
+            continue
+        fid = feed["session_id"]
+        if fid in opened:
+            already.append(opened[fid])
+            continue
+        severity = SEVERITY_TO_PRIORITY[
+            "critical" if feed["state"] == "quarantined" else "high"]
+        case_id = f"feed-{fid}"
+        icu.open_oversight(case_id, patient_id=f"device:{fid}",
+                           facility=facility,
+                           trigger_ref=f"feed:{feed['state']}",
+                           day=day, severity=severity)
+        opened[fid] = case_id
+        opened_now.append(case_id)
+    for fid in report.get("quarantined", []):
+        if fid in opened:
+            continue
+        case_id = f"feed-{fid}"
+        icu.open_oversight(case_id, patient_id=f"device:{fid}",
+                           facility=facility, trigger_ref="feed:"
+                           "quarantined", day=day,
+                           severity=SEVERITY_TO_PRIORITY["critical"])
+        opened[fid] = case_id
+        opened_now.append(case_id)
+    return {"opened": opened_now, "already_open": already,
+            "note": "a device that stops talking is a clinical event; "
+                    "the oversight ladder is the escalation, not an "
+                    "email to IT"}

@@ -1512,6 +1512,49 @@ def run_connected_day():
     assert parsed_astm["observations"][0]["code"] == "GLU"
     log["astm_lane_proven"] = True
 
+    # ---- 08:43 the production layer: durability, TLS posture, order
+    # download, and the feed-health escalation seam (seam 19)
+    import io as _io
+    import tempfile as _tmp
+    from orderdownload import build_orm, parse_orm
+    from persist import DurableResultStore, DurableSpool, Journal
+    from seriallane import read_session_from
+    from crosslink import feed_health_to_oversight
+    # durability: the spool survives a process restart
+    jdir = _tmp.mkdtemp()
+    spool_a = DurableSpool(Journal(f"{jdir}/spool.jsonl"))
+    spool_a.enqueue(lis["session_id"], "outbound", {"msg": "HD-10"})
+    spool_b = DurableSpool(Journal(f"{jdir}/spool.jsonl"))  # "restart"
+    assert len(spool_b.pending()) == 1
+    log["spool_survives_restart"] = True
+    # TLS posture: plaintext to a routable address refuses
+    plaintext_refused = False
+    try:
+        mllp.check_tls_posture("192.168.4.20", None)
+    except mllp.MLLPError:
+        plaintext_refused = True
+    assert plaintext_refused
+    log["plaintext_mllp_refused"] = True
+    # order download: STAT order to the bench, round-tripped
+    orm = build_orm(message_id="ORD-1", placer_order_number="PO-77",
+                    patient_id="p-ckd", test_code="CHEM7", priority="S",
+                    ordering_provider="dr-1")
+    assert parse_orm(orm)["priority"] == "S"
+    log["order_download_proven"] = True
+    # serial lane: session from a byte stream, noise counted
+    srec = read_session_from(_io.BytesIO(session.encode("latin-1")))
+    assert srec["observations"][0]["value"] == "95"
+    log["serial_lane_proven"] = True
+    # seam 19: the stale feed pages a human, once
+    icu19 = TeleICU(readers)
+    opened19 = {}
+    esc = feed_health_to_oversight(fh, icu19, facility="phc-1", day=1,
+                                   opened=opened19)
+    assert len(esc["opened"]) == 1
+    assert feed_health_to_oversight(fh, icu19, facility="phc-1", day=1,
+                                    opened=opened19)["opened"] == []
+    log["feed_oversight_seam"] = esc["opened"][0]
+
     # ---- 08:45 traveler medical pass: the border collects the fee,
     # the QR opens the record, the emergency never waits for the
     # invoice (new domain)
