@@ -131,3 +131,8 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(log["derivative_slides"], 4)
         self.assertTrue(log["reflex_off_menu_refused"])
         self.assertEqual(log["reflex_addended"], "PC-COLON")
+        self.assertTrue(log["holter_insufficient_refused"])
+        self.assertTrue(log["ecg_machine_edited"])
+        self.assertTrue(log["hbv_nonresponder_actioned"])
+        self.assertGreaterEqual(log["fert_registry_cycles"], 1)
+        self.assertEqual(log["lesion_change_flagged"], "L-9")

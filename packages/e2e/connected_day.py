@@ -106,6 +106,10 @@ from dictate import DictationService  # noqa: E402
 from teleecg import ECGService  # noqa: E402
 from staging import StagingRegistry  # noqa: E402
 from orders import OrderService  # noqa: E402
+from teleecg import HolterService, MachineEditTrail  # noqa: E402
+from nephrology import adequacy_from_labs, VaccinationBook  # noqa: E402
+from fertility import registry_return as fert_registry_return  # noqa: E402
+from telederm import LesionMap  # noqa: E402
 from telepath import (FrozenSectionLog, DerivativeInventory,  # noqa: E402
                       ReflexLog)
 from nephrology import DialysisUnit  # noqa: E402
@@ -1164,6 +1168,89 @@ def run_connected_day():
                      by="path-1", day=5)
     assert path.reading.reports["PC-COLON"]["state"] == "addended"
     log["reflex_addended"] = "PC-COLON"
+
+    # ---- 07:00 Holter: a 24h monitor with 3 usable hours is a
+    # repeat, not a negative; AF burden carries its denominator (P1)
+    holter = HolterService()
+    holter.start_monitor("HM-1", patient_id="p-palp", kind="holter-24h",
+                         device_id="ecg-h1", facility="phc-1", day=2)
+    holter.end_monitor("HM-1", day=3, usable_hours=22.5)
+    holter.annotate_episode("HM-1", kind="patient-symptom", day=3,
+                            minute=410, duration_s=30,
+                            note="palpitations climbing stairs")
+    ana = holter.record_analysis("HM-1", by="card-1", day=3,
+                                 total_beats=108400, min_hr=47,
+                                 avg_hr=74, max_hr=152,
+                                 af_burden_pct=6.3)
+    assert any("stroke-risk" in f for f in ana["flags"])
+    holter.start_monitor("HM-2", patient_id="p-palp2",
+                         kind="holter-24h", device_id="ecg-h1",
+                         facility="phc-1", day=2)
+    holter.end_monitor("HM-2", day=3, usable_hours=3.0)
+    try:
+        holter.record_analysis("HM-2", by="card-1", day=3,
+                               total_beats=15000, min_hr=50,
+                               avg_hr=65, max_hr=90)
+        raise RuntimeError("insufficient recording must refuse "
+                           "analysis")
+    except TeleReadError:
+        log["holter_insufficient_refused"] = True
+    assert holter.monitor_report()["analyzable_rate"] == {
+        "n": 1, "of": 2, "rate": 0.5}
+
+    # ---- 07:15 machine interpretation edit trail: the machine's read
+    # is baseline, the human's edit is the trust signal (P2)
+    trail = MachineEditTrail(ecg)
+    trail.record_machine_interpretation(
+        "T-77", text="Normal ECG", codes=["normal"],
+        sw_version="carto-v7.2")
+    final = trail.record_final_interpretation(
+        "T-77", text="Sinus rhythm, first-degree AV block",
+        codes=["sinus-rhythm", "first-degree-block"], by="card-1",
+        day=2)
+    assert final["edited"]
+    assert "normal" in final["codes_removed"]
+    log["ecg_machine_edited"] = True
+
+    # ---- 07:30 dialysis adequacy variants + vaccination series:
+    # named formulas, honest intervals, titres prove response (P1)
+    adq = adequacy_from_labs(pre_bun=90, post_bun=27, uf_liters=2.4,
+                             post_weight_kg=68, duration_min=240)
+    assert adq["spktv_daugirdas2"] >= 1.2
+    assert adq["flags"] == []
+    short = adequacy_from_labs(pre_bun=90, post_bun=45, uf_liters=1.5,
+                               post_weight_kg=68, duration_min=90)
+    assert short["flags"], "a 90-minute run must flag"
+    book = VaccinationBook(unit)
+    book.record_dose("p-ckd", "hbv", dose_number=1, day=0,
+                     by="nurse-1")
+    book.record_dose("p-ckd", "hbv", dose_number=2, day=30,
+                     by="nurse-1")
+    book.record_dose("p-ckd", "hbv", dose_number=3, day=180,
+                     by="nurse-1")
+    titre = book.record_titre("p-ckd", "hbv", titre_miu_ml=4.0,
+                              day=240)
+    assert not titre["responder"]
+    assert "repeat full series" in titre["action"]
+    log["hbv_nonresponder_actioned"] = True
+
+    # ---- 07:45 registry returns: the year in numbers, denominators
+    # attached (P1); lesion map: a changing mole flags (P1)
+    frr = fert_registry_return(clinic)
+    assert frr["cycles_started"] >= 1
+    log["fert_registry_cycles"] = frr["cycles_started"]
+    lm = LesionMap()
+    lm.enroll("p-mel", risk_tier="very-high", day=0, by="derm-1")
+    lm.map_lesion("p-mel", "L-9", zone="back-lower",
+                  image_ref="img://l9-0", day=0, by="derm-1",
+                  size_mm=5.0, colours=("brown",))
+    chg = lm.add_image("p-mel", "L-9", image_ref="img://l9-90", day=90,
+                       by="derm-1", size_mm=7.5,
+                       colours=("brown", "black"))
+    assert len(chg["flags"]) == 2
+    due = lm.surveillance_due(as_of=95)
+    assert due[0]["patient_id"] == "p-mel" and due[0]["days_overdue"] == 5
+    log["lesion_change_flagged"] = "L-9"
 
     log["seams_proven"] = 31
     return log

@@ -387,3 +387,52 @@ class TestSemenAnalysis(unittest.TestCase):
     def test_absence_is_not_normal(self):
         with self.assertRaises(FertilityError):
             self.c.semen_summary("C1")
+
+
+class TestRegistryReturn(unittest.TestCase):
+    def test_rates_with_denominators(self):
+        from fertility import registry_return
+        c = FertilityClinic("f1")
+        for cid, pa, pb, birth in (("CA", "a1", "b1", True),
+                                   ("CB", "a2", "b2", False)):
+            c.register_couple(cid, partner_a=pa, partner_b=pb, day=0)
+            for kind in ("cycle-treatment",):
+                c.grant_consent(cid, kind, method="signed", by=pa,
+                                day=0)
+                c.grant_consent(cid, kind, method="signed", by=pb,
+                                day=0)
+            c.start_cycle(f"{cid}-1", couple_id=cid,
+                          protocol_version="p-v1", day=1)
+            for st in ("stimulation", "triggered", "retrieval",
+                       "fertilization"):
+                c.advance(f"{cid}-1", st, day=2, by="dr-1")
+            c.fertilize(f"{cid}-1", method="ivf", n_embryos=1, day=3,
+                        embryologist="emb-1")
+            for st in ("culture", "transfer", "outcome-pending"):
+                c.advance(f"{cid}-1", st, day=4, by="dr-1")
+            c.close_cycle(f"{cid}-1", day=40, pregnancy_test=birth,
+                          clinical_pregnancy=birth, live_birth=birth,
+                          singleton=birth)
+        out = registry_return(c)
+        self.assertEqual(out["cycles_started"], 2)
+        self.assertEqual(out["retrievals"], {"n": 2, "of": 2,
+                                             "rate": 1.0})
+        self.assertEqual(out["live_births_per_cycle"]["rate"], 0.5)
+        self.assertEqual(out["live_births_per_transfer"]["rate"], 0.5)
+        self.assertEqual(out["cancelled_cycles"]["n"], 0)
+        self.assertEqual(out["version"], "sart-shaped@1.0.0")
+
+    def test_cancelled_cycles_are_data(self):
+        from fertility import registry_return
+        c = FertilityClinic("f1")
+        c.register_couple("CC", partner_a="a3", partner_b="b3", day=0)
+        c.grant_consent("CC", "cycle-treatment", method="signed",
+                        by="a3", day=0)
+        c.grant_consent("CC", "cycle-treatment", method="signed",
+                        by="b3", day=0)
+        c.start_cycle("CC-1", couple_id="CC", protocol_version="p-v1",
+                      day=1)
+        c.advance("CC-1", "stimulation", day=2, by="dr-1")
+        out = registry_return(c)
+        self.assertEqual(out["cancelled_cycles"]["n"], 1)
+        self.assertEqual(out["live_births_per_cycle"]["rate"], 0.0)

@@ -182,3 +182,139 @@ class TeleDerm:
                 "note": "the rate's denominator is attendances; the "
                         "breach count's denominator is every suspicion "
                         "ever raised"}
+
+
+# ------------------------------------------------------------------
+# Lesion mapping / total-body photography: melanoma surveillance is a
+# MAP, not a pile of case photos. Each tracked lesion has a body-map
+# zone, a baseline image, and serial images against it; a changing
+# lesion flags, and surveillance intervals are overdue-first.
+LESIONMAP_VERSION = "lesionmap@1.0.0"
+BODY_ZONES = (
+    "scalp", "face", "neck",
+    "chest", "abdomen", "back-upper", "back-lower",
+    "arm-left-upper", "arm-left-fore", "hand-left",
+    "arm-right-upper", "arm-right-fore", "hand-right",
+    "leg-left-thigh", "leg-left-calf", "foot-left",
+    "leg-right-thigh", "leg-right-calf", "foot-right",
+    "genital", "buttock",
+)
+RISK_TIERS = {"standard": 365, "high": 180, "very-high": 90}  # days
+CHANGE_FLAGS = {"size_growth_mm": 2.0, "new_colour": True,
+                "ulceration": True}
+
+
+class LesionMap:
+    """Per-patient body map for surveillance. Doctrine: an unmapped
+    lesion in a high-risk patient is a lesion nobody is watching;
+    a changed lesion is a flag, not a verdict; and the interval runs
+    from the last COMPLETE map, not from the last lucky photo."""
+
+    def __init__(self):
+        self.maps = {}       # patient_id -> {"tier":..., "last_map_day":...}
+        self.lesions = {}    # (patient_id, lesion_id) -> record
+
+    def enroll(self, patient_id, *, risk_tier, day, by):
+        if risk_tier not in RISK_TIERS:
+            raise TeleReadError(f"unknown risk tier: {risk_tier}")
+        if patient_id in self.maps:
+            raise TeleReadError(f"{patient_id} already mapped — "
+                                "re-mapping is a new map, not a "
+                                "rewrite")
+        self.maps[patient_id] = {"risk_tier": risk_tier,
+                                 "enrolled_day": day,
+                                 "last_map_day": day}
+        return dict(self.maps[patient_id])
+
+    def map_lesion(self, patient_id, lesion_id, *, zone, image_ref,
+                   day, by, size_mm=None, colours=()):
+        m = self._map(patient_id)
+        if not image_ref:
+            raise TeleReadError("a mapped lesion needs its baseline "
+                                "image — a pin without a photo is a "
+                                "rumour")
+        key = (patient_id, lesion_id)
+        if key in self.lesions:
+            raise TeleReadError(f"duplicate lesion: {lesion_id}")
+        if zone not in BODY_ZONES:
+            raise TeleReadError(f"unknown body zone: {zone} — the map "
+                                "vocabulary is versioned")
+        if size_mm is not None and not (0.1 <= size_mm <= 500):
+            raise TeleReadError(f"implausible lesion size: {size_mm}mm")
+        self.lesions[key] = {
+            "lesion_id": lesion_id, "zone": zone, "images": [
+                {"image_ref": image_ref, "day": day, "by": by,
+                 "size_mm": size_mm, "colours": tuple(colours)}]}
+        return dict(self.lesions[key])
+
+    def add_image(self, patient_id, lesion_id, *, image_ref, day, by,
+                  size_mm=None, colours=(), ulcerated=False):
+        """Serial image against the baseline. Change flags: growth
+        ≥2mm, a new colour, new ulceration — flags propose, the
+        dermatologist decides."""
+        key = (patient_id, lesion_id)
+        if key not in self.lesions:
+            raise TeleReadError(f"unmapped lesion: {lesion_id} — map "
+                                "it before trending it")
+        if not image_ref:
+            raise TeleReadError("no image — nothing to compare")
+        L = self.lesions[key]
+        base = L["images"][0]
+        flags = []
+        if size_mm is not None and base["size_mm"] is not None:
+            growth = size_mm - base["size_mm"]
+            if growth >= CHANGE_FLAGS["size_growth_mm"]:
+                flags.append(f"growth +{growth:.1f}mm from baseline "
+                             f"{base['size_mm']}mm")
+        new_colours = set(colours) - set(base["colours"])
+        if new_colours:
+            flags.append(f"new colour(s): {sorted(new_colours)}")
+        if ulcerated:
+            flags.append("ulceration")
+        L["images"].append({"image_ref": image_ref, "day": day,
+                            "by": by, "size_mm": size_mm,
+                            "colours": tuple(colours),
+                            "ulcerated": ulcerated, "flags": flags})
+        return {"lesion_id": lesion_id, "n_images": len(L["images"]),
+                "flags": flags}
+
+    def complete_map(self, patient_id, *, day, by):
+        m = self._map(patient_id)
+        m["last_map_day"] = day
+        return dict(m)
+
+    def surveillance_due(self, *, as_of):
+        """High-risk patients past their interval, most-overdue
+        first."""
+        out = []
+        for pid, m in self.maps.items():
+            interval = RISK_TIERS[m["risk_tier"]]
+            overdue = as_of - m["last_map_day"] - interval
+            if overdue > 0:
+                out.append({"patient_id": pid,
+                            "risk_tier": m["risk_tier"],
+                            "days_overdue": overdue})
+        return sorted(out, key=lambda x: -x["days_overdue"])
+
+    def map_report(self):
+        n_lesions = len(self.lesions)
+        changed = sum(1 for L in self.lesions.values()
+                      if any(img.get("flags") for img in L["images"][1:]))
+        per_tier = {}
+        for m in self.maps.values():
+            per_tier[m["risk_tier"]] = per_tier.get(m["risk_tier"], 0) + 1
+        return {"patients_mapped": len(self.maps),
+                "lesions_tracked": n_lesions,
+                "lesions_changed": {"n": changed, "of": n_lesions,
+                                    "rate": (round(changed / n_lesions, 3)
+                                             if n_lesions else None)},
+                "per_tier": per_tier,
+                "version": LESIONMAP_VERSION,
+                "note": "the interval runs from the last COMPLETE map, "
+                        "not the last lucky photo"}
+
+    def _map(self, pid):
+        if pid not in self.maps:
+            raise TeleReadError(f"{pid} not enrolled — an unmapped "
+                                "patient has no map")
+        return self.maps[pid]

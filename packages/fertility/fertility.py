@@ -669,3 +669,53 @@ ABSTINENCE_RANGE_DAYS = (1, 14)  # WHO collection window is 2-7;
                                  # outside 1-14 the sample metadata is
                                  # wrong, refuse
 
+
+
+# ------------------------------------------------------------------
+# Registry return (SART/HFEA-shaped). No statute requires it in
+# Nigeria — which is exactly why self-reporting is the differentiator.
+REGISTRY_RETURN_VERSION = "sart-shaped@1.0.0"
+
+
+def registry_return(clinic):
+    """Aggregate the clinic's cycles into a registry-shaped return.
+    Every rate carries its denominator; per-transfer and per-cycle
+    rates are reported separately — conflating them is how clinics
+    flatter themselves."""
+    cycles = list(clinic.cycles.values())
+    started = len(cycles)
+
+    def reached(cycle, stage):
+        return CYCLE_STAGES.index(cycle["stage"]) >= \
+            CYCLE_STAGES.index(stage)
+
+    retrieved = [c for c in cycles if reached(c, "retrieval")]
+    transferred = [c for c in cycles if reached(c, "outcome-pending")]
+    closed = [c for c in cycles if c.get("outcome")]
+    preg = [c for c in closed if c["outcome"]["clinical_pregnancy"]]
+    births = [c for c in closed if c["outcome"]["live_birth"]]
+    singletons = [c for c in births if c["outcome"]["singleton"]]
+
+    def rate(n, d):
+        return {"n": n, "of": d,
+                "rate": round(n / d, 3) if d else None}
+
+    # stimulation cancellation: cycles that never reached retrieval
+    cancelled = started - len(retrieved)
+    return {
+        "version": REGISTRY_RETURN_VERSION,
+        "cycles_started": started,
+        "retrievals": rate(len(retrieved), started),
+        "transfers": rate(len(transferred), started),
+        "clinical_pregnancies_per_cycle": rate(len(preg), started),
+        "live_births_per_cycle": rate(len(births), started),
+        "live_births_per_transfer": rate(
+            len(births), len(transferred)),
+        "singleton_rate_of_births": rate(len(singletons),
+                                         len(births)),
+        "cancelled_cycles": {"n": cancelled,
+                             "note": "a cancelled cycle is data, not "
+                                     "an embarrassment"},
+        "note": "no statute requires this return here — which is why "
+                "self-reporting is the differentiator",
+    }

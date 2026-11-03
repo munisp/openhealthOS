@@ -653,3 +653,221 @@ class DialysisUnit:
         if sid not in self.sessions:
             raise NephroError(f"unknown session: {sid}")
         return self.sessions[sid]
+
+
+# ------------------------------------------------------------------
+# Adequacy variants (Daugirdas II spKt/V, URR, eKt/V) — the formulas
+# are named, versioned, and their inputs refuse implausibility.
+ADEQUACY_VERSION = "hd-adequacy@1.0.0"
+SPKTV_TARGET = 1.2
+URR_TARGET_PCT = 65.0
+EKTV_TARGET = 1.05   # rate-adjusted; lower bound of acceptable
+
+
+def adequacy_from_labs(*, pre_bun, post_bun, uf_liters,
+                       post_weight_kg, duration_min):
+    """Daugirdas II spKt/V + URR + Tattersall-style eKt/V correction.
+    The formula names are in the record — a Kt/V without its method
+    is a number without provenance."""
+    if not (1 <= post_bun < pre_bun <= 400):
+        raise NephroError(
+            f"implausible BUN pair pre={pre_bun} post={post_bun} — "
+            "post must be lower than pre; if not, the labels are "
+            "swapped")
+    if not (0 <= uf_liters <= 10.0):
+        raise NephroError(f"implausible UF: {uf_liters}L")
+    if not (25 <= post_weight_kg <= 300):
+        raise NephroError(f"implausible weight: {post_weight_kg}kg")
+    if not (60 <= duration_min <= 600):
+        raise NephroError(f"implausible duration: {duration_min}min")
+    import math
+    r = post_bun / pre_bun
+    t_h = duration_min / 60.0
+    uf_per_kg = uf_liters / post_weight_kg
+    spktv = (-math.log(r - 0.008 * t_h)
+             + (4 - 3.5 * r) * uf_per_kg)
+    urr_pct = (1 - r) * 100.0
+    # Tattersall equilibrated estimate (rate-adjusted)
+    ektv = spktv - 0.6 * (spktv / t_h) + 0.03
+    flags = []
+    if spktv < SPKTV_TARGET:
+        flags.append(f"spKt/V {spktv:.2f} below {SPKTV_TARGET} target")
+    if urr_pct < URR_TARGET_PCT:
+        flags.append(f"URR {urr_pct:.0f}% below {URR_TARGET_PCT:.0f}%")
+    if ektv < EKTV_TARGET:
+        flags.append(f"eKt/V {ektv:.2f} below {EKTV_TARGET} — "
+                     "short fast runs inflate spKt/V")
+    return {"spktv_daugirdas2": round(spktv, 2),
+            "urr_pct": round(urr_pct, 1), "ektv": round(ektv, 2),
+            "duration_min": duration_min, "flags": flags,
+            "method": "daugirdas-2 + tattersall-rate-correction",
+            "version": ADEQUACY_VERSION}
+
+
+# ------------------------------------------------------------------
+# Vaccination series: serology is tracked; this closes the loop —
+# HBV 3-dose with titre response, flu, pneumococcal.
+VACCINE_SCHEDULES = {
+    # vaccine -> {"doses": n, "min_interval_days": between doses,
+    #             "titre_check": window after final dose (days)}
+    "hbv": {"doses": 3, "min_interval_days": (28, 140),
+            "titre_check": (30, 90)},
+    "influenza": {"doses": 1, "min_interval_days": (),
+                  "titre_check": None},
+    "pneumococcal": {"doses": 2, "min_interval_days": (365,),
+                     "titre_check": None},
+}
+HBV_RESPONDER_TITRE = 10.0  # mIU/mL
+
+
+class VaccinationBook:
+    """Per-patient vaccine series with interval honesty and titre
+    response. A series that stops at dose 1 is not 'vaccinated'; it is
+    an open loop, and the due list says so."""
+
+    def __init__(self, unit):
+        self.unit = unit
+        self.series = {}   # (patient_id, vaccine) -> [doses]
+        self.titres = {}   # (patient_id, vaccine) -> titre record
+
+    def record_dose(self, patient_id, vaccine, *, dose_number, day,
+                    by):
+        self.unit._patient(patient_id)
+        if vaccine not in VACCINE_SCHEDULES:
+            raise NephroError(f"unknown vaccine: {vaccine} — the "
+                              "schedule menu is versioned")
+        sched = VACCINE_SCHEDULES[vaccine]
+        key = (patient_id, vaccine)
+        doses = self.series.setdefault(key, [])
+        if dose_number != len(doses) + 1:
+            raise NephroError(
+                f"next dose for {patient_id}/{vaccine} is "
+                f"{len(doses) + 1}, not {dose_number} — series are "
+                "sequential, and a skipped dose is a finding")
+        if dose_number > sched["doses"]:
+            raise NephroError(
+                f"{vaccine} schedule has {sched['doses']} doses — an "
+                "extra dose needs a new protocol, not a quiet entry")
+        if doses and sched["min_interval_days"]:
+            lo = sched["min_interval_days"][dose_number - 2]
+            gap = day - doses[-1]["day"]
+            if gap < lo:
+                raise NephroError(
+                    f"dose {dose_number} at {gap}d — minimum interval "
+                    f"is {lo}d; a rushed series is a wasted series")
+        doses.append({"dose": dose_number, "day": day, "by": by})
+        return {"series": [dict(d) for d in doses],
+                "complete": len(doses) == sched["doses"]}
+
+    def record_titre(self, patient_id, vaccine, *, titre_miu_ml, day):
+        self.unit._patient(patient_id)
+        key = (patient_id, vaccine)
+        sched = VACCINE_SCHEDULES.get(vaccine)
+        if sched is None or sched["titre_check"] is None:
+            raise NephroError(f"{vaccine} has no titre-check step")
+        doses = self.series.get(key, [])
+        if len(doses) < sched["doses"]:
+            raise NephroError("titre before series completion — the "
+                              "question is premature")
+        lo, hi = sched["titre_check"]
+        gap = day - doses[-1]["day"]
+        if not (lo <= gap <= hi):
+            raise NephroError(
+                f"titre at {gap}d post-series — the window is "
+                f"{lo}-{hi}d; outside it the number answers a "
+                "different question")
+        responder = titre_miu_ml >= HBV_RESPONDER_TITRE
+        rec = {"titre_miu_ml": titre_miu_ml, "day": day,
+               "responder": responder}
+        self.titres[key] = rec
+        return {**rec,
+                "action": ("none — immunity documented" if responder
+                           else "non-responder: repeat full series "
+                                "(double-dose schedule) and re-check")}
+
+    def due(self, *, as_of):
+        """Open loops, overdue-first: series started not finished,
+        and completed HBV series awaiting titre."""
+        out = []
+        for (pid, vaccine), doses in self.series.items():
+            sched = VACCINE_SCHEDULES[vaccine]
+            if len(doses) < sched["doses"]:
+                nxt = len(doses) + 1
+                earliest = None
+                if sched["min_interval_days"]:
+                    earliest = (doses[-1]["day"]
+                                + sched["min_interval_days"][nxt - 2])
+                out.append({"patient_id": pid, "vaccine": vaccine,
+                            "owes": f"dose-{nxt}",
+                            "earliest_day": earliest,
+                            "days_since_last": as_of - doses[-1]["day"]})
+            elif sched["titre_check"] and (pid, vaccine) \
+                    not in self.titres:
+                lo, hi = sched["titre_check"]
+                if as_of >= doses[-1]["day"] + lo:
+                    out.append({"patient_id": pid, "vaccine": vaccine,
+                                "owes": "titre-check",
+                                "earliest_day": doses[-1]["day"] + lo,
+                                "days_since_last": as_of
+                                - doses[-1]["day"]})
+        return sorted(out, key=lambda x: -x["days_since_last"])
+
+    def coverage_report(self):
+        """Series completion + HBV responder rate, denominators
+        attached."""
+        started = len(self.series)
+        complete = sum(1 for (pid, v), d in self.series.items()
+                       if len(d) == VACCINE_SCHEDULES[v]["doses"])
+        titres = list(self.titres.values())
+        responders = sum(1 for t in titres if t["responder"])
+        return {"series_started": started,
+                "series_complete": {"n": complete, "of": started,
+                                    "rate": (round(complete / started, 3)
+                                             if started else None)},
+                "hbv_titres_checked": len(titres),
+                "hbv_responders": {"n": responders, "of": len(titres),
+                                   "rate": (round(responders / len(titres), 3)
+                                            if titres else None)},
+                "note": "a series that stops at dose 1 is an open "
+                        "loop, not a vaccination"}
+
+
+# ------------------------------------------------------------------
+# Registry return (UK Renal Registry / USRDS-shaped): the unit's year
+# in numbers, every rate with its denominator.
+REGISTRY_RETURN_VERSION = "ukrr-shaped@1.0.0"
+
+
+def registry_return(unit):
+    """Aggregate the unit into a registry-shaped return: census,
+    modality mix, access mix, adequacy, seroconversion, vaccination —
+    the denominators ARE the return."""
+    patients = unit.patients
+    n = len(patients)
+    sessions = [s for s in unit.sessions.values()
+                if s.get("state") == "completed"]
+    ktvs = [s["spktv"] for s in sessions if s.get("spktv") is not None]
+    adequate = sum(1 for v in ktvs if v >= SPKTV_TARGET)
+    access_kinds = {}
+    for a in unit.access.values():
+        k = a["kind"]
+        access_kinds[k] = access_kinds.get(k, 0) + 1
+    seroconversions = [e for e in unit.events
+                       if e["event"].startswith("seroconversion")]
+
+    def rate(num, d):
+        return {"n": num, "of": d,
+                "rate": round(num / d, 3) if d else None}
+
+    return {
+        "version": REGISTRY_RETURN_VERSION,
+        "prevalent_patients": n,
+        "hd_sessions_completed": len(sessions),
+        "adequacy_at_target": rate(adequate, len(ktvs)),
+        "adequacy_measured_sessions": rate(len(ktvs), len(sessions)),
+        "access_mix": access_kinds,
+        "seroconversion_events": len(seroconversions),
+        "pd_patients": len(getattr(unit, "pd", {})),
+        "note": "the denominators ARE the return — a registry row "
+                "without n is marketing",
+    }
