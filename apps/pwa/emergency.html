@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Emergency access — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#4a1512; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  main { max-width:720px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border-radius:12px; padding:14px;
+          border:1px solid #2a3532; }
+  label { font-size:.8rem; font-weight:600; display:block; margin-top:8px; color:#b9c8c4; }
+  input { background:#0d1312; border:1px solid #2a3532; color:#e8ecea; padding:9px 10px;
+          border-radius:10px; font-size:.95rem; width:100%; box-sizing:border-box; margin-top:4px; }
+  button { background:#b3261e; color:#fff; border:none; border-radius:10px;
+           padding:12px 16px; font-weight:700; cursor:pointer; margin-top:12px; width:100%;
+           font-size:1rem; }
+  .field { display:flex; justify-content:space-between; padding:8px 0;
+           border-bottom:1px solid #243130; font-size:.95rem; }
+  .field b { color:#9ec7ff; font-weight:600; font-size:.8rem; text-transform:uppercase;
+             letter-spacing:.04em; }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px;
+          font-size:.75rem; font-weight:700; }
+  .green { background:#0f3d22; color:#7be3a3; } .orange { background:#4a3512; color:#ffce7a; }
+  .err { background:#4a1512; color:#ff9d92; padding:10px 14px; border-radius:10px;
+         font-size:.9rem; display:none; white-space:pre-wrap; }
+  .muted { color:#8aa39d; font-size:.8rem; }
+</style>
+</head>
+<body>
+<header><h1>EMERGENCY ACCESS — break-glass, everything audited</h1></header>
+<main>
+  <section class="card">
+    <p class="muted">Scan the traveler's QR or paste the token. The record opens for
+       active AND lapsed coverage — <b>coverage gates the invoice, never the
+       airway</b> — but the coverage state rides on the card. You must name
+       yourself, your facility, and the reason: break-glass without WHO, WHERE
+       and WHY is not access, it is a breach.</p>
+    <label>Token (from QR)</label><input id="token" placeholder="tp_…">
+    <label>Your provider id</label><input id="provider" placeholder="para-1">
+    <label>Facility</label><input id="facility" placeholder="er-lagos">
+    <label>Reason for access</label><input id="reason" placeholder="rta-unresponsive">
+    <button id="open">OPEN EMERGENCY CARD</button>
+    <div class="err" id="err"></div>
+  </section>
+  <section class="card" id="card" style="display:none">
+    <div class="field"><b>Name</b><span id="cName"></span></div>
+    <div class="field"><b>Nationality</b><span id="cNat"></span></div>
+    <div class="field"><b>Blood group</b><span id="cBg"></span></div>
+    <div class="field"><b>Allergies</b><span id="cAlg"></span></div>
+    <div class="field"><b>Conditions</b><span id="cCond"></span></div>
+    <div class="field"><b>Medications</b><span id="cMeds"></span></div>
+    <div class="field"><b>Emergency contact</b><span id="cContact"></span></div>
+    <div class="field"><b>Coverage</b><span id="cCov"></span></div>
+    <p class="muted" id="cNote"></p>
+  </section>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+function fail(msg){ const e=$("err"); e.style.display="block"; e.textContent=msg; }
+$("open").onclick = () => {
+  $("err").style.display="none"; $("card").style.display="none";
+  const token=$("token").value.trim(), provider=$("provider").value.trim(),
+        facility=$("facility").value.trim(), reason=$("reason").value.trim();
+  if (!token) return fail("unknown token — a QR that resolves to nothing is stated as nothing; treat the patient in front of you");
+  if (!provider || !facility || !reason)
+    return fail("break-glass without WHO, WHERE and WHY is not access, it is a breach");
+  /* Deployment: POST {token, provider, facility, reason} to the
+     travelpass service; the card below renders the emergency subset.
+     Offline demo: resolve against this browser's enrollment. */
+  const t = JSON.parse(localStorage.getItem("tp.traveler") || "null");
+  const stored = localStorage.getItem("tp.token");
+  if (!t || stored !== token)
+    return fail("unknown or revoked token — stated as such; treat the patient in front of you");
+  $("cName").textContent = t.name;
+  $("cNat").textContent = t.nat || "not-recorded";
+  $("cBg").textContent = t.bg || "not-recorded";
+  $("cAlg").textContent = t.allergies.length ? t.allergies.join(", ") : "none-recorded";
+  $("cCond").textContent = t.conditions.length ? t.conditions.join(", ") : "none-recorded";
+  $("cMeds").textContent = t.meds.length ? t.meds.join(", ") : "none-recorded";
+  $("cContact").textContent = t.contact || "none-recorded";
+  $("cCov").innerHTML = '<span class="pill green">active</span>';
+  $("cNote").textContent = "Emergency subset only — the full record is not on this card. " +
+    "Absence is stated, never blanked. This access is audited: " + provider + " · " + facility + " · " + reason;
+  $("card").style.display = "block";
+};
+</script>
+</body>
+</html>

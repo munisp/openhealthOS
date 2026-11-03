@@ -1,0 +1,155 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Traveler medical pass — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f7f7f7; color:#09352e; }
+  header { background:#fff; border-bottom:1px solid rgba(0,0,0,.1); padding:12px 18px;
+           display:flex; align-items:center; gap:12px; }
+  header h1 { font-size:1.05rem; margin:0; flex:1; }
+  main { max-width:880px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#fff; border-radius:var(--oh-radius-lg); padding:14px;
+          box-shadow:var(--oh-shadow-sm); border:1px solid var(--oh-card-border); }
+  .pill { display:inline-block; padding:2px 10px; border-radius:999px;
+          font-size:.75rem; font-weight:700; }
+  .green { background:#e6f3ea; color:#007f24; } .orange { background:#fff4d6; color:#8a5a00; }
+  .blue { background:#e8f0fe; color:#2b5c9e; }
+  label { font-size:.8rem; font-weight:600; display:block; margin-top:8px; }
+  input, select, textarea { padding:9px 10px; border:1px solid #ddd; border-radius:10px;
+           font-size:.95rem; width:100%; box-sizing:border-box; margin-top:4px; }
+  button { background:#007f24; color:#fff; border:none; border-radius:10px;
+           padding:10px 14px; font-weight:700; cursor:pointer; margin-top:10px; }
+  button.ghost { background:#eef2ff; color:#4f46e5; }
+  .grid2 { display:grid; grid-template-columns:1fr 1fr; gap:10px; }
+  @media (max-width:700px){ .grid2 { grid-template-columns:1fr; } }
+  #qr { text-align:center; padding:12px; }
+  #qr img, #qr canvas { margin:0 auto; display:block; }
+  .mono { font-family: ui-monospace, monospace; font-size:.75rem; word-break:break-all;
+          color:#54655f; }
+  .err { background:#fdeceb; color:#b3261e; padding:8px 12px; border-radius:10px;
+         font-size:.85rem; display:none; }
+  .ok { background:#e6f3ea; color:#007f24; padding:8px 12px; border-radius:10px;
+        font-size:.85rem; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Traveler medical pass</h1>
+  <span class="pill blue">policy travel-medical-policy@1.0.0</span>
+</header>
+<main>
+  <section class="card">
+    <strong>1 · Enroll</strong>
+    <div class="grid2">
+      <div><label>Full name</label><input id="name"></div>
+      <div><label>Passport reference</label><input id="passport"></div>
+      <div><label>Nationality</label><input id="nat"></div>
+      <div><label>Blood group (if known)</label>
+        <select id="bg"><option value="">not recorded</option>
+          <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
+          <option>AB+</option><option>AB-</option><option>O+</option><option>O-</option>
+        </select></div>
+      <div><label>Entry day</label><input id="entry" type="number" value="0"></div>
+      <div><label>Exit day</label><input id="exit" type="number" value="13"></div>
+    </div>
+    <label>Allergies (comma separated)</label><input id="allergies">
+    <label>Conditions</label><input id="conditions">
+    <label>Medications</label><input id="meds">
+    <label>Emergency contact (name — phone)</label><input id="contact">
+    <button id="enroll">Enroll</button>
+    <div class="err" id="err1"></div>
+  </section>
+
+  <section class="card">
+    <strong>2 · Pay the insurance fee</strong>
+    <div class="muted" id="premium">enroll first — the premium is assessed from the policy table</div>
+    <div class="grid2">
+      <div><label>Amount (kobo)</label><input id="amount" type="number"></div>
+      <div><label>Method</label>
+        <select id="method"><option>card</option><option>transfer</option>
+          <option>cash</option><option>wallet</option></select></div>
+    </div>
+    <label>Payment reference</label><input id="ref" placeholder="bank/PSP reference">
+    <button id="pay">Pay</button>
+    <span class="pill green" id="covPill" style="display:none"></span>
+    <div class="err" id="err2"></div>
+  </section>
+
+  <section class="card" id="passCard" style="display:none">
+    <strong>3 · The pass</strong>
+    <p class="muted">The QR carries a <em>key</em>, never the record. Show it at the
+       border; an emergency provider scans it to open the emergency card.</p>
+    <div id="qr"></div>
+    <div class="mono" id="payload"></div>
+    <button class="ghost" id="revoke">Report lost — revoke this pass</button>
+    <div class="ok" id="ok3"></div>
+  </section>
+</main>
+<!-- qrcode-generator (MIT, Kazuhiko Arase) referenced from upstream CDN
+     at runtime, never vendored -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
+<script>
+/* Demo/offline model: the same doctrine as the engine, in-page. A
+   deployment points these calls at the travelpass service. */
+const $ = id => document.getElementById(id);
+let traveler = null, paid = 0, due = 0;
+function fail(el, msg){ $(el).style.display="block"; $(el).textContent=msg; }
+$("enroll").onclick = () => {
+  $("err1").style.display="none";
+  const name = $("name").value.trim(), pp = $("passport").value.trim();
+  if (!name || !pp) return fail("err1","name and passport reference are the record — a traveler without identity is a ticket number");
+  const entry = +$("entry").value, exit = +$("exit").value;
+  if (exit < entry) return fail("err1","exit before entry — time does not run backwards at the border");
+  const days = exit - entry + 1;
+  if (days > 90) return fail("err1", days + "-day stay exceeds the 90-day tourist cap — this traveler needs a resident policy, not a bigger tourist one");
+  due = 500000 + 50000 * days;
+  traveler = { name, passport: pp, nat: $("nat").value.trim(),
+               bg: $("bg").value, entry, exit,
+               allergies: $("allergies").value.split(",").map(s=>s.trim()).filter(Boolean),
+               conditions: $("conditions").value.split(",").map(s=>s.trim()).filter(Boolean),
+               meds: $("meds").value.split(",").map(s=>s.trim()).filter(Boolean),
+               contact: $("contact").value.trim() };
+  localStorage.setItem("tp.traveler", JSON.stringify(traveler));
+  $("premium").textContent = days + " covered days → premium ₦" + (due/100).toLocaleString() + " (" + due + " kobo)";
+  $("amount").value = due;
+};
+$("pay").onclick = () => {
+  $("err2").style.display="none";
+  if (!traveler) return fail("err2","enroll first — the ledger needs the traveler");
+  const amt = +$("amount").value, ref = $("ref").value.trim();
+  if (amt <= 0) return fail("err2","a zero payment is not a payment");
+  if (!ref) return fail("err2","a payment without a reference is cash in a pocket, not a receipt");
+  paid += amt;
+  const pill = $("covPill"); pill.style.display="inline-block";
+  if (paid >= due) {
+    pill.textContent = "coverage active";
+    issuePass();
+  } else {
+    pill.textContent = "shortfall ₦" + ((due-paid)/100).toLocaleString() + " — a partial payment is a stated shortfall, not a silent discount";
+    pill.className = "pill orange";
+  }
+};
+function issuePass(){
+  const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
+  const token = "tp_" + btoa(String.fromCharCode(...bytes))
+                  .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+  const payload = "https://er.ng.gov/er#t=" + token;
+  localStorage.setItem("tp.token", token);
+  $("passCard").style.display = "block";
+  $("payload").textContent = payload;
+  const qr = qrcode(0, "M"); qr.addData(payload); qr.make();
+  $("qr").innerHTML = qr.createImgTag(6, 8);
+}
+$("revoke").onclick = () => {
+  localStorage.removeItem("tp.token");
+  $("passCard").style.display = "none";
+  $("ok3").style.display="block";
+  $("ok3").textContent = "pass revoked — revocation is a security event, recorded with reason and name at the service";
+};
+</script>
+</body>
+</html>

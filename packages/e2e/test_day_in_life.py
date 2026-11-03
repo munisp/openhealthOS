@@ -147,3 +147,5 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(log["growth_crossing_flagged"])
         self.assertTrue(log["vendor_sdk_never_vendored"])
         self.assertEqual(log["device_feed_ingested"], "MSG-1")
+        self.assertTrue(log["travelpass_breach_refused"])
+        self.assertTrue(log["travelpass_emergency_paid"])

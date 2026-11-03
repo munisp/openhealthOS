@@ -95,7 +95,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
             "teleecg", "dictate", "staging", "viewerlaunch",
-            "devicehub"):
+            "devicehub", "travelpass"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -118,6 +118,7 @@ from teleicu import FamilyLog  # noqa: E402
 from drugkb import check_iv_y_site, tpn_assess  # noqa: E402
 from serial import growth_assessment  # noqa: E402
 from devicehub import DeviceHub, DeviceHubError  # noqa: E402
+from travelpass import TravelPassRegistry, TravelPassError  # noqa: E402
 from telepath import (FrozenSectionLog, DerivativeInventory,  # noqa: E402
                       ReflexLog)
 from nephrology import DialysisUnit  # noqa: E402
@@ -1415,6 +1416,48 @@ def run_connected_day():
                               panel="HD-ADEQUACY")
     assert "SPKTV" in out_msg
     log["device_feed_ingested"] = feed["message_id"]
+
+    # ---- 08:45 traveler medical pass: the border collects the fee,
+    # the QR opens the record, the emergency never waits for the
+    # invoice (new domain)
+    tpr = TravelPassRegistry("ng")
+    tpr.enroll("TV-1", full_name="Jane Doe", passport_ref="DE-A1234",
+               nationality="DE", entry_day=0, exit_day=13,
+               emergency_profile={"blood_group": "O+",
+                                  "allergies": ["penicillin"],
+                                  "conditions": ["asthma"],
+                                  "medications": ["salbutamol"],
+                                  "emergency_contacts": [
+                                      {"name": "Ada",
+                                       "phone": "+234…"}]},
+               day=0)
+    premium = tpr.travelers["TV-1"]["assessed_premium_kobo"]
+    # a partial payment is a stated shortfall, not a silent discount
+    tpr.pay("TV-1", amount_kobo=premium - 1000, method="card",
+            reference="psp-1", day=0)
+    assert tpr.coverage_status("TV-1", 2)["status"] == "shortfall"
+    tpr.pay("TV-1", amount_kobo=1000, method="transfer",
+            reference="psp-2", day=0)
+    assert tpr.coverage_status("TV-1", 2)["status"] == "active"
+    issued = tpr.issue_pass("TV-1", day=0)
+    assert "TV-1" not in issued["token"]  # the QR is a key
+    # break-glass without a reason is a breach, not access
+    try:
+        tpr.emergency_access(issued["token"], provider_id="para-1",
+                             facility="er-lagos", reason="", day=2)
+        raise RuntimeError("break-glass without attribution opened")
+    except TravelPassError:
+        log["travelpass_breach_refused"] = True
+    card = tpr.emergency_access(issued["token"], provider_id="para-1",
+                                facility="er-lagos",
+                                reason="rta-unresponsive", day=2)
+    assert card["blood_group"] == "O+"
+    assert "passport_ref" not in card  # emergency subset only
+    ev = tpr.record_emergency("TV-1", session_id=card["session_id"],
+                              day=2, facility="er-lagos",
+                              summary="anaphylaxis, treated")
+    assert ev["payable"] is True
+    log["travelpass_emergency_paid"] = ev["payable"]
 
     log["seams_proven"] = 32
     return log
