@@ -19,6 +19,7 @@ shaped so that silence is a finding, never a default.
    17. imported_case_signal travelpass   → surveillance syndromes
    18. poe_entry_screen   poe_screen     → travelpass pass record
    19. feed_health_to_oversight devicelink → teleicu oversight
+   20. deid_export_to_dataset pacs de-id  → datasetforge cases
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -835,3 +836,36 @@ def feed_health_to_oversight(health, icu, *, facility, day, opened):
             "note": "a device that stops talking is a clinical event; "
                     "the oversight ladder is the escalation, not an "
                     "email to IT"}
+
+
+# ---------------------------------------------------------------- 20.
+# pacs → datasetforge: the de-id gate is the only door from clinical
+# pixels to training data. Burned-in annotations refuse upstream; the
+# patient key is a salted hash minted here; the de-id policy version
+# rides every case. Diagnosis never reads from the dataset lane — the
+# arrow points one way only.
+
+def deid_export_to_dataset(studies, forge, study_uid, *, task_id,
+                           label, labeled_by, day, salt,
+                           deid_policy_version):
+    """Register a PACS study as a labeled training case.
+
+    `studies` is the pacs StudyRegistry; export_metadata(purpose=
+    "research") refuses burned-in annotations before we ever touch the
+    forge. The salted patient key keeps splits patient-level without
+    the patient id ever landing in the dataset registry."""
+    export = studies.export_metadata(study_uid, purpose="research")
+    # the patient id is read from the SOURCE record, hashed, then
+    # dropped — the forge never sees it
+    study = studies._study(study_uid)
+    patient_key = forge.patient_key_from(study["patient_id"],
+                                         salt=salt)
+    case = forge.register_case(
+        task_id, case_ref=f"case-{study_uid}",
+        source_ref=study_uid, patient_key=patient_key, label=label,
+        labeled_by=labeled_by, day=day,
+        deid_policy_version=deid_policy_version)
+    case = dict(case)
+    case["deid_export"] = {"modality": export.get("modality"),
+                           "purpose": export["purpose"]}
+    return case

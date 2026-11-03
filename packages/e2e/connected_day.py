@@ -96,7 +96,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
             "teleecg", "dictate", "staging", "viewerlaunch",
             "devicehub", "travelpass", "payrails", "ips",
-            "surveillance", "poe_screen"):
+            "surveillance", "poe_screen", "datasetforge"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -1555,6 +1555,61 @@ def run_connected_day():
                                     opened=opened19)["opened"] == []
     log["feed_oversight_seam"] = esc["opened"][0]
 
+    # ---- 08:44 seam 20: clinical pixels become training data through
+    # exactly one door — the de-id gate. Patient-level splits, salted
+    # keys, CRC verification, conversion composed at the boundary
+    from datasetforge import DatasetForge
+    from crosslink import deid_export_to_dataset
+    forge = DatasetForge()
+    forge.register_task("mammo-v1",
+                        label_schema=("birads-1", "birads-2",
+                                      "birads-4"),
+                        version="mammo-labels@1.0.0")
+    pacs_svc.register_study(study_uid="9.9.1", accession="ACC-DS1",
+                            patient_id="p-ds-1", modality="MG",
+                            exam_protocol="mammo-screening",
+                            priority="routine", facility="phc-1",
+                            day=1)
+    pacs_svc.register_study(study_uid="9.9.2", accession="ACC-DS2",
+                            patient_id="p-ds-2", modality="MG",
+                            exam_protocol="mammo-screening",
+                            priority="routine", facility="phc-1",
+                            day=1)
+    pacs_svc.register_study(study_uid="9.9.3", accession="ACC-DS3",
+                            patient_id="p-ds-3", modality="MG",
+                            exam_protocol="mammo-screening",
+                            priority="routine", facility="phc-1",
+                            day=1, burned_in_annotations=True)
+    for uid, label in (("9.9.1", "birads-1"), ("9.9.2", "birads-4")):
+        deid_export_to_dataset(pacs_svc, forge, uid,
+                               task_id="mammo-v1", label=label,
+                               labeled_by="rad-1", day=1,
+                               salt="e2e-salt",
+                               deid_policy_version="deid@1.0.0")
+    # burned-in annotations refuse before a pixel leaves
+    burned_refused = False
+    try:
+        deid_export_to_dataset(pacs_svc, forge, "9.9.3",
+                               task_id="mammo-v1", label="birads-1",
+                               labeled_by="rad-1", day=1,
+                               salt="e2e-salt",
+                               deid_policy_version="deid@1.0.0")
+    except Exception:
+        burned_refused = True
+    assert burned_refused
+    assert "p-ds-1" not in str(forge.cases)  # salted keys only
+    log["deid_gate_holds"] = True
+    manifest = forge.export_manifest("mammo-v1")
+    ds = forge.convert(manifest, day=1,
+                       converter=lambda m: {
+                           "dataset_ref": "s3://ds/mammo-v1",
+                           "container_sha256": "c0ffee"})
+    forge.verify(ds["dataset_id"],
+                 verifier=lambda ref: (True, "all blocks CRC-ok"))
+    rep = forge.report("mammo-v1")
+    assert rep["verified"] == 1 and rep["cases"] == 2
+    log["dataset_forged"] = ds["dataset_id"]
+
     # ---- 08:45 traveler medical pass: the border collects the fee,
     # the QR opens the record, the emergency never waits for the
     # invoice (new domain)
@@ -1714,7 +1769,7 @@ def run_connected_day():
     assert "public_health_hold" not in tpr.travelers["TV-2"]
     log["poe_hold_cleared_with_ref"] = cleared_hold["clearance_ref"]
 
-    log["seams_proven"] = 34
+    log["seams_proven"] = 36
     return log
 
 
