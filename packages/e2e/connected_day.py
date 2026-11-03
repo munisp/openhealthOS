@@ -94,7 +94,8 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
-            "teleecg", "dictate", "staging", "viewerlaunch"):
+            "teleecg", "dictate", "staging", "viewerlaunch",
+            "devicehub"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -116,6 +117,7 @@ from crosslink import verify_with_pixels  # noqa: E402
 from teleicu import FamilyLog  # noqa: E402
 from drugkb import check_iv_y_site, tpn_assess  # noqa: E402
 from serial import growth_assessment  # noqa: E402
+from devicehub import DeviceHub, DeviceHubError  # noqa: E402
 from telepath import (FrozenSectionLog, DerivativeInventory,  # noqa: E402
                       ReflexLog)
 from nephrology import DialysisUnit  # noqa: E402
@@ -1385,6 +1387,34 @@ def run_connected_day():
                             (34, {"ac": 272})])
     assert any("crossed centile bands" in f for f in ga["flags"])
     log["growth_crossing_flagged"] = True
+
+    # ---- 08:40 device hub: machines meet the platform (P1) — open
+    # lane parses clean-room HL7, composed lanes refuse without the
+    # vendor transport
+    hub = DeviceHub()
+    lis = hub.connect("open-lis", endpoint="tcp://lis.phc-1:2575")
+    feed = hub.ingest(
+        lis["session_id"],
+        "MSH|^~\\&|COBAS6000|ROCHE|OPENHEALTH|LAB|20261103083000||"
+        "ORU^R01|MSG-1|P|2.5\r"
+        "PID|1||p-ckd\r"
+        "OBX|1|NM|K^Potassium||5.2|mmol/L|3.5-5.1|H||||||"
+        "20261103082500\r")
+    assert feed["observations"][0]["code"] == "K"
+    assert feed["observations"][0]["abnormal_flag"] == "H"
+    assert feed["observations"][0]["source_adapter"] == "open-lis"
+    try:
+        hub.connect("ge-muse", endpoint="https://muse.hospital")
+        raise RuntimeError("composed lane without transport connected")
+    except DeviceHubError:
+        log["vendor_sdk_never_vendored"] = True
+    out_msg = hub.push_result(lis["session_id"], message_id="HD-9",
+                              patient_id="p-ckd",
+                              observations=[{"code": "SPKTV",
+                                             "value": "1.45"}],
+                              panel="HD-ADEQUACY")
+    assert "SPKTV" in out_msg
+    log["device_feed_ingested"] = feed["message_id"]
 
     log["seams_proven"] = 32
     return log

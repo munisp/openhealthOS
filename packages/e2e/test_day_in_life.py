@@ -145,3 +145,5 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(log["pgt_no_result_held"])
         self.assertTrue(log["pgt_aneuploid_held"])
         self.assertTrue(log["growth_crossing_flagged"])
+        self.assertTrue(log["vendor_sdk_never_vendored"])
+        self.assertEqual(log["device_feed_ingested"], "MSG-1")
