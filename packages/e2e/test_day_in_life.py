@@ -149,3 +149,7 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(log["device_feed_ingested"], "MSG-1")
         self.assertTrue(log["travelpass_breach_refused"])
         self.assertTrue(log["travelpass_emergency_paid"])
+        self.assertEqual(log["travelpass_emr_linked"], "EMR-ENC-1")
+        self.assertTrue(log["travelpass_notified"])
+        self.assertEqual(log["travelpass_settled"], "TP-SETTLE-1")
+        self.assertTrue(log["travelpass_refund_blocked"])

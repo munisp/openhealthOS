@@ -95,7 +95,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
             "teleecg", "dictate", "staging", "viewerlaunch",
-            "devicehub", "travelpass"):
+            "devicehub", "travelpass", "payrails", "ips"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -119,6 +119,9 @@ from drugkb import check_iv_y_site, tpn_assess  # noqa: E402
 from serial import growth_assessment  # noqa: E402
 from devicehub import DeviceHub, DeviceHubError  # noqa: E402
 from travelpass import TravelPassRegistry, TravelPassError  # noqa: E402
+from travelpass import (ips_document, emr_encounter,  # noqa: E402
+                        notification_line, settle, refund_early_exit)
+from payrails import RailRouter  # noqa: E402
 from telepath import (FrozenSectionLog, DerivativeInventory,  # noqa: E402
                       ReflexLog)
 from nephrology import DialysisUnit  # noqa: E402
@@ -1458,6 +1461,32 @@ def run_connected_day():
                               summary="anaphylaxis, treated")
     assert ev["payable"] is True
     log["travelpass_emergency_paid"] = ev["payable"]
+    # the enrollment reaches the EMR: IPS bundle any conformant EMR
+    # imports, and the break-glass encounter links through a sink
+    bundle = ips_document(tpr, "TV-1", author="travelpass", day=2)
+    assert bundle["resourceType"] == "Bundle"
+    enc = emr_encounter(tpr, "TV-1", card["session_id"], day=2,
+                        sink=lambda ref, e: "EMR-ENC-1")
+    assert enc["emr_link"] == "linked"
+    log["travelpass_emr_linked"] = enc["emr_ref"]
+    # channels: NDJSON chat-seam lines carry pointers, never PHI
+    line = notification_line(tpr, "emergency-accessed", "TV-1", day=2,
+                             content_ref=f"er://{card['session_id']}")
+    assert "anaphylaxis" not in line and "penicillin" not in line
+    log["travelpass_notified"] = True
+    # the money: admin/pool split settles over payrails; refunds are
+    # pro-rata pool share of unused days, never after an emergency
+    entry = settle(tpr, RailRouter(), day=2, pool_account="POOL-NG",
+                   admin_account="ADMIN-NG")
+    assert entry["admin_kobo"] + entry["pool_kobo"] == \
+        entry["gross_kobo"]
+    log["travelpass_settled"] = entry["settlement_id"]
+    try:
+        refund_early_exit(tpr, "TV-1", actual_exit_day=6, day=6,
+                          reason="left early")
+        raise RuntimeError("refunded after an emergency event")
+    except TravelPassError:
+        log["travelpass_refund_blocked"] = True
 
     log["seams_proven"] = 32
     return log

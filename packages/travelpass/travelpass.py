@@ -292,3 +292,242 @@ class TravelPassRegistry:
                                   "the system has not met them; that "
                                   "is stated, not zeroed")
         return self.travelers[traveler_id]
+
+
+# ----------------------------------------------------------------
+# The three questions every border deployment asks:
+#   1. Does the enrollment reach the EMR?  → YES, two ways below.
+#   2. Does it reach the traveler/provider on their channels?
+#      → the chat/notification seams below.
+#   3. Where does the money go?  → the fee split + settlement below.
+
+import json as _json
+import os as _os
+import sys as _sys
+
+_sys.path.insert(0, _os.path.join(_os.path.dirname(__file__), "..",
+                                  "ips"))
+from ips import build_ips  # noqa: E402
+
+FEE_SPLIT_VERSION = "fee-split@1.0.0"
+# The premium is two monies, never one: the administration fee pays
+# for running the scheme (border desks, the registry, the QR
+# infrastructure); the risk pool pays claims. Conflating them is how
+# schemes quietly spend the claims money on administration.
+FEE_SPLIT = {"admin_pct": 15, "pool_pct": 85}
+NOTIFY_KINDS = ("pass-issued", "payment-receipt", "coverage-expiring",
+                "emergency-accessed", "refund-processed")
+
+
+# ---- 1. the EMR link ----------------------------------------------
+
+def ips_document(registry, traveler_id, *, author, day):
+    """FHIR R4 International Patient Summary from the emergency
+    profile — the format any conformant EMR on earth can import. The
+    traveler arrives unconscious at a foreign ED; the IPS is the
+    standard for exactly that room. Self-declared-at-enrollment lists
+    that came back empty are stated 'none-known' — the traveler was
+    asked and said none; that is a different fact from never asking."""
+    t = registry._t(traveler_id)
+    p = t["emergency_profile"]
+
+    def section(items):
+        return ({"entries": items} if items
+                else {"empty_reason": "none-known"})
+
+    bundle = build_ips(
+        {"id": traveler_id, "name": t["full_name"],
+         "country": t["nationality"]},
+        sections={
+            "medications": section([{"display": m}
+                                    for m in p["medications"]]),
+            "allergies": section([{"display": a}
+                                  for a in p["allergies"]]),
+            "problems": section([{"display": c}
+                                 for c in p["conditions"]]),
+            "vitals": {"empty_reason": "not-collected"},
+        },
+        author=author, generated_day=day)
+    bundle["x-travelpass"] = {"coverage_window":
+                              [t["entry_day"], t["exit_day"]],
+                              "policy_version": t["policy_version"]}
+    return bundle
+
+
+def emr_encounter(registry, traveler_id, session_id, *, day,
+                  sink=None):
+    """Break-glass opens an encounter in the receiving facility's EMR,
+    linked to the traveler record. sink is duck-typed
+    (callable(traveler_ref, encounter) -> emr_ref): with a sink the
+    link is real; without one the encounter is UNLINKED — stated
+    loudly, because care never waits for integration but the audit
+    never pretends it happened."""
+    session = next((s for s in registry.access_log
+                    if s["session_id"] == session_id), None)
+    if session is None:
+        raise TravelPassError("no such access session — an encounter "
+                              "without break-glass provenance is a "
+                              "record without a door")
+    if session["traveler_id"] != traveler_id:
+        raise TravelPassError("session belongs to another traveler")
+    t = registry._t(traveler_id)
+    encounter = {"traveler_id": traveler_id, "session_id": session_id,
+                 "facility": session["facility"], "day": day,
+                 "identity": {"passport_ref": t["passport_ref"],
+                              "full_name": t["full_name"]},
+                 "coverage_at_access": session["coverage_at_access"]}
+    if sink is None:
+        encounter["emr_link"] = "unlinked"
+        encounter["note"] = ("no EMR sink wired at this facility — the "
+                             "encounter is recorded here, the link is "
+                             "an open integration task, stated not "
+                             "silent")
+    else:
+        encounter["emr_link"] = "linked"
+        encounter["emr_ref"] = sink(
+            {"traveler_id": traveler_id,
+             "passport_ref": t["passport_ref"]}, encounter)
+    return encounter
+
+
+# ---- 2. the channels ----------------------------------------------
+
+def notification_line(registry, kind, traveler_id, *, day, content_ref):
+    """An NDJSON line for the howUdey chat seam — the same envelope
+    the radiology report-ready seam emits. The rail carries POINTERS,
+    never PHI: content_ref names the artifact (the pass, the receipt,
+    the coverage state); the medical record itself never rides the
+    chat rail. WhatsApp delivery composes through resultloop's
+    ChannelAdapter — no rail configured means honestly queued, never
+    claimed-sent."""
+    if kind not in NOTIFY_KINDS:
+        raise TravelPassError(f"unknown notification kind: {kind}")
+    registry._t(traveler_id)
+    if not content_ref:
+        raise TravelPassError("a notification without a content "
+                              "reference is a rumour — the rail "
+                              "carries pointers, not payloads")
+    return _json.dumps({"kind": kind, "traveler_id": traveler_id,
+                        "content_ref": content_ref, "day": day},
+                       sort_keys=True)
+
+
+def expiring_passes(registry, as_of, within_days=3):
+    """Coverage expiring soon — the traveler hears it before the
+    border does. Coverage lapses are a notification problem before
+    they are a claims problem."""
+    out = []
+    for tid, t in registry.travelers.items():
+        days_left = t["exit_day"] - as_of
+        if t["entry_day"] <= as_of <= t["exit_day"] and \
+                days_left <= within_days:
+            out.append({"traveler_id": tid, "days_left": days_left,
+                        "coverage": registry.coverage_status(
+                            tid, as_of)["status"]})
+    out.sort(key=lambda x: x["days_left"])
+    return out
+
+
+# ---- 3. the money --------------------------------------------------
+
+def settle(registry, router, *, day, rail="", pool_account,
+           admin_account):
+    """Settle collected premiums into their two homes over the payment
+    rails. One tx_id settles on exactly one rail (the router refuses
+    cross-rail replay); a settlement never runs twice over the same
+    receipts; without a router the settlement refuses — the money is
+    collected, the settlement is not pretend."""
+    unsettled = [p for p in registry.payments
+                 if not p.get("settled") and p["amount_kobo"] > 0]
+    if not unsettled:
+        raise TravelPassError("nothing unsettled — settling zero is a "
+                              "ledger entry that exists to confuse "
+                              "auditors")
+    if router is None:
+        raise TravelPassError("no payment rail — the settlement "
+                              "refuses to be imaginary; wire payrails "
+                              "(Mojaloop / NIBSS)")
+    total = sum(p["amount_kobo"] for p in unsettled)
+    admin = total * FEE_SPLIT["admin_pct"] // 100
+    pool = total - admin
+    registry.settlements = getattr(registry, "settlements", [])
+    seq = len(registry.settlements) + 1
+    results = {}
+    for leg, amount, account in (("admin", admin, admin_account),
+                                 ("pool", pool, pool_account)):
+        res = router.transfer(
+            _settle_request(f"TP-SETTLE-{seq}-{leg}", amount, account),
+            rail=rail or "")
+        if res.status != "COMPLETED":
+            raise TravelPassError(
+                f"{leg} tranche failed to settle ({res.status}: "
+                f"{res.detail}) — the batch stays unsettled; "
+                "a half-settled scheme is a finding, not a state")
+        results[leg] = {"amount_kobo": amount,
+                        "reference": res.reference, "rail": res.rail}
+    for p in unsettled:
+        p["settled"] = {"day": day,
+                        "settlement": f"TP-SETTLE-{seq}"}
+    entry = {"settlement_id": f"TP-SETTLE-{seq}", "day": day,
+             "receipts": len(unsettled), "gross_kobo": total,
+             "admin_kobo": admin, "pool_kobo": pool,
+             "split": dict(FEE_SPLIT), "version": FEE_SPLIT_VERSION,
+             "rails": results}
+    registry.payments.append({  # tombstone row, append-only
+        "receipt": f"TP-SETTLE-{seq}", "traveler_id": None,
+        "amount_kobo": 0, "method": "settlement", "reference":
+        f"TP-SETTLE-{seq}", "day": day, "settled": True})
+    registry.settlements.append(entry)
+    return entry
+
+
+def _settle_request(tx_id, amount_kobo, account):
+    """Build a payrails PaymentRequest by duck-typing (payrails is a
+    sibling package; the import is local so travelpass stays loadable
+    standalone)."""
+    _sys.path.insert(0, _os.path.join(_os.path.dirname(__file__),
+                                      "..", "payrails"))
+    from payrails import PaymentRequest
+    return PaymentRequest(tx_id=tx_id, payee=account,
+                          amount_ngn=amount_kobo // 100,
+                          narration="travelpass settlement",
+                          bank_code="", account=account)
+
+
+def refund_early_exit(registry, traveler_id, *, actual_exit_day, day,
+                      reason):
+    """Pro-rata refund of the UNUSED per-day portion when a traveler
+    leaves early. The flat fee and the administration share never
+    refund — the scheme was administered, the desk was staffed. A
+    traveler with an emergency event refunds nothing: the pool stood
+    ready, that readiness was the product. Append-only negative
+    ledger entry; the original receipts never rewrite."""
+    t = registry._t(traveler_id)
+    if not reason:
+        raise TravelPassError("a refund without a reason is money "
+                              "leaving without a story")
+    if not (t["entry_day"] <= actual_exit_day <= t["exit_day"]):
+        raise TravelPassError("actual exit outside the coverage "
+                              "window — that is not early exit")
+    if any(e["traveler_id"] == traveler_id
+           for e in registry.emergencies):
+        raise TravelPassError("emergency event on record — the pool "
+                              "stood ready; readiness was the product, "
+                              "nothing refunds")
+    if any(p["traveler_id"] == traveler_id and p["amount_kobo"] < 0
+           for p in registry.payments):
+        raise TravelPassError("already refunded — the second refund is "
+                              "the fraud this ledger exists to catch")
+    unused_days = t["exit_day"] - actual_exit_day
+    refundable = (POLICY["per_day_kobo"] * unused_days
+                  * FEE_SPLIT["pool_pct"] // 100)
+    registry._rcp += 1
+    entry = {"receipt": f"RCP-{registry._rcp}",
+             "traveler_id": traveler_id,
+             "amount_kobo": -refundable,
+             "method": "refund", "reference": f"refund-{traveler_id}",
+             "day": day, "reason": reason,
+             "note": "pro-rata pool share of unused days; flat fee "
+                     "and admin share never refund"}
+    registry.payments.append(entry)
+    return dict(entry)
