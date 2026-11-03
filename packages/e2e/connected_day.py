@@ -120,7 +120,8 @@ from crosslink import (imported_case_signal, poe_entry_screen,  # noqa: E402
 from teleicu import FamilyLog  # noqa: E402
 from drugkb import check_iv_y_site, tpn_assess  # noqa: E402
 from serial import growth_assessment  # noqa: E402
-from devicehub import DeviceHub, DeviceHubError  # noqa: E402
+from devicehub import (DeviceHub, DeviceHubError,  # noqa: E402
+                       parse_oru as parse_oru_hl7)
 from travelpass import TravelPassRegistry, TravelPassError  # noqa: E402
 from travelpass import (ips_document, emr_encounter,  # noqa: E402
                         notification_line, settle, refund_early_exit)
@@ -1422,6 +1423,94 @@ def run_connected_day():
                               panel="HD-ADEQUACY")
     assert "SPKTV" in out_msg
     log["device_feed_ingested"] = feed["message_id"]
+
+    # ---- 08:42 device link layer (P0–P3): the wire, the spool, the
+    # lifecycle, the identity, the units — seamless means nothing
+    # lost, nothing guessed, nothing doubled
+    import datetime as _dtl
+    import mllp
+    import astm
+    from devicelink import FeedHealth, ResultStore, Spool
+    from patientlink import IdentityMap
+    from units import normalize_observation
+    # P0a: MLLP — a real socket round trip, honest ACK
+    received = []
+
+    def _lis_dispatch(message):
+        parsed = parse_oru_hl7(message)
+        received.append(parsed)
+        from devicehub import build_ack as _ack
+        return _ack(parsed["message_id"])
+    listener = mllp.MLLPListener("127.0.0.1", 0, _lis_dispatch)
+    listener.serve_in_thread()
+    mllp_port = listener.server_address[1]
+    ack = mllp.send("127.0.0.1", mllp_port,
+                    "MSH|^~\\&|COBAS|ROCHE|OH|LAB|2026||ORU^R01|MSG-MLLP|"
+                    "P|2.5\rPID|1||p-ckd\r"
+                    "OBX|1|NM|GLU^Glucose||180|mg/dL||H|||F|||"
+                    "20261103084200\r")
+    assert "MSA|AA|MSG-MLLP" in ack
+    listener.shutdown()
+    listener.server_close()
+    log["mllp_wire_proven"] = True
+    # P0b: spool — link down loses nothing, replay delivers
+    spool = Spool()
+    spool.enqueue(lis["session_id"], "outbound", {"msg": "HD-9"})
+    dead = spool.replay(lis["session_id"],
+                        lambda p: (_ for _ in ()).throw(
+                            ConnectionError("link down")))
+    assert dead["failed"] == 1
+    delivered = []
+    spool.replay(lis["session_id"], delivered.append)
+    assert delivered == [{"msg": "HD-9"}]
+    log["spool_replay_proven"] = True
+    # P1a: dedupe + lifecycle — retry safe, correction supersedes
+    store = ResultStore()
+    v1 = parse_oru_hl7(
+        "MSH|^~\\&|A|B|C|D|2026||ORU^R01|MSG-K1|P|2.5\rPID|1||p-ckd\r"
+        "OBX|1|NM|K^Potassium||5.2|mmol/L||N|||F|||20261103082500\r")
+    store.post(v1)
+    dup = store.post(v1)
+    assert dup["verdict"] == "duplicate"
+    v2 = parse_oru_hl7(
+        "MSH|^~\\&|A|B|C|D|2026||ORU^R01|MSG-K2|P|2.5\rPID|1||p-ckd\r"
+        "OBX|1|NM|K^Potassium||4.9|mmol/L||N|||C|||20261103083000\r")
+    assert store.post(v2)["observations"] == ["superseded"]
+    assert store.latest("p-ckd", "K")["value"] == "4.9"
+    assert len(store.history("p-ckd", "K")) == 2
+    log["result_lifecycle_proven"] = True
+    # P1b: feed health — silence surfaces, garbage quarantines
+    fh = FeedHealth()
+    fh.seen(lis["session_id"], _dtl.datetime(2026, 1, 1, 8, 0))
+    fh.set_expectation(lis["session_id"], 300)
+    rep = fh.report(_dtl.datetime(2026, 1, 1, 9, 0))
+    assert rep["stale"] == [lis["session_id"]]
+    log["feed_silence_is_a_finding"] = True
+    # P2a: identity crosswalk — unknown patient quarantines, merge
+    # follows the chain
+    im = IdentityMap()
+    q = im.route_result(v1)
+    assert q["quarantined"] is True
+    im.register("p-ckd", "patient-ckd-1", by="registrar")
+    r = im.route_result(v1)
+    assert r["platform_patient_id"] == "patient-ckd-1"
+    log["device_identity_crosswalk_proven"] = True
+    # P2b: units — mg/dL becomes mmol/L with provenance, unbound is
+    # stated
+    conv = normalize_observation(
+        {"code": "GLU", "value": "180", "value_numeric": 180.0,
+         "units": "mg/dL"}, target_unit="mmol/L")
+    assert conv["loinc"] == "2345-7"
+    assert 9.9 < conv["value_numeric"] < 10.1
+    log["unit_conversion_proven"] = True
+    # P3: ASTM lane — the old analyzer's checksum is the contract
+    session = (f"{astm.ENQ}"
+               f"{astm.build_frame(1, 'P|1||p-ckd')}"
+               f"{astm.build_frame(2, 'R|1|^^^GLU|95|mg/dL||N||||F')}"
+               f"{astm.EOT}")
+    parsed_astm = astm.parse_session(session)
+    assert parsed_astm["observations"][0]["code"] == "GLU"
+    log["astm_lane_proven"] = True
 
     # ---- 08:45 traveler medical pass: the border collects the fee,
     # the QR opens the record, the emergency never waits for the

@@ -242,6 +242,37 @@ def catalog(domain=None):
 FIELD, COMPONENT, REPEAT, ESCAPE, SUB = "|", "^", "~", "\\", "&"
 
 
+def _now_ts():
+    """A real HL7 timestamp. A hardcoded timestamp on an ACK is a lie
+    about when the message was accepted."""
+    import datetime as _dt
+    return _dt.datetime.now(_dt.timezone.utc).strftime("%Y%m%d%H%M%S")
+
+
+_ESCAPES = {"\\F\\": "|", "\\S\\": "^", "\\R\\": "~",
+            "\\E\\": "\\", "\\T\\": "&"}
+
+
+def unescape(value):
+    """Decode HL7 escape sequences. An undecoded \\F\\ in a result
+    value is a corrupted result wearing a costume."""
+    for esc, ch in _ESCAPES.items():
+        value = value.replace(esc, ch)
+    return value
+
+
+def escape(value):
+    """Inverse of unescape, for outbound serialization. The escape
+    character itself escapes FIRST — otherwise \\F\\ becomes a
+    lie about a literal."""
+    value = value.replace("\\", "\\E\\")
+    for esc, ch in _ESCAPES.items():
+        if ch == "\\":
+            continue
+        value = value.replace(ch, esc)
+    return value
+
+
 def parse_oru(message):
     """Parse an HL7 v2 ORU^R01 into normalized observations.
 
@@ -276,18 +307,34 @@ def parse_oru(message):
                 raise DeviceHubError("truncated OBX segment — an "
                                      "observation without a value "
                                      "field is not an observation")
-            out["observations"].append({
+            value_type = fields[2] if len(fields) > 2 else ""
+            raw_value = unescape(fields[5])
+            obs = {
                 "set_id": fields[1],
                 "code": fields[3].split(COMPONENT)[0],
-                "code_text": (fields[3].split(COMPONENT)[1]
+                "code_text": (unescape(fields[3].split(COMPONENT)[1])
                               if COMPONENT in fields[3] else ""),
-                "value": fields[5],
+                "value_type": value_type,
+                "value": raw_value,
                 "units": fields[6] if len(fields) > 6 else "",
                 "abnormal_flag": (fields[8] if len(fields) > 8
                                   else ""),
+                # OBX-11: the result lifecycle rides the wire — a
+                # parser that drops it cannot tell a preliminary from
+                # a corrected result
+                "status": (fields[11] if len(fields) > 11
+                           else "") or "F",
                 "timestamp": (fields[14] if len(fields) > 14 else ""),
                 "panel": current_obr,
-            })
+            }
+            if value_type == "NM":
+                try:
+                    obs["value_numeric"] = float(raw_value)
+                except ValueError:
+                    obs["value_numeric"] = None
+                    obs["typing_note"] = ("NM with non-numeric value "
+                                          "— kept raw, stated loudly")
+            out["observations"].append(obs)
         elif name in ("MSH", "NTE"):
             continue
         else:
@@ -306,7 +353,7 @@ def build_ack(message_id, *, accepting_app="openhealth",
     code = "AA" if error is None else "AE"
     err = f"{FIELD}{error}" if error else ""
     return (f"MSH|^~\\&|{accepting_app}||SENDER||"
-            f"20260101000000||ACK|ACK-{message_id}|P|2.5\r"
+            f"{_now_ts()}||ACK|ACK-{message_id}|P|2.5\r"
             f"MSA|{code}|{message_id}{err}\r")
 
 
@@ -318,7 +365,7 @@ def build_oru(*, message_id, patient_id, sender, observations,
     if not observations:
         raise DeviceHubError("refusing to serialize an empty result "
                              "set — absence is not a value")
-    lines = [f"MSH|^~\\&|{sender}||OPENHEALTH||20260101000000||"
+    lines = [f"MSH|^~\\&|{sender}||OPENHEALTH||{_now_ts()}||"
              f"ORU^R01|{message_id}|P|2.5",
              f"PID|1||{patient_id}"]
     if panel:
