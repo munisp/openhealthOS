@@ -11,7 +11,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "devicereg", "teleicu", "mdt", "duelgrade", "drugkb",
             "steward", "pharmreview", "earlywarn", "serial",
             "cervixscreen", "callrecall", "inpatient", "medrec",
-            "cpoe"):
+            "cpoe", "viewerlaunch"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa: E402
@@ -21,7 +21,9 @@ from crosslink import (CrosslinkError, RENAL_RULES_VERSION, renal_check,  # noqa
                        timeouts_to_review, deterioration_to_icu,
                        order_with_priors, screens_to_register,
                        colpo_biopsy_to_path, admissions_to_medrec,
-                       synoptic_signout, decision_to_orders)
+                       synoptic_signout, decision_to_orders,
+                       verify_with_pixels)
+from viewerlaunch import ViewerLauncher  # noqa: E402
 from nephrology import DialysisUnit  # noqa: E402
 from telederm import TeleDerm, DERM_CHECKS  # noqa: E402
 from telepath import PathologyService  # noqa: E402
@@ -846,3 +848,70 @@ class TestDecisionToOrders(unittest.TestCase):
                                day=2,
                                prescriptions=[("NG-NOPE", 1, 1, 1)])
         self.assertEqual(o.orders, {})
+
+
+class TestVerifyWithPixels(unittest.TestCase):
+    """Seam 16: a report signed without the pixels is an opinion about
+    a filename — verification requires a launch session by the
+    verifying reader for the case's artifact."""
+
+    def setUp(self):
+        self.pacs = StudyRegistry()
+        self.pacs.register_study(study_uid="ST-1", accession="A1",
+                                 patient_id="p1", modality="CT",
+                                 exam_protocol="ct-head",
+                                 priority="routine", facility="f", day=0,
+                                 instances=30)
+        readers = ReaderRegistry()
+        readers.register("rad-1", licence_id="L1", licence_expiry_day=400,
+                         scopes=("chest",))
+        readers.register("rad-2", licence_id="L2", licence_expiry_day=400,
+                         scopes=("chest",))
+        self.svc = ReadingService(
+            DomainConfig("radiology", scopes=("chest",),
+                         sla_hours={"stat": 2, "urgent": 8,
+                                    "routine": 24}), readers)
+        self.launcher = ViewerLauncher(self.pacs,
+                                       viewer_base="https://viewer.ex")
+        self.svc.order("RC-1", priority="routine",
+                       question="?bleed", facility="f", referrer="mo-1",
+                       day=1, meta={"patient_id": "p1"})
+        self.svc.assign("RC-1", day=1, prefer="rad-1")
+        self.svc.draft_report("RC-1", reader_id="rad-1",
+                              findings="no bleed", impression="normal",
+                              template_version="freeform@1", day=1)
+
+    def test_verify_requires_launch_session(self):
+        with self.assertRaises(CrosslinkError) as ctx:
+            verify_with_pixels(self.svc, self.launcher, "RC-1",
+                               artifact="ST-1", reader_id="rad-1", day=2)
+        self.assertIn("never opened", str(ctx.exception))
+        self.assertEqual(self.svc.reports["RC-1"]["state"], "draft")
+
+    def test_launch_then_verify_lands_session_on_report(self):
+        self.launcher.launch_study("ST-1", reader_id="rad-1",
+                                   purpose="dx", day=1, case_id="RC-1")
+        out = verify_with_pixels(self.svc, self.launcher, "RC-1",
+                                 artifact="ST-1", reader_id="rad-1",
+                                 day=2)
+        self.assertEqual(out["state"], "verified")
+        self.assertEqual(out["viewer_session"], "VS-1")
+
+    def test_someone_elses_session_does_not_count(self):
+        self.launcher.launch_study("ST-1", reader_id="rad-2",
+                                   purpose="second look", day=1)
+        with self.assertRaises(CrosslinkError):
+            verify_with_pixels(self.svc, self.launcher, "RC-1",
+                               artifact="ST-1", reader_id="rad-1", day=2)
+
+    def test_wrong_artifact_session_does_not_count(self):
+        self.pacs.register_study(study_uid="ST-2", accession="A2",
+                                 patient_id="p1", modality="CT",
+                                 exam_protocol="ct-head",
+                                 priority="routine", facility="f", day=0,
+                                 instances=12)
+        self.launcher.launch_study("ST-2", reader_id="rad-1",
+                                   purpose="dx", day=1)
+        with self.assertRaises(CrosslinkError):
+            verify_with_pixels(self.svc, self.launcher, "RC-1",
+                               artifact="ST-1", reader_id="rad-1", day=2)

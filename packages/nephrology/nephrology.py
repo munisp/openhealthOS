@@ -105,6 +105,7 @@ class DialysisUnit:
         self.sessions = {}
         self.water_log = []       # (kind, day, result)
         self.machines = {}        # machine_id -> {hbv_dedicated}
+        self.faults = []          # append-only machine fault ledger
         self.dialyzers = {}       # dialyzer_id -> reuse count
         self.serology = {}        # patient_id -> {marker: (result, day)}
         self.events = []          # seroconversions, isolations
@@ -165,8 +166,92 @@ class DialysisUnit:
     def register_machine(self, machine_id, *, hbv_dedicated=False):
         if machine_id in self.machines:
             raise NephroError(f"duplicate machine: {machine_id}")
-        self.machines[machine_id] = {"hbv_dedicated": bool(hbv_dedicated)}
+        self.machines[machine_id] = {"hbv_dedicated": bool(hbv_dedicated),
+                                     "out_of_service": False}
         return dict(self.machines[machine_id])
+
+    # ---- machine faults: the chair loses its machine loudly ----
+    def record_machine_fault(self, machine_id, *, day, description, by):
+        """A fault interrupts every running session on that machine —
+        the patient mid-dialysis on a faulted machine is the emergency,
+        not the machine."""
+        m = self._machine(machine_id)
+        if not description or not by:
+            raise NephroError("a fault without a description or a name "
+                              "is a rumour, not an event")
+        m["out_of_service"] = True
+        fault = {"machine_id": machine_id, "day": day,
+                 "description": description, "by": by, "cleared": None}
+        self.faults.append(fault)
+        interrupted = []
+        for sid, s in self.sessions.items():
+            if s["machine_id"] == machine_id and s["state"] == "running":
+                s["state"] = "interrupted"
+                s["interruption"] = {"reason": "machine-fault",
+                                     "day": day, "machine": machine_id}
+                interrupted.append(sid)
+        return {"machine_id": machine_id, "out_of_service": True,
+                "sessions_interrupted": interrupted}
+
+    def reseat_session(self, session_id, *, new_machine_id, day, by):
+        """Move an interrupted session to a healthy machine. HBV
+        segregation is re-checked — a fault does not suspend the
+        isolation rules, it stresses them."""
+        s = self._session(session_id)
+        if s["state"] != "interrupted":
+            raise NephroError(
+                f"session is {s['state']} — only a fault-interrupted "
+                "session re-seats; moving a running session is how "
+                "lines get tangled")
+        m = self._machine(new_machine_id)
+        if m.get("out_of_service"):
+            raise NephroError(f"{new_machine_id} is also out of service "
+                              "— reseating onto a faulted machine is "
+                              "musical chairs with a bloodline")
+        p = self._patient(s["patient_id"])
+        hbv_pos = self.serology.get(s["patient_id"], {}) \
+            .get("hbv", ("unknown",))[0] == "positive"
+        if hbv_pos and not m["hbv_dedicated"]:
+            raise NephroError("HBV+ patient re-seated to a shared "
+                              "machine — refused; the fault changes the "
+                              "chair, not the serology")
+        if not by:
+            raise NephroError("unsigned re-seat — who moved the patient "
+                              "matters when the line drops")
+        s.setdefault("moves", []).append(
+            {"from": s["machine_id"], "to": new_machine_id, "day": day,
+             "by": by})
+        s["machine_id"] = new_machine_id
+        s["state"] = "running"
+        return dict(s)
+
+    def clear_machine_fault(self, machine_id, *, biomed_ref, by, day):
+        m = self._machine(machine_id)
+        open_faults = [f for f in self.faults
+                       if f["machine_id"] == machine_id
+                       and f["cleared"] is None]
+        if not open_faults:
+            raise NephroError(f"no open fault on {machine_id} — "
+                              "clearing a healthy machine is paperwork "
+                              "without a patient")
+        if not biomed_ref:
+            raise NephroError("return to service needs a biomed "
+                              "clearance reference — 'sounds OK now' "
+                              "is not a clearance")
+        for f in open_faults:
+            f["cleared"] = {"biomed_ref": biomed_ref, "by": by,
+                            "day": day}
+        m["out_of_service"] = False
+        return {"machine_id": machine_id, "in_service": True}
+
+    def faults_open(self):
+        return [f for f in self.faults if f["cleared"] is None]
+
+    def _machine(self, machine_id):
+        if machine_id not in self.machines:
+            raise NephroError(f"unknown machine: {machine_id}")
+        return self.machines[machine_id]
+
 
     # ---- sessions ----
     def start_session(self, session_id, *, patient_id, machine_id,
@@ -176,6 +261,11 @@ class DialysisUnit:
             raise NephroError(f"duplicate session: {session_id}")
         if machine_id not in self.machines:
             raise NephroError(f"unknown machine: {machine_id}")
+        if self.machines[machine_id].get("out_of_service"):
+            raise NephroError(
+                f"{machine_id} is out of service — a faulted machine "
+                "does not run a session because nobody updated the "
+                "board; biomed clearance first")
         flags = []
         # HBV segregation enforced, not policy-papered
         sero = self.serology.get(patient_id, {})

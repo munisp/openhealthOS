@@ -225,3 +225,112 @@ def check_order(drug, *, dose_mg_per_day=None, current_meds=(),
             "formulary_version": FORMULARY_VERSION,
             "note": "absence from this table is not clearance — unrated "
                     "pairs stay with the pharmacist"}
+
+
+# ----------------------------------------------------------------
+# IV Y-site compatibility: two drugs sharing a line meet in the
+# tubing before they meet the patient. The table is the same doctrine
+# as INTERACTIONS — curated open subset, every entry cited, and
+# ABSENCE FROM THE TABLE IS NOT COMPATIBILITY: an unrated pair goes
+# to the pharmacist, not into the vein.
+IV_RULES_VERSION = "iv-y-site@1.0.0"
+# (a, b, verdict, note, evidence_ref); verdicts: compatible /
+# incompatible / variable (formulation- or concentration-dependent)
+IV_PAIRS = [
+    ("ceftriaxone", "calcium-gluconate", "incompatible",
+     "precipitates — fatal emboli reported; separate lines, flush "
+     "between", _REF),
+    ("furosemide", "midazolam", "incompatible",
+     "precipitation at Y-site", _REF),
+    ("phenytoin", "dextrose-5", "incompatible",
+     "crystallises in dextrose — use normal saline", _REF),
+    ("sodium-bicarbonate", "calcium-chloride", "incompatible",
+     "carbonate precipitation", _REF),
+    ("insulin-regular", "sodium-chloride-0.9", "compatible",
+     "standard infusion", _REF),
+    ("morphine", "ondansetron", "compatible",
+     "common antiemetic pairing", _REF),
+    ("dobutamine", "sodium-bicarbonate", "incompatible",
+     "alkaline inactivation", _REF),
+    ("norepinephrine", "sodium-bicarbonate", "incompatible",
+     "alkaline inactivation — vasopressor lost in the tubing", _REF),
+    ("paracetamol-iv", "sodium-chloride-0.9", "variable",
+     "concentration-dependent — check product sheet", _REF),
+]
+
+
+def check_iv_y_site(drug_a, drug_b):
+    """Verdict for two agents sharing a line. Unknown pairs report
+    unrated and STAY with the pharmacist — 'no data' is not 'yes'."""
+    a, b = drug_a.strip().lower(), drug_b.strip().lower()
+    if a == b:
+        return {"verdict": "compatible", "note": "same agent",
+                "version": IV_RULES_VERSION}
+    for x, y, verdict, note, ref in IV_PAIRS:
+        if (a, b) == (x, y) or (a, b) == (y, x):
+            return {"verdict": verdict, "note": note, "evidence": ref,
+                    "version": IV_RULES_VERSION}
+    return {"verdict": "unrated",
+            "note": "no data — absence from the table is not "
+                    "compatibility; pharmacist decision required",
+            "version": IV_RULES_VERSION}
+
+
+# ---- TPN admixture assessment --------------------------------------
+# A TPN bag is a chemical system, not a soup: route gated on
+# osmolarity, calcium-phosphate solubility checked as a product.
+# Constants are SHAPED from standard practice — bind the pharmacy's
+# validated table at deployment.
+TPN_RULES_VERSION = "tpn@1.0.0"
+PERIPHERAL_OSM_MAX = 900        # mOsm/L — above this, central vein only
+CAP_PRODUCT_MAX = 72.0          # (mmol/L)^2 shaped precipitation limit
+
+
+def tpn_assess(*, volume_ml, dextrose_pct, amino_acid_pct, lipid_pct,
+               calcium_mmol, phosphate_mmol, route):
+    """Assess a TPN admixture. Every component is mandatory — a recipe
+    with a missing number is not a recipe. Returns route verdict,
+    estimated osmolarity, and flags. Refuses nothing silently."""
+    if route not in ("peripheral", "central"):
+        raise FormularyError(f"unknown route: {route}")
+    for name, val in (("volume_ml", volume_ml),
+                      ("dextrose_pct", dextrose_pct),
+                      ("amino_acid_pct", amino_acid_pct),
+                      ("lipid_pct", lipid_pct),
+                      ("calcium_mmol", calcium_mmol),
+                      ("phosphate_mmol", phosphate_mmol)):
+        if val is None:
+            raise FormularyError(f"{name} missing — absence is not a "
+                                 "value; an unmeasured component is an "
+                                 "unmixed bag")
+        if val < 0:
+            raise FormularyError(f"negative {name} is a data error, "
+                                 "not a formulation")
+    if volume_ml <= 0:
+        raise FormularyError("zero-volume TPN feeds nobody")
+    # shaped estimate: dextrose ~5 mOsm/g, amino acids ~10 mOsm/g,
+    # lipid contribution negligible at usual concentrations
+    litres = volume_ml / 1000.0
+    mOsm = (dextrose_pct * 10 * 5) + (amino_acid_pct * 10 * 10)
+    cap_product = (calcium_mmol / litres) * (phosphate_mmol / litres)
+    flags = []
+    if route == "peripheral" and mOsm > PERIPHERAL_OSM_MAX:
+        flags.append(f"osmolarity ~{mOsm:.0f} mOsm/L exceeds the "
+                     f"peripheral ceiling ({PERIPHERAL_OSM_MAX}) — "
+                     "central vein or a weaker bag; a peripheral line "
+                     "with this bag is a chemical burn on a schedule")
+    if cap_product > CAP_PRODUCT_MAX:
+        flags.append(f"Ca×P product {cap_product:.1f} (mmol/L)^2 "
+                     f"exceeds {CAP_PRODUCT_MAX} — precipitation "
+                     "risk; separate or reformulate")
+    return {"route": route, "volume_ml": volume_ml,
+            "osmolarity_est_mosm_l": round(mOsm, 1),
+            "cap_product": round(cap_product, 1),
+            "flags": flags,
+            "route_verdict": ("refused-peripheral"
+                              if route == "peripheral"
+                              and mOsm > PERIPHERAL_OSM_MAX
+                              else "route-ok"),
+            "version": TPN_RULES_VERSION,
+            "note": "shaped estimate — the pharmacy's validated "
+                    "osmolarity/solubility table binds at deployment"}

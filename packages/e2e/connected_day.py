@@ -94,7 +94,7 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "earlywarn", "cervixscreen", "usguard", "callrecall",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
-            "teleecg", "dictate", "staging"):
+            "teleecg", "dictate", "staging", "viewerlaunch"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -109,7 +109,13 @@ from orders import OrderService  # noqa: E402
 from teleecg import HolterService, MachineEditTrail  # noqa: E402
 from nephrology import adequacy_from_labs, VaccinationBook  # noqa: E402
 from fertility import registry_return as fert_registry_return  # noqa: E402
+from fertility import FertilityError  # noqa: E402
 from telederm import LesionMap  # noqa: E402
+from viewerlaunch import ViewerLauncher  # noqa: E402
+from crosslink import verify_with_pixels  # noqa: E402
+from teleicu import FamilyLog  # noqa: E402
+from drugkb import check_iv_y_site, tpn_assess  # noqa: E402
+from serial import growth_assessment  # noqa: E402
 from telepath import (FrozenSectionLog, DerivativeInventory,  # noqa: E402
                       ReflexLog)
 from nephrology import DialysisUnit  # noqa: E402
@@ -129,7 +135,7 @@ from teachfile import TeachingLibrary, TeachFileError  # noqa: E402
 from drugkb import canonical_class  # noqa: E402
 from formulary import Formulary  # noqa: E402
 from earlywarn import EarlyWarner  # noqa: E402
-from cervixscreen import CervixScreening  # noqa: E402
+from cervixscreen import CervixScreening, DeviceQA  # noqa: E402
 from usguard import UltrasoundQA, ANOMALY_PLANES  # noqa: E402
 from callrecall import CallRecallRegister  # noqa: E402
 from sepsis import SepsisClock  # noqa: E402
@@ -541,7 +547,25 @@ def run_connected_day():
     cervix.record_hpv("p-cx1", result="positive", day=0)
     cervix.triage("p-cx1", method="via", day=0)
     cervix.record_via("p-cx1", result="positive", day=0)
-    tx = cervix.treat("p-cx1", method="thermal-ablation", day=0)
+    # device treatment gates on the QA book: the probe that was not
+    # checked today is a room heater with ambitions
+    cervix.device_qa = DeviceQA()
+    cervix.device_qa.register_device("TA-1", kind="thermal-ablation",
+                                     facility="phc-1")
+    try:
+        cervix.treat("p-cx1", method="thermal-ablation", day=0,
+                     device_id="TA-1")
+        raise RuntimeError("treated with an un-QA'd device")
+    except TeleReadError as exc:
+        assert "QA" in str(exc), exc
+        log["cervix_device_qa_refused"] = True
+    cervix.device_qa.record_qa("TA-1",
+                               checks={"temp-probe-calibrated": True,
+                                       "tip-integrity": True,
+                                       "timer-functional": True},
+                               by="nurse-2", day=0)
+    tx = cervix.treat("p-cx1", method="thermal-ablation", day=0,
+                      device_id="TA-1")
     assert tx["treatment"]["same_visit"] is True, tx
     # HPV-negative WITH HIV: 36-month recall, not the 60 of the general
     # population — immunosuppression shortens the interval
@@ -1252,7 +1276,117 @@ def run_connected_day():
     assert due[0]["patient_id"] == "p-mel" and due[0]["days_overdue"] == 5
     log["lesion_change_flagged"] = "L-9"
 
-    log["seams_proven"] = 31
+    # ---- 08:00 diagnostic viewer: the pixels are the point (P0);
+    # verification gates on the launch (crosslink seam 16)
+    pacs_svc.register_study(study_uid="ST-PX1", accession="ACC-PX1",
+                            patient_id="p-px", modality="CT",
+                            exam_protocol="ct-chest", priority="routine",
+                            facility="phc-1", day=0)
+    launcher = ViewerLauncher(pacs_svc,
+                              viewer_base="https://ohif.example")
+    radiology.order("RC-PX1", priority="routine", question="?nodule",
+                    facility="phc-1", referrer="mo-1", day=0,
+                    scope="chest")
+    radiology.assign("RC-PX1", day=0, prefer="rad-on")
+    radiology.draft_report("RC-PX1", reader_id="rad-on",
+                           findings="6mm nodule", impression="follow-up",
+                           template_version="freeform@1", day=0)
+    try:
+        verify_with_pixels(radiology, launcher, "RC-PX1",
+                           artifact="ST-PX1", reader_id="rad-on", day=0)
+        raise RuntimeError("verified without opening the pixels")
+    except CrosslinkError:
+        log["pixel_gate_held"] = True
+    launch = launcher.launch_study("ST-PX1", reader_id="rad-on",
+                                   purpose="diagnosis", day=0,
+                                   case_id="RC-PX1")
+    verified = verify_with_pixels(radiology, launcher, "RC-PX1",
+                                  artifact="ST-PX1", reader_id="rad-on",
+                                  day=0)
+    assert verified["state"] == "verified"
+    assert verified["viewer_session"] == launch["session_id"]
+    log["pixel_gate_verified"] = verified["viewer_session"]
+
+    # ---- 08:10 tele-ICU family log: silence to the family is a
+    # finding (P2)
+    famlog = FamilyLog(icu)
+    open_icu = sorted(icu.oversight)[0]
+    famlog.record_update(open_icu, day=0, by="icu-1",
+                         family_member="spouse", channel="phone",
+                         summary="stable on reduced sedation")
+    assert famlog.updates_due(0) == []
+    log["family_update_logged"] = open_icu
+
+    # ---- 08:20 IV Y-site + TPN: the tubing is a prescribing surface
+    # too (P2)
+    assert check_iv_y_site("ceftriaxone", "calcium-gluconate"
+                           )["verdict"] == "incompatible"
+    assert check_iv_y_site("obscuremycin", "rarezepam"
+                           )["verdict"] == "unrated"
+    tpn = tpn_assess(volume_ml=2000, dextrose_pct=10, amino_acid_pct=4,
+                     lipid_pct=2, calcium_mmol=5, phosphate_mmol=15,
+                     route="central")
+    assert tpn["route_verdict"] == "route-ok"
+    hot = tpn_assess(volume_ml=2000, dextrose_pct=15, amino_acid_pct=5,
+                     lipid_pct=2, calcium_mmol=5, phosphate_mmol=15,
+                     route="peripheral")
+    assert hot["route_verdict"] == "refused-peripheral"
+    log["iv_tpn_screened"] = True
+
+    # ---- 08:25 machine fault → chair re-seat: the fault interrupts
+    # loudly, the re-seat re-checks segregation (P2)
+    unit.register_machine("HD-M1")
+    unit.register_machine("HD-M2")
+    unit.start_session("HD-F1", patient_id="p-ckd", machine_id="HD-M1",
+                       dialyzer_id="DZ-1", day=1)
+    fault = unit.record_machine_fault("HD-M1", day=1,
+                                      description="blood leak alarm",
+                                      by="nurse-1")
+    assert fault["sessions_interrupted"] == ["HD-F1"]
+    moved = unit.reseat_session("HD-F1", new_machine_id="HD-M2", day=1,
+                                by="nurse-1")
+    assert moved["state"] == "running"
+    log["fault_reseated"] = moved["machine_id"]
+
+    # ---- 08:30 PGT gate: the biopsy is a question; the result gates
+    # the transfer (P2)
+    clinic.register_couple("CPL-PGT", partner_a="ife", partner_b="seun",
+                           day=0)
+    for kind in ("cycle-treatment", "embryo-transfer", "pgt"):
+        for who in ("ife", "seun"):
+            clinic.grant_consent("CPL-PGT", kind, method="signed",
+                                 by=who, day=0)
+    clinic.start_cycle("CY-PGT", couple_id="CPL-PGT",
+                       protocol_version="antag@2", day=0)
+    for stage in ("stimulation", "triggered", "retrieval",
+                  "fertilization"):
+        clinic.advance("CY-PGT", stage, day=1, by="dr-1")
+    clinic.fertilize("CY-PGT", method="icsi", n_embryos=2, day=2,
+                     embryologist="em-1")
+    clinic.advance("CY-PGT", "culture", day=3, by="em-1")
+    clinic.order_pgt("CY-PGT-E1", kind="pgt-a", day=4, by="em-1")
+    try:
+        clinic.move_embryo("CY-PGT-E1", "transferred", day=5,
+                           witness_1="em-1", witness_2="em-2")
+        raise RuntimeError("transferred with an unanswered biopsy")
+    except FertilityError:
+        log["pgt_no_result_held"] = True
+    clinic.record_pgt_result("CY-PGT-E1", result="aneuploid", day=5,
+                             lab_ref="GEN-1")
+    try:
+        clinic.move_embryo("CY-PGT-E1", "transferred", day=6,
+                           witness_1="em-1", witness_2="em-2")
+        raise RuntimeError("transferred an aneuploid embryo")
+    except FertilityError:
+        log["pgt_aneuploid_held"] = True
+
+    # ---- 08:35 growth charting: the series is the chart (P2)
+    ga = growth_assessment([(26, {"ac": 220}), (30, {"ac": 262}),
+                            (34, {"ac": 272})])
+    assert any("crossed centile bands" in f for f in ga["flags"])
+    log["growth_crossing_flagged"] = True
+
+    log["seams_proven"] = 32
     return log
 
 

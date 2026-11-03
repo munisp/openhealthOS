@@ -21,6 +21,7 @@ aggregate-only.
 """
 
 CONSENT_KINDS = ("cycle-treatment", "cryopreservation", "embryo-transfer",
+                 "pgt",
                  "donor-gametes", "disposition-discard",
                  "disposition-donate")
 DISPOSITION_KINDS = ("disposition-discard", "disposition-donate")
@@ -36,6 +37,10 @@ EMBRYO_MOVES = {"culture": ("frozen", "transferred", "discarded"),
                 "thawed": ("transferred", "discarded"),
                 "transferred": (), "discarded": (), "donated": ()}
 DONOR_SCREENING = ("hiv", "hbv", "hcv", "syphilis")
+PGT_KINDS = ("pgt-a", "pgt-m", "pgt-sr")
+PGT_RESULTS = ("euploid", "aneuploid", "mosaic", "affected",
+               "unaffected", "inconclusive")
+PGT_VERSION = "pgt@1.0.0"
 OHSS_ESCALATE = ("severe", "critical")
 OHSS_SEVERITIES = ("mild", "moderate") + OHSS_ESCALATE
 
@@ -165,7 +170,8 @@ class FertilityClinic:
 
     # ---- embryo custody: double-witnessed, always ----
     def move_embryo(self, embryo_id, to_stage, *, day, witness_1,
-                    witness_2, tank=None, canister=None, position=None):
+                    witness_2, tank=None, canister=None, position=None,
+                    pgt_override=None):
         e = self._embryo(embryo_id)
         cy = self._cycle(e["cycle_id"])
         if not witness_1 or not witness_2 or witness_1 == witness_2:
@@ -190,6 +196,24 @@ class FertilityClinic:
                 couple, "embryo-transfer", d):
             raise FertilityError("embryo-transfer consent from both "
                                  "partners required")
+        if to_stage == "transferred":
+            pgt = e.get("pgt")
+            if pgt:
+                result = pgt.get("result")
+                if result is None:
+                    raise FertilityError(
+                        "PGT ordered, no result back — transferring "
+                        "anyway makes the biopsy a ritual, not a test")
+                if result in ("aneuploid", "affected"):
+                    raise FertilityError(
+                        f"PGT result {result} — this embryo does not "
+                        "transfer; the lab answered, listen to it")
+                if result in ("mosaic", "inconclusive") and \
+                        not pgt_override:
+                    raise FertilityError(
+                        f"PGT result {result} — transfer needs "
+                        "documented counselling override; uncertainty "
+                        "is a decision, not a default")
         if to_stage == "discarded" and not self._both_consented(
                 couple, "disposition-discard", d):
             raise FertilityError(
@@ -204,8 +228,55 @@ class FertilityClinic:
         e["movements"].append((to_stage, day, witness_1, witness_2))
         e["stage"] = to_stage
         if to_stage == "transferred":
+            if pgt_override and e.get("pgt"):
+                e["pgt"]["override"] = {"reason": pgt_override,
+                                        "day": day,
+                                        "witnesses": (witness_1,
+                                                      witness_2)}
             cy["transferred"] = cy.get("transferred", 0) + 1
         return dict(e)
+
+    # ---- PGT: the biopsy is a question; the result gates the transfer ----
+    def order_pgt(self, embryo_id, *, kind, day, by):
+        e = self._embryo(embryo_id)
+        if kind not in PGT_KINDS:
+            raise FertilityError(f"unknown PGT kind: {kind} — the "
+                                 "assay menu is versioned, not "
+                                 "improvised")
+        if e["stage"] not in ("culture", "frozen"):
+            raise FertilityError(
+                f"embryo is {e['stage']} — PGT biopsies an embryo in "
+                "culture or from cryo, not a memory")
+        if e.get("pgt"):
+            raise FertilityError("PGT already ordered on this embryo — "
+                                 "a second biopsy of the same embryo is "
+                                 "a new decision, not a duplicate row")
+        if not self._both_consented(e["couple_id"], "pgt", day):
+            raise FertilityError("pgt consent from both partners "
+                                 "required — testing an embryo without "
+                                 "consent is testing the parents")
+        e["pgt"] = {"kind": kind, "ordered_day": day, "by": by,
+                    "result": None}
+        return dict(e["pgt"])
+
+    def record_pgt_result(self, embryo_id, *, result, day, lab_ref):
+        e = self._embryo(embryo_id)
+        if not e.get("pgt"):
+            raise FertilityError("no PGT ordered on this embryo — a "
+                                 "result without an order is a sample "
+                                 "mix-up until proven otherwise")
+        if e["pgt"]["result"] is not None:
+            raise FertilityError("PGT result already recorded — results "
+                                 "are append-only; a correction is an "
+                                 "addendum, not a rewrite")
+        if result not in PGT_RESULTS:
+            raise FertilityError(f"unknown PGT result: {result}")
+        if not lab_ref:
+            raise FertilityError("a PGT result without a lab reference "
+                                 "is gossip, not genetics")
+        e["pgt"].update({"result": result, "result_day": day,
+                         "lab_ref": lab_ref})
+        return dict(e["pgt"])
 
     # ---- donors ----
     def register_donor(self, donor_code, *, screening, day):
@@ -713,9 +784,42 @@ def registry_return(clinic):
             len(births), len(transferred)),
         "singleton_rate_of_births": rate(len(singletons),
                                          len(births)),
+        "cumulative_live_birth": cumulative_live_birth(clinic),
         "cancelled_cycles": {"n": cancelled,
                              "note": "a cancelled cycle is data, not "
                                      "an embarrassment"},
         "note": "no statute requires this return here — which is why "
                 "self-reporting is the differentiator",
     }
+
+
+def cumulative_live_birth(clinic):
+    """Conservative cumulative live-birth: per couple, cycles ordered
+    by start day; by cycle n the numerator is couples with a live
+    birth inside their first n cycles, the denominator is couples who
+    STARTED at least n cycles. Per-cycle rates flatter; the cumulative
+    curve is what the couple actually asked about. Denominators
+    always."""
+    by_couple = {}
+    for c in clinic.cycles.values():
+        by_couple.setdefault(c["couple_id"], []).append(c)
+    max_cycles = 0
+    couple_rows = []
+    for cid, rows in by_couple.items():
+        rows.sort(key=lambda c: c["started_day"])
+        max_cycles = max(max_cycles, len(rows))
+        couple_rows.append(rows)
+    out = {}
+    for n in range(1, max_cycles + 1):
+        starters = [rows for rows in couple_rows if len(rows) >= n]
+        births = sum(
+            1 for rows in starters
+            if any((r.get("outcome") or {}).get("live_birth")
+                   for r in rows[:n]))
+        d = len(starters)
+        out[n] = {"couples_starting": d, "couples_with_live_birth": births,
+                  "rate": round(births / d, 3) if d else None}
+    return {"by_cycle": out,
+            "note": "conservative: couples still trying count in every "
+                    "denominator they reached; a cumulative rate without "
+                    "n is marketing"}

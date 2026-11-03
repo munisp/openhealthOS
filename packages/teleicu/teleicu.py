@@ -281,3 +281,75 @@ class BedBoard:
         if pid not in self.patients:
             raise TeleReadError(f"not on the {self.unit} board: {pid}")
         return self.patients[pid]
+
+
+# ----------------------------------------------------------------
+# Family communication: silence to the family is a finding.
+# ICU families measure the unit by how often someone tells them
+# something true. The log makes the silence measurable.
+FAMILY_UPDATE_INTERVAL_DAYS = 2
+FAMILY_CHANNELS = ("in-person", "phone", "video")
+FAMILYLOG_VERSION = "family-log@1.0.0"
+
+
+class FamilyLog:
+    """Append-only family-update ledger for ICU oversight cases.
+
+    An update names who was told, by whom, through which channel, and
+    what was said in substance. 'We keep them informed' without a
+    ledger entry is a belief, not a practice."""
+
+    def __init__(self, icu):
+        self.icu = icu
+        self.updates = []   # append-only
+
+    def record_update(self, case_id, *, day, by, family_member, channel,
+                      summary):
+        self.icu._ov(case_id)  # oversight case must exist
+        if channel not in FAMILY_CHANNELS:
+            raise TeleReadError(f"unknown channel: {channel} — an update "
+                                "without a channel never happened")
+        if not family_member or not summary:
+            raise TeleReadError("an update without WHO was told or WHAT "
+                                "was said is a tick-box, not a "
+                                "conversation")
+        if not by:
+            raise TeleReadError("unsigned family update — who spoke "
+                                "matters when memories differ")
+        entry = {"case_id": case_id, "day": day, "by": by,
+                 "family_member": family_member, "channel": channel,
+                 "summary": summary, "version": FAMILYLOG_VERSION}
+        self.updates.append(entry)
+        return dict(entry)
+
+    def updates_due(self, as_of):
+        """Open oversight cases with no update in the interval —
+        longest-silence first. A family nobody has told anything for
+        two days is a complaint that has not been written yet."""
+        open_cases = [cid for cid, o in self.icu.oversight.items()
+                      if not o.get("closed_day")]
+        due = []
+        for cid in open_cases:
+            mine = [u for u in self.updates if u["case_id"] == cid]
+            ref = mine[-1]["day"] if mine else \
+                self.icu.oversight[cid]["opened_day"]
+            silent_for = as_of - ref
+            if silent_for >= FAMILY_UPDATE_INTERVAL_DAYS:
+                due.append({"case_id": cid,
+                            "silent_days": silent_for,
+                            "never_updated": not mine})
+        due.sort(key=lambda d: -d["silent_days"])
+        return due
+
+    def report(self, as_of):
+        open_cases = [cid for cid, o in self.icu.oversight.items()
+                      if not o.get("closed_day")]
+        due = self.updates_due(as_of)
+        return {"open_cases": len(open_cases),
+                "updates_logged": len(self.updates),
+                "cases_silent_over_interval": len(due),
+                "never_updated": sum(1 for d in due
+                                     if d["never_updated"]),
+                "note": "every silence ships with its denominator: "
+                        "silent cases over open cases",
+                "version": FAMILYLOG_VERSION}

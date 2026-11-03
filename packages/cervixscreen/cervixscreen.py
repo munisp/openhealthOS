@@ -60,6 +60,7 @@ class CervixScreening:
     def __init__(self, readers):
         self.reading = ReadingService(CONFIG, readers)
         self.cascade = {}   # patient_id -> record
+        self.device_qa = None  # attach DeviceQA to gate device methods
 
     def screen(self, patient_id, *, facility, screener, day,
                image_ref=None, hiv_positive=False, modality="via"):
@@ -143,7 +144,8 @@ class CervixScreening:
         c["triage_day"] = day
         return dict(c)
 
-    def treat(self, patient_id, *, method, day, same_visit=None):
+    def treat(self, patient_id, *, method, day, same_visit=None,
+              device_id=None):
         c = self._c(patient_id)
         via_pos = c["via_result"] == "positive"
         colpo_ok = bool(c["colpo"]) and c["colpo"]["decision"] == "treat"
@@ -156,11 +158,27 @@ class CervixScreening:
                 "evidence is harm, not care")
         if method not in TREATMENTS:
             raise TeleReadError(f"unknown treatment: {method}")
+        if method in DEVICE_TREATMENTS:
+            if self.device_qa is None:
+                raise TeleReadError(
+                    f"{method} is a device treatment and no device QA "
+                    "book is attached — a device without a QA ledger is "
+                    "untested equipment, whatever the label says")
+            if not device_id:
+                raise TeleReadError(
+                    f"{method} needs the device id — which probe "
+                    "touched this patient is not a detail")
+            if not self.device_qa.serviceable_on(device_id, day):
+                raise TeleReadError(
+                    f"{device_id} has no same-day QA pass — the probe "
+                    "that was not checked today is not a treatment "
+                    "device")
         ref_day = c.get("result_day")
         if not via_pos:
             ref_day = (c["colpo"]["day"] if colpo_ok
                        else c["histology"]["day"])
         c["treatment"] = {"method": method, "day": day,
+                          "device_id": device_id,
                           "same_visit": (day == ref_day
                                          if same_visit is None
                                          else bool(same_visit))}
@@ -345,3 +363,97 @@ class CervixScreening:
         if pid not in self.cascade:
             raise TeleReadError(f"unknown screening patient: {pid}")
         return self.cascade[pid]
+
+
+# ----------------------------------------------------------------
+# Treatment-device QA: the probe that was not checked today is not a
+# treatment device, it is a room heater with ambitions.
+DEVICE_TREATMENTS = ("thermal-ablation", "cryotherapy")
+DEVICE_QA_CHECKS = {
+    "thermal-ablation": ("temp-probe-calibrated", "tip-integrity",
+                         "timer-functional"),
+    "cryotherapy": ("gas-pressure-ok", "hose-integrity",
+                    "timer-functional"),
+}
+DEVICEQA_VERSION = "treat-device-qa@1.0.0"
+
+
+class DeviceQA:
+    """Daily QA book for treatment devices. Every check accounted for:
+    'did not look' is not a pass. A device with no same-day pass is
+    unserviceable — quietly using it anyway is exactly the failure
+    this book exists to make loud."""
+
+    def __init__(self):
+        self.devices = {}   # device_id -> record
+        self.qa_log = []    # append-only
+
+    def register_device(self, device_id, *, kind, facility):
+        if kind not in DEVICE_QA_CHECKS:
+            raise TeleReadError(f"unknown device kind: {kind} — the QA "
+                                "checklist is versioned data, and this "
+                                "device is not in it")
+        if device_id in self.devices:
+            raise TeleReadError(f"duplicate device: {device_id}")
+        self.devices[device_id] = {"device_id": device_id, "kind": kind,
+                                   "facility": facility,
+                                   "out_of_service": False,
+                                   "service_note": None}
+        return dict(self.devices[device_id])
+
+    def record_qa(self, device_id, *, checks, by, day):
+        d = self._d(device_id)
+        if d["out_of_service"]:
+            raise TeleReadError(f"{device_id} is out of service — QA "
+                                "does not resurrect it; biomed "
+                                "clearance does")
+        if not by:
+            raise TeleReadError("unsigned QA is no QA")
+        required = DEVICE_QA_CHECKS[d["kind"]]
+        missing = [c for c in required if c not in checks]
+        failed = [c for c in required if checks.get(c) is False]
+        verdict = "pass" if not missing and not failed else "fail"
+        entry = {"device_id": device_id, "day": day, "by": by,
+                 "checks": dict(checks), "missing": missing,
+                 "failed": failed, "verdict": verdict,
+                 "version": DEVICEQA_VERSION}
+        self.qa_log.append(entry)
+        return dict(entry)
+
+    def mark_out_of_service(self, device_id, *, reason, by, day):
+        d = self._d(device_id)
+        if not reason:
+            raise TeleReadError("taking a device out of service without "
+                                "a reason is how it quietly comes back")
+        d["out_of_service"] = True
+        d["service_note"] = {"reason": reason, "by": by, "day": day}
+        return dict(d)
+
+    def return_to_service(self, device_id, *, biomed_ref, by, day):
+        d = self._d(device_id)
+        if not biomed_ref:
+            raise TeleReadError("return to service needs a biomed "
+                                "clearance reference — 'looks fine now' "
+                                "is not a clearance")
+        d["out_of_service"] = False
+        d["service_note"] = {"biomed_ref": biomed_ref, "by": by,
+                             "day": day}
+        return dict(d)
+
+    def serviceable_on(self, device_id, day):
+        d = self._d(device_id)
+        if d["out_of_service"]:
+            return False
+        return any(e["device_id"] == device_id and e["day"] == day
+                   and e["verdict"] == "pass" for e in self.qa_log)
+
+    def qa_due(self, device_ids, day):
+        """Devices in use today with no pass today — overdue-first is
+        meaningless for a same-day check; the list is the alarm."""
+        return sorted(d for d in device_ids
+                      if not self.serviceable_on(d, day))
+
+    def _d(self, device_id):
+        if device_id not in self.devices:
+            raise TeleReadError(f"unknown device: {device_id}")
+        return self.devices[device_id]

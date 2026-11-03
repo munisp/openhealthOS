@@ -5,7 +5,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "teleread"))
 sys.path.insert(0, os.path.dirname(__file__))
 from teleread import ReaderRegistry, TeleReadError
-from cervixscreen import CervixScreening
+from cervixscreen import CervixScreening, DeviceQA
 
 
 class TestCervix(unittest.TestCase):
@@ -14,6 +14,16 @@ class TestCervix(unittest.TestCase):
         r.register("cx-1", licence_id="CX1", licence_expiry_day=400,
                    scopes=("cervix-reviewer",))
         self.svc = CervixScreening(r)
+        self.svc.device_qa = DeviceQA()
+        self.svc.device_qa.register_device("TA-1",
+                                           kind="thermal-ablation",
+                                           facility="f")
+
+    def _qa(self, day):
+        self.svc.device_qa.record_qa(
+            "TA-1", checks={"temp-probe-calibrated": True,
+                            "tip-integrity": True,
+                            "timer-functional": True}, by="n1", day=day)
 
     def test_cannot_treat_negative(self):
         self.svc.screen("p1", facility="f", screener="n1", day=0)
@@ -24,7 +34,9 @@ class TestCervix(unittest.TestCase):
     def test_positive_treated_same_visit(self):
         self.svc.screen("p1", facility="f", screener="n1", day=0)
         self.svc.record_via("p1", result="positive", day=0)
-        out = self.svc.treat("p1", method="thermal-ablation", day=0)
+        self._qa(0)
+        out = self.svc.treat("p1", method="thermal-ablation", day=0,
+                             device_id="TA-1")
         self.assertTrue(out["treatment"]["same_visit"])
         stats = self.svc.program_stats()
         self.assertEqual(stats["treated_same_visit"], 1)
@@ -57,10 +69,20 @@ class TestHPVPathway(unittest.TestCase):
         r.register("cx-1", licence_id="C1", licence_expiry_day=400,
                    scopes=("cervix-reviewer",))
         self.svc = CervixScreening(r)
+        self.svc.device_qa = DeviceQA()
+        self.svc.device_qa.register_device("TA-1",
+                                           kind="thermal-ablation",
+                                           facility="f")
         self.svc.screen("w1", facility="f", screener="n1", day=0,
                         modality="hpv-dna")
         self.svc.screen("w2", facility="f", screener="n1", day=0,
                         modality="hpv-dna", hiv_positive=True)
+
+    def _qa(self, day):
+        self.svc.device_qa.record_qa(
+            "TA-1", checks={"temp-probe-calibrated": True,
+                            "tip-integrity": True,
+                            "timer-functional": True}, by="n1", day=day)
         self.svc.screen("w3", facility="f", screener="n1", day=0,
                         modality="via")
 
@@ -93,7 +115,9 @@ class TestHPVPathway(unittest.TestCase):
             self.svc.triage("w1", method="guesswork", day=1)
         self.svc.triage("w1", method="via", day=2)
         self.svc.record_via("w1", result="positive", day=2)
-        out = self.svc.treat("w1", method="thermal-ablation", day=2)
+        self._qa(2)
+        out = self.svc.treat("w1", method="thermal-ablation", day=2,
+                             device_id="TA-1")
         self.assertTrue(out["treatment"]["same_visit"])
         # w2: HPV+ triaged to colposcopy → referral lawful
         self.svc.record_hpv("w2", result="positive", day=1)
@@ -236,3 +260,67 @@ class TestColposcopyLoop(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDeviceQA(unittest.TestCase):
+    def setUp(self):
+        r = ReaderRegistry()
+        r.register("cx-1", licence_id="CX1", licence_expiry_day=400,
+                   scopes=("cervix-reviewer",))
+        self.svc = CervixScreening(r)
+        self.qa = DeviceQA()
+        self.svc.device_qa = self.qa
+        self.qa.register_device("TA-1", kind="thermal-ablation",
+                                facility="f")
+        # a treatable patient
+        self.svc.screen("p1", facility="f", screener="n1", day=0)
+        self.svc.record_via("p1", result="positive", day=0)
+
+    def test_treat_requires_same_day_qa_pass(self):
+        with self.assertRaises(TeleReadError) as ctx:
+            self.svc.treat("p1", method="thermal-ablation", day=1,
+                           device_id="TA-1")
+        self.assertIn("no same-day QA pass", str(ctx.exception))
+
+    def test_qa_pass_unlocks_treatment(self):
+        self.qa.record_qa("TA-1", checks={"temp-probe-calibrated": True,
+                                          "tip-integrity": True,
+                                          "timer-functional": True},
+                          by="n1", day=1)
+        out = self.svc.treat("p1", method="thermal-ablation", day=1,
+                             device_id="TA-1")
+        self.assertEqual(out["treatment"]["device_id"], "TA-1")
+
+    def test_unlooked_check_fails_the_qa(self):
+        entry = self.qa.record_qa(
+            "TA-1", checks={"temp-probe-calibrated": True,
+                            "tip-integrity": True}, by="n1", day=1)
+        self.assertEqual(entry["verdict"], "fail")
+        self.assertEqual(entry["missing"], ["timer-functional"])
+
+    def test_device_treatment_needs_device_book_and_id(self):
+        r2 = ReaderRegistry()
+        r2.register("cx-1", licence_id="CX9", licence_expiry_day=400,
+                    scopes=("cervix-reviewer",))
+        svc2 = CervixScreening(r2)  # no device book attached
+        svc2.screen("p9", facility="f", screener="n1", day=0)
+        svc2.record_via("p9", result="positive", day=0)
+        with self.assertRaises(TeleReadError) as ctx:
+            svc2.treat("p9", method="thermal-ablation", day=0,
+                       device_id="TA-1")
+        self.assertIn("no device QA book", str(ctx.exception))
+        with self.assertRaises(TeleReadError) as ctx2:
+            self.svc.treat("p1", method="thermal-ablation", day=1)
+        self.assertIn("device id", str(ctx2.exception))
+
+    def test_out_of_service_needs_biomed_to_return(self):
+        self.qa.mark_out_of_service("TA-1", reason="smoke", by="n1",
+                                    day=2)
+        with self.assertRaises(TeleReadError):
+            self.qa.record_qa("TA-1", checks={}, by="n1", day=2)
+        with self.assertRaises(TeleReadError):
+            self.qa.return_to_service("TA-1", biomed_ref="", by="b1",
+                                      day=3)
+        self.qa.return_to_service("TA-1", biomed_ref="BM-88", by="b1",
+                                  day=3)
+        self.assertFalse(self.qa.devices["TA-1"]["out_of_service"])

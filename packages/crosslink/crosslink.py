@@ -14,6 +14,8 @@ shaped so that silence is a finding, never a default.
     8. timeouts_to_review steward timeout  → pharmacy review queue
     9. deterioration_to_icu NEWS2 trend   → tele-ICU oversight
    10. order_with_priors  pacs priors     → teleread worklist item
+   11..15 (see package history)      …      screens, synoptic, MDT→orders
+   16. verify_with_pixels viewerlaunch   → teleread verify gate
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -640,3 +642,36 @@ def decision_to_orders(board, orders, case_id, *, prescriber_id, day,
     return {"case_id": case_id, "orders": placed,
             "note": "the board decides; the formulary screens; the "
                     "order either exists or the action is an open loop"}
+
+
+# ---------------------------------------------------------------- 16.
+# viewerlaunch → teleread: you cannot verify what you did not open.
+#
+# The worklist P0 closes here: verification of an imaging or slide
+# case requires a launch session for the case's artifact BY the
+# verifying reader. A report signed without pixels is a paper exercise
+# — refuse it, loudly, and leave the draft visible as a draft.
+
+def verify_with_pixels(reading, launcher, case_id, *, artifact,
+                       reader_id, day):
+    """Verify only after the verifying reader has opened the artifact.
+
+    Absence is not a view: no launch session for (artifact, reader) is
+    a refusal, whatever the draft says. The session id lands on the
+    report so the audit trail runs pixel → prose → signature in one
+    direction only."""
+    rep = reading._report(case_id)
+    if rep["state"] != "draft":
+        raise CrosslinkError(f"report is {rep['state']}, not draft — "
+                             "the pixel gate applies before signature")
+    sessions = [s for s in launcher.sessions
+                if s["artifact"] == artifact
+                and s["reader"] == reader_id]
+    if not sessions:
+        raise CrosslinkError(
+            f"{reader_id} never opened {artifact} — a report signed "
+            "without the pixels is an opinion about a filename; open "
+            "the study/slide first")
+    out = reading.verify_report(case_id, reader_id=reader_id, day=day)
+    out["viewer_session"] = sessions[-1]["session_id"]
+    return out

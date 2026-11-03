@@ -206,3 +206,72 @@ def fetal_biometry(ga_weeks, measurements):
             "note": "coarse Hadlock-derived envelope; outside the "
                     "envelope is a flag for the sonographer, never a "
                     "diagnosis"}
+
+
+# ---- growth charting: a point is a fact; the SERIES is the chart.
+# z-scores derived from the same shaped envelope as fetal_biometry
+# (median = p5/p95 midpoint, sd = span / 3.29) so the chart and the
+# per-scan flag can never disagree — one reference, one version.
+GROWTH_REF_VERSION = "growth-ref-shaped@1.0.0"
+_CENTILE_GAP = 1.34  # ~two major centile bands (50th→10th etc.)
+
+
+def growth_z(param, ga_weeks, value):
+    """z-score for one measurement against the shaped reference.
+    Outside the table's range → honest abstention, same as the
+    envelope: a z from thin air is a number, not evidence."""
+    if param not in BIOMETRY_PARAMS:
+        raise SerialError(f"unknown biometry parameter: {param}")
+    known = sorted(BIOMETRY_TABLE)
+    if ga_weeks < known[0] or ga_weeks > known[-1]:
+        return None
+    lo_w = max(w for w in known if w <= ga_weeks)
+    hi_w = min(w for w in known if w >= ga_weeks)
+    i = BIOMETRY_PARAMS.index(param)
+    lo_row, hi_row = BIOMETRY_TABLE[lo_w][i], BIOMETRY_TABLE[hi_w][i]
+    if lo_w == hi_w:
+        p5, p95 = lo_row
+    else:
+        f = (ga_weeks - lo_w) / (hi_w - lo_w)
+        p5 = lo_row[0] + f * (hi_row[0] - lo_row[0])
+        p95 = lo_row[1] + f * (hi_row[1] - lo_row[1])
+    median, sd = (p5 + p95) / 2, (p95 - p5) / 3.29
+    return round((value - median) / sd, 2) if sd else None
+
+
+def growth_assessment(series):
+    """Chart an ordered series [(ga_weeks, {param: mm}), ...].
+
+    One point abstains — a trajectory needs at least two. Crossing two
+    centile bands between visits is the finding (growth faltering or
+    acceleration), and it is named, not implied."""
+    if len(series) < 2:
+        raise SerialError("a growth chart of one point is a dot, not "
+                          "a trajectory — come back with the series")
+    points, flags = [], []
+    prev = {}
+    for ga, measurements in series:
+        row = {"ga_weeks": ga, "z": {}}
+        for param, value in measurements.items():
+            z = growth_z(param, ga, value)
+            row["z"][param] = z
+            if z is None:
+                continue  # abstained — stated as absent, not zero
+            if abs(z) >= 2:
+                flags.append(f"{param} z={z:+.2f} at {ga}w — outside "
+                             "the outer centiles")
+            if param in prev and prev[param] is not None and \
+                    abs(z - prev[param]) >= _CENTILE_GAP:
+                direction = ("faltering" if z < prev[param]
+                             else "acceleration")
+                flags.append(f"{param} crossed centile bands "
+                             f"({prev[param]:+.2f} → {z:+.2f}) — "
+                             f"{direction} between visits")
+        for param, z in row["z"].items():
+            if z is not None:
+                prev[param] = z
+        points.append(row)
+    return {"points": points, "flags": flags,
+            "ref_version": GROWTH_REF_VERSION,
+            "note": "same shaped envelope as fetal_biometry — one "
+                    "reference, one version, no silent disagreement"}

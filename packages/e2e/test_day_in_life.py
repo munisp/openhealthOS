@@ -76,7 +76,7 @@ class TestConnectedDay(unittest.TestCase):
     def test_ten_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 31)
+        self.assertEqual(log["seams_proven"], 32)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")
@@ -136,3 +136,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(log["hbv_nonresponder_actioned"])
         self.assertGreaterEqual(log["fert_registry_cycles"], 1)
         self.assertEqual(log["lesion_change_flagged"], "L-9")
+        self.assertTrue(log["cervix_device_qa_refused"])
+        self.assertTrue(log["pixel_gate_held"])
+        self.assertEqual(log["pixel_gate_verified"], "VS-1")
+        self.assertTrue(log["family_update_logged"])
+        self.assertTrue(log["iv_tpn_screened"])
+        self.assertEqual(log["fault_reseated"], "HD-M2")
+        self.assertTrue(log["pgt_no_result_held"])
+        self.assertTrue(log["pgt_aneuploid_held"])
+        self.assertTrue(log["growth_crossing_flagged"])
