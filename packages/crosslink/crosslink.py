@@ -16,11 +16,17 @@ shaped so that silence is a finding, never a default.
    10. order_with_priors  pacs priors     → teleread worklist item
    11..15 (see package history)      …      screens, synoptic, MDT→orders
    16. verify_with_pixels viewerlaunch   → teleread verify gate
+   17. imported_case_signal travelpass   → surveillance syndromes
+   18. poe_entry_screen   poe_screen     → travelpass pass record
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
 engines could not know alone: that the OTHER system exists.
 """
+
+
+import os
+import sys
 
 
 class CrosslinkError(Exception):
@@ -675,3 +681,105 @@ def verify_with_pixels(reading, launcher, case_id, *, artifact,
     out = reading.verify_report(case_id, reader_id=reader_id, day=day)
     out["viewer_session"] = sessions[-1]["session_id"]
     return out
+
+
+# ---------------------------------------------------------------- 17.
+# travelpass → surveillance: the border is the first epidemiological
+# sensor. An emergency event whose text matches a notifiable condition
+# (the traveler's recorded conditions and the emergency summary) is an
+# importation signal and enters the surveillance ring — anonymized to
+# (syndrome, area, day); the k-anonymity floor applies downstream as
+# always. A traveler record with nothing notifiable says so.
+
+def imported_case_signal(registry, surv, *, traveler_id, day,
+                         base_date, area=None):
+    """Feed travelpass emergency events into syndrome surveillance.
+
+    Only NOTIFIABLE keyword matches become events; everything else is
+    stated as zero-signal, never silently dropped. Returns the events
+    ingested and any threshold alerts the ring produced."""
+    import datetime as _dt
+    sys.path.insert(0, os.path.join(os.path.dirname(__file__),
+                                    "..", "travelpass"))
+    import travelpass_cards as _tp  # noqa: E402
+    t = registry._t(traveler_id)
+    profile_text = " ".join(
+        t.get("emergency_profile", {}).get("conditions") or [])
+    events = [e for e in registry.emergencies
+              if e["traveler_id"] == traveler_id]
+    hits = []
+    for e in events:
+        text = (e.get("summary", "") + " " + profile_text).lower()
+        for cond, syndrome in _tp.NOTIFIABLE.items():
+            if cond in text:
+                hits.append({
+                    "syndrome": syndrome,
+                    "area": area or e.get("facility", "unknown"),
+                    "ts": (base_date + _dt.timedelta(
+                        days=e["day"])).isoformat(),
+                    "condition": cond,
+                    "traveler_ref": traveler_id})
+                break  # one syndrome per event — no double counting
+    if not hits:
+        return {"imported_signals": 0, "alerts": [],
+                "note": "no notifiable condition on this traveler — "
+                        "stated, not zeroed"}
+    alerts = surv.ingest([{k: h[k] for k in ("syndrome", "area", "ts")}
+                          for h in hits],
+                         today=base_date + _dt.timedelta(days=day))
+    return {"imported_signals": len(hits), "events": hits,
+            "alerts": [a.to_event() if hasattr(a, "to_event")
+                       else dict(a) for a in alerts],
+            "notifiable_version": _tp.NOTIFIABLE_VERSION}
+
+
+# ---------------------------------------------------------------- 18.
+# poe_screen → travelpass: the PoE decision attaches to the traveler's
+# record. Isolate-and-notify is not a suggestion — the pass record
+# carries the screening outcome, and a traveler under isolation orders
+# has a flag on their emergency-access card so any break-glass read
+# sees it. Public-health holds ride the same key as the medicine.
+
+def poe_entry_screen(registry, poe, traveler_id, *, list_version,
+                     travel_history_21d, temp_c, symptoms, screener,
+                     day):
+    """Run the PoE screen for an enrolled traveler and stamp the
+    outcome on their pass record. The screener's verdict is the
+    border's; the platform records it with its list version so a
+    stale-list refusal surfaces here, not after the flight left."""
+    outcome = poe.screen(traveler_id, list_version,
+                         travel_history_21d, temp_c, symptoms,
+                         screener, day)
+    t = registry._t(traveler_id)
+    t.setdefault("poe_screens", []).append(
+        {"day": day, "list_version": list_version,
+         "disposition": outcome.get("disposition"),
+         "screener": screener})
+    if outcome.get("disposition") == "isolate-and-notify":
+        t["public_health_hold"] = {
+            "since_day": day, "by": screener,
+            "trace_seed": outcome.get("trace_seed"),
+            "note": "isolation ordered at the border — the emergency "
+                    "card shows the hold until cleared"}
+    return outcome
+
+
+def clear_public_health_hold(registry, traveler_id, *, day, by,
+                             clearance_ref):
+    """A hold clears only on a documented clearance — self-declared
+    recovery is not epidemiology."""
+    t = registry._t(traveler_id)
+    hold = t.get("public_health_hold")
+    if not hold:
+        raise CrosslinkError("no public-health hold on record — "
+                             "absence is not a clearance either")
+    if not clearance_ref:
+        raise CrosslinkError("clearance needs a reference (test, "
+                             "clinician note) — a verbal all-clear is "
+                             "not a record")
+    del t["public_health_hold"]
+    t.setdefault("poe_screens", []).append(
+        {"day": day, "decision": "hold-cleared", "screener": by,
+         "clearance_ref": clearance_ref})
+    return {"traveler_id": traveler_id, "hold_cleared_day": day,
+            "clearance_ref": clearance_ref}

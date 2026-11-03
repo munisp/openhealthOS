@@ -76,7 +76,7 @@ class TestConnectedDay(unittest.TestCase):
     def test_ten_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 32)
+        self.assertEqual(log["seams_proven"], 34)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")
@@ -153,3 +153,10 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(log["travelpass_notified"])
         self.assertEqual(log["travelpass_settled"], "TP-SETTLE-1")
         self.assertTrue(log["travelpass_refund_blocked"])
+        self.assertTrue(log["card_cnp_without_3ds_refused"])
+        self.assertEqual(log["card_paid_scheme"], "visa")
+        self.assertTrue(log["vaccine_stamp_without_batch_refused"])
+        self.assertTrue(log["vaccine_clearance_onset_enforced"])
+        self.assertTrue(log["poe_hold_on_pass"])
+        self.assertEqual(log["imported_signal_to_surveillance"], 1)
+        self.assertEqual(log["poe_hold_cleared_with_ref"], "PCR-NEG-1")

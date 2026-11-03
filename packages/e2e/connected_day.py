@@ -95,7 +95,8 @@ for pkg in ("crosslink", "nephrology", "telederm", "telepath", "teleread",
             "sepsis", "acuity", "medrec", "inpatient", "terminology",
             "mammoprog", "offlinespec", "teachfile", "cpoe",
             "teleecg", "dictate", "staging", "viewerlaunch",
-            "devicehub", "travelpass", "payrails", "ips"):
+            "devicehub", "travelpass", "payrails", "ips",
+            "surveillance", "poe_screen"):
     sys.path.insert(0, os.path.join(ROOT, pkg))
 
 from crosslink import (CrosslinkError, renal_check, biopsy_to_path,  # noqa: E402
@@ -114,6 +115,8 @@ from fertility import FertilityError  # noqa: E402
 from telederm import LesionMap  # noqa: E402
 from viewerlaunch import ViewerLauncher  # noqa: E402
 from crosslink import verify_with_pixels  # noqa: E402
+from crosslink import (imported_case_signal, poe_entry_screen,  # noqa: E402
+                       clear_public_health_hold)
 from teleicu import FamilyLog  # noqa: E402
 from drugkb import check_iv_y_site, tpn_assess  # noqa: E402
 from serial import growth_assessment  # noqa: E402
@@ -1488,7 +1491,98 @@ def run_connected_day():
     except TravelPassError:
         log["travelpass_refund_blocked"] = True
 
-    log["seams_proven"] = 32
+    # ---- 08:50 the traveler pays with the card they carry — Visa
+    # through a composed PSP (Stripe-shaped); the PAN never lands, only
+    # scheme/last4/hash reach the ledger (seam-adjacent: cards)
+    import travelpass_cards as cards
+    tpr.enroll("TV-2", full_name="Ken Watanabe", passport_ref="JP-9982",
+               nationality="JP", entry_day=0, exit_day=13,
+               emergency_profile={"conditions": ["measles"]}, day=0)
+    premium2 = tpr.travelers["TV-2"]["assessed_premium_kobo"]
+    cnp_refused = False
+    try:
+        cards.pay_card(tpr, "TV-2", pan="4242424242424242",
+                       expiry="12/29", holder="Ken Watanabe",
+                       psp_name="stripe", psp_charge=lambda p:
+                       {"status": "approved", "auth_code": "A1"},
+                       amount_kobo=premium2, reference="psp-tv2",
+                       day=0, authenticated=False)
+    except TravelPassError:
+        cnp_refused = True
+    assert cnp_refused
+    log["card_cnp_without_3ds_refused"] = True
+    paid = cards.pay_card(tpr, "TV-2", pan="4242424242424242",
+                          expiry="12/29", holder="Ken Watanabe",
+                          psp_name="stripe", psp_charge=lambda p:
+                          {"status": "approved", "auth_code": "A1"},
+                          amount_kobo=premium2, reference="psp-tv2",
+                          day=0, authenticated=True)
+    assert paid["card"]["scheme"] == "visa"
+    assert "4242424242424242" not in str(tpr.payments)
+    log["card_paid_scheme"] = paid["card"]["scheme"]
+
+    # ---- 08:55 vaccination card: the yellow-fever stamp has a batch,
+    # and entry clearance checks the onset window (day 10) not vibes
+    no_batch = False
+    try:
+        cards.record_vaccination(tpr, "TV-2", vaccine="yellow-fever",
+                                 day=0, certificate_ref="ICVP-77",
+                                 batch="", administering_country="jp")
+    except TravelPassError:
+        no_batch = True
+    assert no_batch
+    log["vaccine_stamp_without_batch_refused"] = True
+    cards.record_vaccination(tpr, "TV-2", vaccine="yellow-fever", day=0,
+                             certificate_ref="ICVP-77",
+                             batch="YFV-2026-01",
+                             administering_country="jp")
+    too_fresh = cards.entry_clearance(tpr, "TV-2", destination="ng",
+                                      day=5)
+    assert too_fresh["cleared"] is False
+    assert "onset window" in too_fresh["gaps"][0]
+    cleared = cards.entry_clearance(tpr, "TV-2", destination="ng",
+                                    day=12)
+    assert cleared["cleared"] is True
+    log["vaccine_clearance_onset_enforced"] = True
+
+    # ---- 09:00 seams 17+18: the border is the first epidemiological
+    # sensor. The PoE screen stamps the pass; the notifiable emergency
+    # feeds the syndrome ring with (syndrome, area, day), never the
+    # traveler
+    import datetime as _dt
+    from surveillance import Surveillance
+    from poe_screen import AlertList, BorderPost
+    alerts_list = AlertList()
+    alerts_list.publish("who-2026-w01", ["freedonia"], "2026-01-01")
+    post = BorderPost("MMA-LOS", alerts_list)
+    poe = poe_entry_screen(tpr, post, "TV-2",
+                           list_version="who-2026-w01",
+                           travel_history_21d=["freedonia"],
+                           temp_c=38.6, symptoms=["cough"],
+                           screener="officer-1", day="2026-01-02")
+    assert poe["disposition"] == "isolate-and-notify"
+    assert "public_health_hold" in tpr.travelers["TV-2"]
+    log["poe_hold_on_pass"] = True
+    surv = Surveillance()
+    issued2 = tpr.issue_pass("TV-2", day=0)
+    acc2 = tpr.emergency_access(issued2["token"], provider_id="para-2",
+                                facility="er-ikeja",
+                                reason="febrile rash", day=2)
+    tpr.record_emergency("TV-2", session_id=acc2["session_id"], day=2,
+                         facility="er-ikeja",
+                         summary="measles suspected, isolated")
+    sig = imported_case_signal(tpr, surv, traveler_id="TV-2", day=2,
+                               base_date=_dt.date(2026, 1, 1))
+    assert sig["imported_signals"] == 1
+    assert sig["events"][0]["syndrome"] == "measles_like_rash"
+    assert "Ken" not in str(sig["events"])  # the ring never sees a name
+    log["imported_signal_to_surveillance"] = sig["imported_signals"]
+    cleared_hold = clear_public_health_hold(
+        tpr, "TV-2", day=9, by="dr-1", clearance_ref="PCR-NEG-1")
+    assert "public_health_hold" not in tpr.travelers["TV-2"]
+    log["poe_hold_cleared_with_ref"] = cleared_hold["clearance_ref"]
+
+    log["seams_proven"] = 34
     return log
 
 
