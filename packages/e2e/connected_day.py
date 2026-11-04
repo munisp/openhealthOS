@@ -2106,6 +2106,46 @@ def run_connected_day():
                           "partner_sales": partners.report()["sales"],
                           "revoked_refused": revoked_refused}
 
+    # ---- 08:54 the last mile: the helpdesk clocks its tickets, the
+    # content layer states its fallbacks, and the actuary's numbers
+    # come from the ledgers — never typed in
+    from vhsupport import ContentLayer, Helpdesk
+    from vhmarts import actuarial_mart
+    helpdesk = Helpdesk(rules_version="vhc-support@1.0.0")
+    ticket = helpdesk.open_ticket(
+        channel="whatsapp", category="claim", priority="urgent",
+        subject="GOP not received at hospital", cover_ref=cover["ref"],
+        now_h=100, day=2)
+    helpdesk.respond(ticket["ticket_id"], by="agent-1",
+                     note="GOP re-issued to provider", now_h=101)
+    helpdesk.resolve(ticket["ticket_id"], by="agent-1",
+                     resolution="provider confirmed receipt", now_h=105)
+    helpdesk.close(ticket["ticket_id"], by="agent-1", day=3)
+    hd_rep = helpdesk.report()
+    assert hd_rep["first_response_sla"] == {"compliant": 1,
+                                            "responded": 1}
+    content = ContentLayer()
+    content.publish("site@1.0.0", lang="en",
+                    entries={"cover.title": "Visitor Health Cover",
+                             "cover.tagline": "Care at the border"},
+                    by="editor")
+    content.publish("site@1.0.0", lang="pt",
+                    entries={"cover.title": "Cobertura de Saúde do "
+                                            "Visitante"},
+                    by="editor")
+    nl = content.get("cover.title", lang="nl", version="site@1.0.0")
+    assert nl["fallback"] and "nl" in nl["note"]  # fallback stated
+    cov = content.coverage("site@1.0.0")
+    assert cov["languages"]["pt"]["missing"] == ["cover.tagline"]
+    mart = actuarial_mart(vhc=vhc, claims=claims, incidents=vreg,
+                          through_day=40)
+    assert mart["premiums_minor"] > 0 and mart["loss_ratio"] is not None
+    assert mart["incidents_by_site"]["lagos"]["incidents"] == 6
+    log["support_content_marts"] = {
+        "helpdesk_sla_clean": True, "fallback_stated": nl["fallback"],
+        "pt_gap_named": cov["languages"]["pt"]["missing"],
+        "loss_ratio": mart["loss_ratio"]}
+
     log["seams_proven"] = 38
     return log
 

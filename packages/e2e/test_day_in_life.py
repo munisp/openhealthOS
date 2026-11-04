@@ -252,3 +252,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(d["bad_manifest_refused"])
         self.assertEqual(d["partner_sales"], 1)
         self.assertTrue(d["revoked_refused"])
+
+    def test_support_content_marts(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        s = log["support_content_marts"]
+        self.assertTrue(s["helpdesk_sla_clean"])
+        self.assertTrue(s["fallback_stated"])
+        self.assertEqual(s["pt_gap_named"], ["cover.tagline"])
+        self.assertIsNotNone(s["loss_ratio"])
