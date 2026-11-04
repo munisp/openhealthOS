@@ -174,3 +174,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(log["feed_oversight_seam"].startswith("feed-"))
         self.assertTrue(log["deid_gate_holds"])
         self.assertEqual(log["dataset_forged"], "DS-1")
+
+    def test_vhc_cover_country_agnostic(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        vhc = log["vhc_cover"]
+        self.assertTrue(vhc["cv_ref"].startswith("VHC-"))
+        self.assertEqual(vhc["offline_verdict"], "green")
+        self.assertEqual(vhc["humanitarian_verdict"], "amber")
+        self.assertEqual(vhc["ng_quote_kobo"], 850_000)

@@ -1769,6 +1769,43 @@ def run_connected_day():
     assert "public_health_hold" not in tpr.travelers["TV-2"]
     log["poe_hold_cleared_with_ref"] = cleared_hold["clearance_ref"]
 
+    # ---- 08:46 visitor health cover, country-agnostic: one engine,
+    # two profiles. Cabo Verde 30-day blocks and Nigeria flat+per-day
+    # are config, not code; the QR is an HSM-style signed claim an
+    # officer verifies offline from a cached key ring
+    from vhcover import KeyRing, VHCCoverRegistry
+    ring = KeyRing()
+    ring.register("k1", "e2e-key", active_from=0)
+    vhc = VHCCoverRegistry(profile_version="cv-vhc@1.0.0", key_ring=ring,
+                           issuer="cv-vhc")
+    q_adult = vhc.quote(days=40, age_years=35, day=1)
+    assert q_adult["total_minor"] == 5000  # two €25 blocks
+    cover = vhc.purchase(quote_id=q_adult["quote_id"],
+                         passport_ref="CV-9911", full_name="Ilsa Gomes",
+                         entry_day=10, day=1, key_id="k1")
+    assert "CV-9911" not in cover["qr"]  # the QR carries a hash
+    assert vhc.verify(cover["qr"], day=20)["verdict"] == "green"
+    cache = vhc.offline_cache(as_of=15)
+    v_off = vhc.verify(cover["qr"], day=17, cache=cache)
+    assert v_off["verdict"] == "green"
+    assert v_off["evidence"]["mode"] == "offline"
+    assert vhc.verify(cover["qr"], day=19,
+                      cache=cache)["verdict"] == "red"  # cache stale
+    vhc.extend(cover["ref"], extra_days=20, day=30, key_id="k1")
+    assert cover["window"]["to"] == 79  # contiguous, one €10 block
+    vhc.humanitarian_flag(cover["ref"], day=31, note="irregular entry")
+    v_hum = vhc.verify(cover["qr"], day=32)
+    assert v_hum["verdict"] == "amber"
+    assert "humanitarian regularisation pending" in v_hum["reasons"]
+    ng = VHCCoverRegistry(profile_version="ng-vhc@1.0.0", key_ring=ring,
+                          issuer="ng-vhc")
+    q_ng = ng.quote(days=7, age_years=35, day=1)
+    assert q_ng["total_minor"] == 850_000  # same engine, other country
+    log["vhc_cover"] = {"cv_ref": cover["ref"],
+                        "offline_verdict": v_off["verdict"],
+                        "humanitarian_verdict": v_hum["verdict"],
+                        "ng_quote_kobo": q_ng["total_minor"]}
+
     log["seams_proven"] = 36
     return log
 
