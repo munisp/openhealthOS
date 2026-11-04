@@ -98,12 +98,15 @@ def tariff_for(tariff_set, code, *, day):
 
 class ClaimsRegistry:
     def __init__(self, *, rules_version="vhc-claims@1.0.0",
-                 tariff_set="cv-tariffs"):
+                 tariff_set="cv-tariffs", tariff_book=None):
         if rules_version not in CLAIMS_RULES:
             _refuse("unknown claims rules version")
         self.rules = dict(CLAIMS_RULES[rules_version])
         self.rules_version = rules_version
         self.tariff_set = tariff_set
+        # when a governed TariffBook is wired, it is the price source;
+        # the static table is the bootstrap fallback
+        self.tariff_book = tariff_book
         self.cases = {}
         self.audit = []
 
@@ -190,8 +193,12 @@ class ClaimsRegistry:
             _refuse("adjudication needs a dossier, not a phone call")
         approved, glosa, manual = 0, [], []
         for act in case["dossier"]["acts"]:
-            price, _ver = tariff_for(self.tariff_set, act["code"],
-                                     day=day)
+            if self.tariff_book is not None:
+                price, _ver = self.tariff_book.lookup(act["code"],
+                                                      day=day)
+            else:
+                price, _ver = tariff_for(self.tariff_set, act["code"],
+                                         day=day)
             if price is None:
                 manual.append(act["code"])
                 continue

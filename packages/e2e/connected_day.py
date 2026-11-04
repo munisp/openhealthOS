@@ -1923,6 +1923,43 @@ def run_connected_day():
                      "subrogation_recovered_to_fund":
                          recovery["fund_entry"]}
 
+    # ---- 08:49 the provider side: accreditation gates the portal,
+    # tariffs change under four-eyes, and the ministry gets its pack
+    from vhproviders import (ProviderPortal, ProviderRegistry,
+                             TariffBook)
+    providers = ProviderRegistry()
+    providers.apply("er-ikeja", legal_name="Ikeja Emergency Clinic",
+                    licence_ref="LIC-ER-1", services=["emergency"],
+                    day=1)
+    providers.verify("er-ikeja", by="inspector-1",
+                     checks=["licence-valid", "facility-visited"],
+                     day=2)
+    providers.accredit("er-ikeja", by="director-1", day=3)
+    book = TariffBook(book_id="cv")
+    book.propose(version="cv-t@2.1", acts={"OBS-DAY": 26_500},
+                 effective_from=400, by="analyst-1", day=30)
+    four_eyes = False
+    try:
+        book.approve("cv-t@2.1", by="analyst-1", day=31)
+    except Exception:
+        four_eyes = True
+    assert four_eyes  # the hand that proposes never approves
+    book.approve("cv-t@2.1", by="director-1", day=31)
+    portal = ProviderPortal(claims=claims, providers=providers)
+    assert portal.providers.is_active("er-ikeja")
+    view = portal.my_cases("er-ikeja")
+    assert len(view["mine"]) == 1  # the measles case is ours
+    pack = portal.weekly_moh_pack(day=40, tariff_book=book)
+    assert pack["claims"]["cases"] == 1
+    assert pack["providers"]["by_state"]["accredited"] == 1
+    # the proposed table starts at day 400 — today the static bootstrap
+    # table governs, and the pack states what is actually in force
+    assert pack["tariff_in_force"].startswith("none")
+    log["provider_portal"] = {"accredited": True,
+                              "four_eyes_held": four_eyes,
+                              "my_cases": len(view["mine"]),
+                              "moh_pack": pack["pack_ref"]}
+
     log["seams_proven"] = 37
     return log
 

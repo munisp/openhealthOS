@@ -207,3 +207,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(r["fund_outstanding_minor"], 57_500)
         self.assertTrue(r["subrogation_recovered_to_fund"]
                         .startswith("UEF-"))
+
+    def test_provider_portal_tariffs_pack(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        pp = log["provider_portal"]
+        self.assertTrue(pp["accredited"])
+        self.assertTrue(pp["four_eyes_held"])
+        self.assertEqual(pp["my_cases"], 1)
+        self.assertTrue(pp["moh_pack"].startswith("MOH-"))
