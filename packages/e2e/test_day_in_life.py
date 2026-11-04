@@ -234,3 +234,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(f["claims_bucket_spent_to_zero"])
         self.assertTrue(f["overdraft_refused"])
         self.assertEqual(f["backstop_notice"], "BCV-NOTICE-2026-041")
+
+    def test_settlement_recon_autorefund(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        s = log["settlement"]
+        self.assertTrue(s["file"].startswith("STL-stripe-20-"))
+        self.assertTrue(s["clean"])
+        self.assertTrue(s["breach_detected"])
+        self.assertTrue(s["auto_refund"].startswith("ARF-"))

@@ -2030,6 +2030,38 @@ def run_connected_day():
                    "overdraft_refused": overdraft,
                    "backstop_notice": "BCV-NOTICE-2026-041"}
 
+    # ---- 08:52 settlement day: the ledger meets the PSP file, breaks
+    # are named against the 0.1% tolerance, and a duplicate charge is
+    # auto-refunded with its evidence
+    from vhsettle import (auto_refund_duplicates, reconcile,
+                          settlement_file)
+    txns = [{"ref": "TX-%04d" % i, "amount_minor": 2500,
+             "psp": "stripe", "day": 20} for i in range(1000)]
+    stl = settlement_file(txns, day=20, psp="stripe")
+    assert stl["count"] == 1000 and len(stl["file_sha256"]) == 64
+    clean = reconcile(txns, day=20, psp="stripe",
+                      psp_rows=[{"ref": t["ref"],
+                                 "amount_minor": t["amount_minor"]}
+                                for t in txns])
+    assert not clean["breach"] and clean["break_rate_ppm"] == 0
+    breach = reconcile(txns, day=20, psp="stripe",
+                       psp_rows=[{"ref": t["ref"],
+                                  "amount_minor": t["amount_minor"]}
+                                 for t in txns
+                                 if t["ref"] not in ("TX-0007",
+                                                     "TX-0008")])
+    assert breach["breach"]  # 2 breaks in 1000 = 2000ppm > 1000ppm
+    assert breach["breaks"][0]["kind"] == "missing-in-psp"
+    dupes = auto_refund_duplicates(
+        [{"ref": "PAY-A", "amount_minor": 5000, "payer_key": "CV-9911",
+          "day": 20},
+         {"ref": "PAY-B", "amount_minor": 5000, "payer_key": "CV-9911",
+          "day": 20}], day=20)
+    assert len(dupes) == 1 and dupes[0]["kept_ref"] == "PAY-A"
+    log["settlement"] = {"file": stl["file_id"], "clean": True,
+                         "breach_detected": breach["breach"],
+                         "auto_refund": dupes[0]["refund_ref"]}
+
     log["seams_proven"] = 38
     return log
 
