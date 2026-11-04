@@ -197,3 +197,13 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(cc["glosa_minor"], 1000)
         self.assertEqual(cc["paid_minor"], 32_000)
         self.assertTrue(cc["closed"])
+
+    def test_rescue_fund_subrogation(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        r = log["rescue"]
+        self.assertTrue(r["medevac_breach_named"])
+        self.assertTrue(r["remains_refs"])
+        self.assertEqual(r["fund_outstanding_minor"], 57_500)
+        self.assertTrue(r["subrogation_recovered_to_fund"]
+                        .startswith("UEF-"))

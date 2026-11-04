@@ -1880,6 +1880,49 @@ def run_connected_day():
                           "paid_minor": rep["paid_minor"],
                           "closed": True}
 
+    # ---- 08:48 the heavy end: medevac against its dispatch SLA,
+    # charity care posted to the fund (never absorbed silently), and
+    # a subrogation recovery that lands back in the fund
+    from vhrescue import (RescueRegistry, SubrogationRegistry,
+                          UninsuredFund)
+    rescue = RescueRegistry(rules_version="vhc-rescue@1.0.0")
+    med = rescue.request_medevac(
+        case["case_id"], from_facility="er-ikeja",
+        to_destination="luth-idh",
+        clinical_justification="suspected measles encephalitis",
+        requested_by="para-2", now_h=106)
+    rescue.approve(med["mission_id"], by="medical-director",
+                   note="neuro risk, transfer indicated", now_h=107)
+    rescue.dispatch(med["mission_id"], asset="ground", now_h=110)
+    assert med["breaches"]  # 4h > 2h — the breach names itself
+    rescue.arrive(med["mission_id"], now_h=112)
+    rescue.close(med["mission_id"], outcome="handed over to IDH team",
+                 now_h=113)
+    rep_remains = rescue.repatriate_remains(
+        "CLM-UN-9", mortuary_ref="MOR-LA-1", consulate_ref="CON-DE-9",
+        day=4, note="uninsured visitor, deceased after ED arrival")
+    assert rep_remains["kind"] == "repatriation-of-remains"
+    fund = UninsuredFund()
+    uef = fund.post("CLM-UN-9", provider_ref="er-ikeja",
+                    amount_minor=87_500, day=4,
+                    reason="uninsured emergency care — airway first, "
+                           "invoice never gated")
+    fund.recover(uef["entry_id"], amount_minor=30_000, day=20,
+                 via="estate-repayment")
+    assert fund.report()["outstanding_minor"] == 57_500
+    subreg = SubrogationRegistry(fund=fund)
+    sub = subreg.identify(case["case_id"], third_party="Airline X",
+                          basis="in-flight exposure, carrier liability",
+                          day=6)
+    subreg.demand(sub["sub_id"], amount_minor=32_000, day=7)
+    recovery = subreg.recover(sub["sub_id"], amount_minor=32_000, day=25)
+    assert recovery["fund_entry"] is not None  # money landed, not leaked
+    log["rescue"] = {"medevac_breach_named": bool(med["breaches"]),
+                     "remains_refs": True,
+                     "fund_outstanding_minor": 57_500,
+                     "subrogation_recovered_to_fund":
+                         recovery["fund_entry"]}
+
     log["seams_proven"] = 37
     return log
 
