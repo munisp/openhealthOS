@@ -76,7 +76,7 @@ class TestConnectedDay(unittest.TestCase):
     def test_ten_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 36)
+        self.assertEqual(log["seams_proven"], 37)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")
@@ -187,3 +187,13 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(vhc["floor_refused"])
         self.assertEqual(vhc["desk_lookup_found"], 1)
         self.assertTrue(vhc["reissued_green"])
+
+    def test_claims_core_and_seam_21(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        cc = log["claims_core"]
+        self.assertTrue(cc["case"].startswith("CLM-"))
+        self.assertTrue(cc["gop_breach_named"])
+        self.assertEqual(cc["glosa_minor"], 1000)
+        self.assertEqual(cc["paid_minor"], 32_000)
+        self.assertTrue(cc["closed"])

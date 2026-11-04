@@ -20,6 +20,7 @@ shaped so that silence is a finding, never a default.
    18. poe_entry_screen   poe_screen     → travelpass pass record
    19. feed_health_to_oversight devicelink → teleicu oversight
    20. deid_export_to_dataset pacs de-id  → datasetforge cases
+   21. emergency_to_claim   travelpass    → vhclaims intake
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -868,4 +869,35 @@ def deid_export_to_dataset(studies, forge, study_uid, *, task_id,
     case = dict(case)
     case["deid_export"] = {"modality": export.get("modality"),
                            "purpose": export["purpose"]}
+    return case
+
+
+def emergency_to_claim(registry, claims, traveler_id, *, session_id,
+                       now_h, day, channel="phone"):
+    """Seam 21: a recorded travelpass emergency opens a claims case.
+    The claim binds to the break-glass audit session — a claim without
+    the emergency audit is a story. Coverage at access rides onto the
+    case: active pays, lapsed flags recovery — the invoice never gated
+    the airway, and the ledger remembers. One claim per session; a
+    second call returns the case that exists, not a duplicate."""
+    event = next((e for e in registry.emergencies
+                  if e["traveler_id"] == traveler_id
+                  and e["session_id"] == session_id), None)
+    if event is None:
+        raise KeyError("no emergency event for this session — the claim "
+                       "binds to the audit, not to a phone call")
+    existing = next((c for c in claims.cases.values()
+                     if c.get("session_id") == session_id), None)
+    if existing is not None:
+        return existing
+    case = claims.intake(channel=channel, cover_ref=traveler_id,
+                         claimant_name=traveler_id,
+                         summary=event["summary"], now_h=now_h, day=day)
+    case["session_id"] = session_id
+    case["coverage_at_access"] = ("active" if event["payable"]
+                                  else "lapsed")
+    case["recovery_flagged"] = not event["payable"]
+    claims.audit.append({"event": "claim_from_emergency",
+                         "case": case["case_id"],
+                         "session_id": session_id, "day": day})
     return case

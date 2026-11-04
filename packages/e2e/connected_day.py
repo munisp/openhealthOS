@@ -1836,7 +1836,51 @@ def run_connected_day():
                         "desk_lookup_found": found["count"],
                         "reissued_green": True}
 
-    log["seams_proven"] = 36
+    # ---- 08:47 seam 21 + the claims core: the travelpass emergency
+    # opens the claim — the claim binds to the break-glass audit, and
+    # the SLA clocks keep themselves honest
+    from vhclaims import ClaimsRegistry
+    from crosslink import emergency_to_claim
+    claims = ClaimsRegistry(rules_version="vhc-claims@1.0.0",
+                            tariff_set="cv-tariffs")
+    # TV-2's measles emergency from 08:45 becomes a claim
+    case = emergency_to_claim(tpr, claims, "TV-2",
+                              session_id=acc2["session_id"],
+                              now_h=100, day=2, channel="phone")
+    assert case["coverage_at_access"] == "active"
+    same = emergency_to_claim(tpr, claims, "TV-2",
+                              session_id=acc2["session_id"],
+                              now_h=100, day=2)
+    assert same["case_id"] == case["case_id"]  # one claim per session
+    gop = claims.issue_gop(case["case_id"], provider_ref="er-ikeja",
+                           limit_minor=200_000, now_h=106)
+    assert gop["sla_breach"]  # 6h > 2h — named, not excused
+    claims.submit_dossier(case["case_id"], icd10_codes=["B05.9"],
+                          acts=[{"code": "CONS-ED",
+                                 "charged_minor": 8000},
+                                {"code": "OBS-DAY",
+                                 "charged_minor": 25000}],
+                          discharge_ref="DIS-ER-1", day=3)
+    adj = claims.adjudicate(case["case_id"], day=5)
+    assert adj["verdict"] == "partial"  # CONS-ED charged above tariff
+    assert adj["glosa"][0]["reason"] == "above-tariff"
+    remit = claims.payment_run(day=6)
+    assert remit[0]["net_minor"] == 7000 + 25000
+    claims.appeal(case["case_id"], by="er-ikeja",
+                  grounds="glosa disputed", day=7)
+    claims.resolve_appeal(case["case_id"], upheld=False,
+                          by="medical-director",
+                          note="tariff table governs", day=10)
+    assert claims.cases[case["case_id"]]["state"] == "closed"
+    rep = claims.report()
+    assert rep["gop_sla"] == {"compliant": 0, "total": 1}
+    log["claims_core"] = {"case": case["case_id"],
+                          "gop_breach_named": gop["sla_breach"],
+                          "glosa_minor": rep["glosa_total_minor"],
+                          "paid_minor": rep["paid_minor"],
+                          "closed": True}
+
+    log["seams_proven"] = 37
     return log
 
 
