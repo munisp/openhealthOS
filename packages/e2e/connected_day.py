@@ -1960,6 +1960,45 @@ def run_connected_day():
                               "my_cases": len(view["mine"]),
                               "moh_pack": pack["pack_ref"]}
 
+    # ---- 08:50 the registry: incidents pseudonymized at the door,
+    # BR-10 trips on the fifth GI case, the duty officer signs the
+    # siren, and the export pack never carries a name
+    from vhregistry import IncidentRegistry
+    vreg = IncidentRegistry(rules_version="visitor-incidents@1.0.0",
+                            salt="cv-e2e-salt")
+    for i in range(4):
+        vreg.register_incident(traveler_key="TV-GI-%d" % i,
+                               syndromic_class="gastrointestinal",
+                               facility="er-ikeja", site="lagos",
+                               outcome="discharged", cost_minor=2500,
+                               day=10 + (i % 2), cover_ref="VHC-GI")
+    assert vreg.evaluate_alerts(day=12)["opened"] == []  # 4 < 5
+    vreg.register_incident(traveler_key="TV-GI-4",
+                           syndromic_class="gastrointestinal",
+                           facility="er-ikeja", site="lagos",
+                           outcome="admitted", cost_minor=9000, day=11)
+    opened = vreg.evaluate_alerts(day=12)
+    assert opened["opened"] == ["BR10-er-ikeja-W1"]
+    assert "TV-GI-0" not in str(vreg.incidents)  # salted hashes only
+    vreg.acknowledge(opened["opened"][0], by="duty-officer-1",
+                     note="cultures ordered, water inspection "
+                          "dispatched", day=13)
+    assert vreg.report()["ack_response_days"] == [1]
+    pack = vreg.export_pack(export_format="ihr", week=1)
+    assert pack["rows"][0]["cases"] == 5 and len(pack["pack_sha256"]) == 64
+    vreg.register_incident(traveler_key="TV-N1",
+                           syndromic_class="neurological",
+                           facility="er-ikeja", site="lagos",
+                           outcome="transferred", cost_minor=90000,
+                           day=10)
+    dash = vreg.public_dashboard(quarter_day=10)
+    assert dash["by_syndromic_class"] == {"gastrointestinal": 5}
+    assert dash["suppressed_cells"] == 1  # the neuro cell hid, stated
+    log["registry"] = {"br10_opened": opened["opened"][0],
+                       "acked_in_days": 1,
+                       "export_rows": len(pack["rows"]),
+                       "suppressed_cells": dash["suppressed_cells"]}
+
     log["seams_proven"] = 37
     return log
 

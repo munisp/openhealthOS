@@ -216,3 +216,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(pp["four_eyes_held"])
         self.assertEqual(pp["my_cases"], 1)
         self.assertTrue(pp["moh_pack"].startswith("MOH-"))
+
+    def test_incident_registry_br10_exports(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        r = log["registry"]
+        self.assertEqual(r["br10_opened"], "BR10-er-ikeja-W1")
+        self.assertEqual(r["acked_in_days"], 1)
+        self.assertEqual(r["export_rows"], 1)
+        self.assertEqual(r["suppressed_cells"], 1)
