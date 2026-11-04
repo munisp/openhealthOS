@@ -2062,6 +2062,50 @@ def run_connected_day():
                          "breach_detected": breach["breach"],
                          "auto_refund": dupes[0]["refund_ref"]}
 
+    # ---- 08:53 the sales front door: a tour operator's manifest and
+    # an airline's checkout, both through governed doors
+    from vhsales import PartnerRegistry, purchase_group
+    group = purchase_group(
+        vhc, payer_ref="TOURCO-1", entry_day=10, day=1, key_id="k1",
+        travelers=[{"passport_ref": "GRP-1", "full_name": "Ad Ult",
+                    "age_years": 35, "days": 40},
+                   {"passport_ref": "GRP-2", "full_name": "Kid Ten",
+                    "age_years": 10, "days": 30},
+                   {"passport_ref": "GRP-3", "full_name": "Baby One",
+                    "age_years": 1, "days": 30}])
+    assert group["total_minor"] == 6250  # €50 + €12.50 + free
+    bad_manifest_refused = False
+    try:
+        purchase_group(vhc, payer_ref="TOURCO-2", entry_day=10, day=1,
+                       key_id="k1",
+                       travelers=[{"passport_ref": "", "full_name": "X",
+                                   "age_years": 30, "days": 30}])
+    except Exception:
+        bad_manifest_refused = True
+    assert bad_manifest_refused
+    partners = PartnerRegistry()
+    partners.register("air-cv", legal_name="Air Cabo Verde",
+                      api_key="topsecret", day=1)
+    assert "topsecret" not in str(partners.partners)  # hashed at rest
+    pq = partners.quote_for(vhc, "air-cv", "topsecret", days=30,
+                            age_years=35, day=1)
+    partners.purchase_for(vhc, "air-cv", "topsecret",
+                          quote_id=pq["quote_id"], passport_ref="PAX-9",
+                          full_name="Pax Nine", entry_day=10, day=1,
+                          key_id="k1")
+    partners.revoke("air-cv", reason="contract ended", day=30)
+    revoked_refused = False
+    try:
+        partners.quote_for(vhc, "air-cv", "topsecret", days=30,
+                           age_years=35, day=31)
+    except Exception:
+        revoked_refused = True
+    assert revoked_refused
+    log["sales_doors"] = {"group_total_minor": group["total_minor"],
+                          "bad_manifest_refused": True,
+                          "partner_sales": partners.report()["sales"],
+                          "revoked_refused": revoked_refused}
+
     log["seams_proven"] = 38
     return log
 

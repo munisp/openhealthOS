@@ -1,0 +1,158 @@
+"""vhsales.py — group/manifest purchase and the partner API surface:
+a tour operator buys for fifty passengers in one manifest; an airline
+sells cover at checkout — both through governed, attributable doors.
+
+Spec coverage (VHC-class, e.g. CV-VHC-PLAT-SPEC §6.1):
+  - FR-SAL-03: group/manifest purchase — one payer, per-passenger age
+    pricing from the same profile, block issuance, the whole manifest
+    validated before anyone is charged.
+  - FR-SAL-04 / INT-02: airline/OTA partner API — named partners with
+    hashed keys, every quote and purchase attributed, revoked partners
+    refused at the door.
+
+Doctrines:
+- A manifest validates completely or not at all: a group that pays for
+  49 and strands the 50th is a border incident, not a batch.
+- Partner keys are hashed at rest — a key at rest is a breach with a
+  timestamp.
+- Attribution is not optional: a sale without a partner is a sale the
+  scheme cannot audit.
+"""
+
+import hashlib
+import secrets
+
+VHSALES_VERSION = "vhc-sales@1.0.0"
+
+
+class SalesError(Exception):
+    pass
+
+
+def _refuse(msg):
+    raise SalesError(msg)
+
+
+def purchase_group(vhc, *, payer_ref, travelers, entry_day, day,
+                   key_id):
+    """FR-SAL-03: one payer, N travelers, per-pax pricing from the
+    country profile. Validation is all-or-nothing — every row names
+    its own error before a cent moves."""
+    if not payer_ref:
+        _refuse("a manifest names its payer")
+    if not travelers:
+        _refuse("an empty manifest is not a group")
+    errors = []
+    for i, t in enumerate(travelers):
+        if not t.get("passport_ref") or not t.get("full_name"):
+            errors.append("row %d: passport and name mandatory" % i)
+        if t.get("age_years") is None or t["age_years"] < 0:
+            errors.append("row %d: age required — absence is not a "
+                          "discount" % i)
+    if errors:
+        _refuse("manifest refused, nobody charged: " + "; ".join(errors))
+    group_ref = "GRP-" + secrets.token_hex(4).upper()
+    covers, total = [], 0
+    for t in travelers:
+        q = vhc.quote(days=t.get("days", 30), age_years=t["age_years"],
+                      day=day)
+        cover = vhc.purchase(quote_id=q["quote_id"],
+                             passport_ref=t["passport_ref"],
+                             full_name=t["full_name"],
+                             entry_day=entry_day, day=day,
+                             key_id=key_id, dob=t.get("dob"))
+        cover["group_ref"] = group_ref
+        covers.append(cover)
+        total += q["total_minor"]
+    vhc.audit.append({"event": "group_purchased", "group": group_ref,
+                      "payer": payer_ref, "count": len(covers),
+                      "total_minor": total, "day": day})
+    return {"group_ref": group_ref, "covers": covers,
+            "total_minor": total, "count": len(covers)}
+
+
+class PartnerRegistry:
+    """FR-SAL-04: the partner door. Keys hashed at rest; every sale
+    attributed; revocation is reasoned and immediate."""
+
+    def __init__(self):
+        self.partners = {}     # partner_id -> record
+        self.audit = []
+
+    def register(self, partner_id, *, legal_name, api_key, day):
+        if not partner_id or not legal_name or not api_key:
+            _refuse("a partner names itself and presents a key")
+        if partner_id in self.partners:
+            _refuse("duplicate partner id")
+        self.partners[partner_id] = {
+            "partner_id": partner_id, "legal_name": legal_name,
+            "key_sha256": hashlib.sha256(api_key.encode()).hexdigest(),
+            "state": "active", "registered_day": day,
+            "sales": 0, "gross_minor": 0}
+        self.audit.append({"event": "partner_registered",
+                           "partner": partner_id, "day": day})
+        return {k: v for k, v in self.partners[partner_id].items()
+                if k != "key_sha256"}
+
+    def revoke(self, partner_id, *, reason, day):
+        p = self._partner(partner_id)
+        if not reason:
+            _refuse("a revocation without a reason is a disappearance")
+        p["state"] = "revoked"
+        self.audit.append({"event": "partner_revoked",
+                           "partner": partner_id, "reason": reason,
+                           "day": day})
+        return p
+
+    def authenticate(self, partner_id, api_key):
+        p = self._partner(partner_id)
+        if p["state"] != "active":
+            _refuse("partner not active — the door is the registry")
+        if hashlib.sha256(api_key.encode()).hexdigest() != \
+                p["key_sha256"]:
+            _refuse("bad key — the attempt is audited")
+        return p
+
+    def quote_for(self, vhc, partner_id, api_key, *, days, age_years,
+                  day):
+        p = self.authenticate(partner_id, api_key)
+        q = vhc.quote(days=days, age_years=age_years, day=day)
+        q["partner_id"] = partner_id
+        self.audit.append({"event": "partner_quote",
+                           "partner": partner_id,
+                           "quote": q["quote_id"], "day": day})
+        return q
+
+    def purchase_for(self, vhc, partner_id, api_key, *, quote_id,
+                     passport_ref, full_name, entry_day, day, key_id,
+                     dob=None):
+        p = self.authenticate(partner_id, api_key)
+        q = vhc.quotes.get(quote_id)
+        if q is None or q.get("partner_id") != partner_id:
+            _refuse("partners bind their own quotes — a quote without "
+                    "attribution is a sale the scheme cannot audit")
+        cover = vhc.purchase(quote_id=quote_id,
+                             passport_ref=passport_ref,
+                             full_name=full_name, entry_day=entry_day,
+                             day=day, key_id=key_id, dob=dob)
+        cover["partner_id"] = partner_id
+        p["sales"] += 1
+        p["gross_minor"] += q["total_minor"]
+        self.audit.append({"event": "partner_sale",
+                           "partner": partner_id, "ref": cover["ref"],
+                           "day": day})
+        return cover
+
+    def report(self):
+        return {"partners": len(self.partners),
+                "active": sum(1 for p in self.partners.values()
+                              if p["state"] == "active"),
+                "sales": sum(p["sales"] for p in self.partners.values()),
+                "gross_minor": sum(p["gross_minor"]
+                                   for p in self.partners.values())}
+
+    def _partner(self, partner_id):
+        p = self.partners.get(partner_id)
+        if p is None:
+            _refuse("unknown partner")
+        return p

@@ -243,3 +243,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(s["clean"])
         self.assertTrue(s["breach_detected"])
         self.assertTrue(s["auto_refund"].startswith("ARF-"))
+
+    def test_sales_doors(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        d = log["sales_doors"]
+        self.assertEqual(d["group_total_minor"], 6250)
+        self.assertTrue(d["bad_manifest_refused"])
+        self.assertEqual(d["partner_sales"], 1)
+        self.assertTrue(d["revoked_refused"])
