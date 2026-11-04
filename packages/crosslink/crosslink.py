@@ -21,6 +21,7 @@ shaped so that silence is a finding, never a default.
    19. feed_health_to_oversight devicelink → teleicu oversight
    20. deid_export_to_dataset pacs de-id  → datasetforge cases
    21. emergency_to_claim   travelpass    → vhclaims intake
+   22. premium_to_fund      vhcover        → vhfund buckets
 
 Nothing here re-implements clinical logic; it composes engines that
 already refuse loudly on their own. The seams add the one thing the
@@ -901,3 +902,27 @@ def emergency_to_claim(registry, claims, traveler_id, *, session_id,
                          "case": case["case_id"],
                          "session_id": session_id, "day": day})
     return case
+
+
+def premium_to_fund(vhc, fund, ref, *, day):
+    """Seam 22: a VHC premium allocates into the fund's buckets the
+    moment it is collected — a premium that lands unsplit is
+    administration money by default, which is how schemes eat claims
+    money. Idempotent per ref: re-running the seam re-allocates
+    nothing."""
+    pays = [p for p in vhc.payments if p["ref"] == ref
+            and p["kind"] in ("premium", "extension")]
+    if not pays:
+        raise KeyError("no premium for this ref — the fund is fed by "
+                       "the ledger, not by declarations")
+    already = {e["ref"] for e in fund.entries
+               if e["kind"] == "allocation"}
+    posted = []
+    for p in pays:
+        alloc_key = "%s:%s" % (p["ref"], p["day"])
+        if alloc_key in already or p["minor"] == 0:
+            continue  # exempt issues allocate nothing, honestly
+        posted.append(fund.post_premium(alloc_key,
+                                        amount_minor=p["minor"],
+                                        day=day))
+    return {"allocated": len(posted), "ref": ref}

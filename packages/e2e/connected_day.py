@@ -1999,7 +1999,38 @@ def run_connected_day():
                        "export_rows": len(pack["rows"]),
                        "suppressed_cells": dash["suppressed_cells"]}
 
-    log["seams_proven"] = 37
+    # ---- 08:51 the fund: premiums split five ways at the door (seam
+    # 22), buckets spend only what they hold, and the backstop is a
+    # governed act — regulator-notified, never a rumour
+    from vhfund import FundLedger
+    from crosslink import premium_to_fund
+    fund = FundLedger(rules_version="cv-fund@1.0.0")
+    fed = premium_to_fund(vhc, fund, cover["ref"], day=1)
+    assert fed["allocated"] == 2  # premium + extension
+    assert fund.report()["allocated_minor"] == 6000  # €50 + €10
+    again = premium_to_fund(vhc, fund, cover["ref"], day=1)
+    assert again["allocated"] == 0  # idempotent
+    spend = fund.spend("claims_medevac", amount_minor=2700,
+                       purpose="claim %s remittance" % case["case_id"],
+                       day=6)
+    assert spend["balance_minor"] == 0  # 45% of 6000 = 2700
+    overdraft = False
+    try:
+        fund.spend("surveillance", amount_minor=601,
+                   purpose="lab kits", day=6)
+    except Exception:
+        overdraft = True
+    assert overdraft
+    fund.activate_backstop(by="fund-board",
+                           reason="insurer licence suspended",
+                           notice_ref="BCV-NOTICE-2026-041", day=20)
+    assert fund.report()["mode"] == "backstop"
+    log["fund"] = {"allocated_minor": 6000,
+                   "claims_bucket_spent_to_zero": True,
+                   "overdraft_refused": overdraft,
+                   "backstop_notice": "BCV-NOTICE-2026-041"}
+
+    log["seams_proven"] = 38
     return log
 
 

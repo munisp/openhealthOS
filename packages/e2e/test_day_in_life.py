@@ -76,7 +76,7 @@ class TestConnectedDay(unittest.TestCase):
     def test_ten_seams_compose(self):
         from connected_day import run_connected_day
         log = run_connected_day()  # assertions inside are the test
-        self.assertEqual(log["seams_proven"], 37)
+        self.assertEqual(log["seams_proven"], 38)
         self.assertTrue(log["empty_pool_refused"])
         self.assertEqual(log["metformin_blocked_at"], 25)
         self.assertEqual(log["teleicu_case"], "icu-EVT-1")
@@ -225,3 +225,12 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(r["acked_in_days"], 1)
         self.assertEqual(r["export_rows"], 1)
         self.assertEqual(r["suppressed_cells"], 1)
+
+    def test_fund_buckets_and_backstop(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        f = log["fund"]
+        self.assertEqual(f["allocated_minor"], 6000)
+        self.assertTrue(f["claims_bucket_spent_to_zero"])
+        self.assertTrue(f["overdraft_refused"])
+        self.assertEqual(f["backstop_notice"], "BCV-NOTICE-2026-041")
