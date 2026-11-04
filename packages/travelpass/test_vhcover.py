@@ -249,3 +249,95 @@ class TestReport(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestExemptions(unittest.TestCase):
+    def _exempt(self, reg, **kw):
+        args = dict(passport_ref="DIP-1", full_name="Diplo Matic",
+                    category="diplomatic", evidence_ref="MFA-CARD-77",
+                    day=10, expires_day=40, key_id="k1", dob="1970-01-01")
+        args.update(kw)
+        return reg.register_exemption(**args)
+
+    def test_diplomatic_exemption_verifies_green(self):
+        reg = _cv()
+        ex = self._exempt(reg)
+        v = reg.verify(ex["qr"], day=20)
+        self.assertEqual(v["verdict"], "green")
+        self.assertEqual(v["claims"]["cat"], "diplomatic")
+
+    def test_exemption_needs_evidence(self):
+        reg = _cv()
+        with self.assertRaises(VHCError):
+            self._exempt(reg, evidence_ref="")
+
+    def test_unknown_category_refuses(self):
+        reg = _cv()
+        with self.assertRaises(VHCError):
+            self._exempt(reg, category="vip")
+
+    def test_foreign_policy_floor_enforced(self):
+        reg = _cv()
+        with self.assertRaises(VHCError):
+            self._exempt(reg, category="foreign_policy",
+                         foreign_cover_minor=4_999_999)
+        ex = self._exempt(reg, category="foreign_policy",
+                          foreign_cover_minor=5_000_000)
+        self.assertEqual(reg.verify(ex["qr"], day=11)["verdict"],
+                         "green")
+
+    def test_transit_window_enforced(self):
+        reg = _cv()
+        with self.assertRaises(VHCError):
+            self._exempt(reg, category="transit", expires_day=13)
+
+    def test_expired_exemption_is_red(self):
+        reg = _cv()
+        ex = self._exempt(reg)
+        v = reg.verify(ex["qr"], day=41)
+        self.assertEqual(v["verdict"], "red")
+        self.assertIn("exemption expired", v["reasons"])
+
+    def test_exemption_revocation_is_red_and_offline(self):
+        reg = _cv()
+        ex = self._exempt(reg)
+        reg.revoke(ex["ref"], reason="evidence withdrawn", day=15)
+        cache = reg.offline_cache(as_of=15)
+        self.assertEqual(reg.verify(ex["qr"], day=16,
+                                    cache=cache)["verdict"], "red")
+
+
+class TestDeskService(unittest.TestCase):
+    def test_lookup_finds_cover_and_exemption(self):
+        reg = _cv()
+        q = reg.quote(days=30, age_years=35, day=1)
+        reg.purchase(quote_id=q["quote_id"], passport_ref="P-77",
+                     full_name="Desk Test", entry_day=10, day=1,
+                     key_id="k1", dob="1990-05-05")
+        reg.register_exemption(passport_ref="P-77", full_name="Desk Test",
+                               category="resident",
+                               evidence_ref="RES-PERMIT-1", day=1,
+                               expires_day=365, key_id="k1",
+                               dob="1990-05-05")
+        found = reg.desk_lookup(passport_ref="P-77", dob="1990-05-05")
+        self.assertEqual(found["count"], 2)
+        kinds = {m["kind"] for m in found["matches"]}
+        self.assertEqual(kinds, {"cover", "exemption"})
+
+    def test_zero_matches_is_a_finding_not_an_error(self):
+        reg = _cv()
+        found = reg.desk_lookup(passport_ref="NOPE-1")
+        self.assertEqual(found["count"], 0)
+        self.assertIn("not met", found["note"])
+
+    def test_reissue_returns_fresh_signed_qr(self):
+        reg = _cv()
+        cover = _buy(reg)
+        qr2 = reg.reissue(cover["ref"], day=20, key_id="k1")
+        self.assertEqual(reg.verify(qr2, day=20)["verdict"], "green")
+        self.assertEqual(reg.audit[-1]["event"], "reissued")
+
+    def test_reissue_unknown_ref_refuses(self):
+        reg = _cv()
+        with self.assertRaises(VHCError):
+            reg.reissue("VHC-NOPE", day=1, key_id="k1")

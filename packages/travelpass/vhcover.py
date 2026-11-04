@@ -57,6 +57,11 @@ VHC_PROFILES = {
         "cache_max_age_days": 3,             # ≥72h offline cache budget
         "scope": ("emergency_medical", "medevac",
                   "repatriation_of_remains"),
+        # §5.2 exemption decision table — versioned like everything else
+        "exemption_categories": ("resident", "transit", "crew",
+                                 "diplomatic", "foreign_policy"),
+        "transit_max_days": 2,               # airside transit window
+        "foreign_policy_floor_minor": 5_000_000,  # ≥ €50,000 own cover
     },
     "ng-vhc@1.0.0": {
         "country": "ng",
@@ -75,6 +80,10 @@ VHC_PROFILES = {
         "qr_offline_days": 90,
         "cache_max_age_days": 3,
         "scope": ("emergency_medical",),
+        "exemption_categories": ("resident", "transit", "crew",
+                                 "diplomatic", "foreign_policy"),
+        "transit_max_days": 2,
+        "foreign_policy_floor_minor": 10_000_000,  # ≥ ₦100,000 own cover
     },
 }
 
@@ -253,6 +262,7 @@ class VHCCoverRegistry:
         self.issuer = issuer
         self.quotes = {}
         self.covers = {}
+        self.exemptions = {}        # ref -> exemption record
         self.revocations = []       # append-only: {"ref", "reason", "day"}
         self.flags = []             # append-only humanitarian flags
         self.payments = []          # append-only minor-unit ledger
@@ -274,7 +284,7 @@ class VHCCoverRegistry:
         return self.quotes[quote_id]
 
     def purchase(self, *, quote_id, passport_ref, full_name, entry_day,
-                 day, key_id):
+                 day, key_id, dob=None):
         q = self.quotes.get(quote_id)
         if q is None:
             _refuse("unknown quote — a price without a table is a bribe")
@@ -287,6 +297,8 @@ class VHCCoverRegistry:
         cover = {
             "ref": ref, "passport_sha256": hashlib.sha256(
                 passport_ref.encode()).hexdigest(),
+            "dob_sha256": (hashlib.sha256(dob.encode()).hexdigest()
+                           if dob else None),
             "full_name": full_name, "window": window,
             "extensions": [], "profile_version": self.profile_version,
             "quote": q, "purchased_day": day,
@@ -305,14 +317,18 @@ class VHCCoverRegistry:
         return cover
 
     def _claims(self, cover):
-        return {
+        claims = {
             "iss": self.issuer, "v": cover["profile_version"],
+            "kind": "cover",
             "ref": cover["ref"], "name": cover["full_name"],
             "pp": cover["passport_sha256"],
             "win": cover["window"], "ext": list(cover["extensions"]),
             "scope": list(self.profile["scope"]),
             "vu": cover["purchased_day"] + self.profile["qr_offline_days"],
         }
+        if cover.get("dob_sha256"):
+            claims["dob"] = cover["dob_sha256"]
+        return claims
 
     def extend(self, ref, *, extra_days, day, key_id):
         """Extensions must keep cover contiguous: the new window starts
@@ -337,9 +353,126 @@ class VHCCoverRegistry:
         self.audit.append({"event": "extended", "ref": ref, "day": day})
         return cover
 
+    # --- exemptions (spec §5.2 decision table, as config) -------------
+    def register_exemption(self, *, passport_ref, full_name, category,
+                           evidence_ref, day, expires_day, key_id,
+                           dob=None, foreign_cover_minor=None):
+        """An exemption is a signed, evidence-backed record — never a
+        verbal wave-through. Every category needs documentary evidence;
+        foreign-policy exemptions must prove their own cover meets the
+        profile floor; transit stays inside the transit window."""
+        if category not in self.profile["exemption_categories"]:
+            _refuse("unknown exemption category — the table is the law")
+        if not evidence_ref:
+            _refuse("an exemption without evidence is a favour")
+        if not passport_ref or not full_name:
+            _refuse("an exemption binds to a passport and a name")
+        if expires_day < day:
+            _refuse("an exemption born expired is a clerical error")
+        if category == "transit" and \
+                expires_day - day > self.profile["transit_max_days"]:
+            _refuse("transit exemptions live inside the transit window")
+        if category == "foreign_policy":
+            floor = self.profile["foreign_policy_floor_minor"]
+            if foreign_cover_minor is None or foreign_cover_minor < floor:
+                _refuse("foreign-policy cover below the floor is not "
+                        "cover — top up or buy the scheme")
+        ref = "EXM-" + secrets.token_hex(4).upper()
+        ex = {
+            "ref": ref, "kind": "exemption",
+            "passport_sha256": hashlib.sha256(
+                passport_ref.encode()).hexdigest(),
+            "dob_sha256": (hashlib.sha256(dob.encode()).hexdigest()
+                           if dob else None),
+            "full_name": full_name, "category": category,
+            "evidence_ref": evidence_ref,
+            "foreign_cover_minor": foreign_cover_minor,
+            "issued_day": day, "expires_day": expires_day,
+            "profile_version": self.profile_version,
+        }
+        self.exemptions[ref] = ex
+        claims = {
+            "iss": self.issuer, "v": self.profile_version,
+            "kind": "exemption", "ref": ref, "name": full_name,
+            "pp": ex["passport_sha256"], "cat": category,
+            "exp": expires_day,
+            "vu": day + self.profile["qr_offline_days"],
+        }
+        if ex["dob_sha256"]:
+            claims["dob"] = ex["dob_sha256"]
+        ex["qr"] = sign_claims(claims, key_ring=self.key_ring,
+                               key_id=key_id, day=day)
+        self.audit.append({"event": "exemption_issued", "ref": ref,
+                           "category": category, "day": day})
+        return ex
+
+    # --- desk service (S-024): lookup by passport, reissue ------------
+    def desk_lookup(self, *, passport_ref, dob=None):
+        """The desk finds a traveller by passport (+dob when recorded).
+        Zero matches is a finding, not an error: no record is not no
+        history."""
+        if not passport_ref:
+            _refuse("desk lookup needs a passport reference")
+        pp = hashlib.sha256(passport_ref.encode()).hexdigest()
+        dob_h = hashlib.sha256(dob.encode()).hexdigest() if dob else None
+        matches = []
+        for c in self.covers.values():
+            if c["passport_sha256"] != pp:
+                continue
+            if dob_h and c.get("dob_sha256") and c["dob_sha256"] != dob_h:
+                continue
+            matches.append({"kind": "cover", "ref": c["ref"],
+                            "name": c["full_name"],
+                            "window": dict(c["window"])})
+        for e in self.exemptions.values():
+            if e["passport_sha256"] != pp:
+                continue
+            if dob_h and e.get("dob_sha256") and e["dob_sha256"] != dob_h:
+                continue
+            matches.append({"kind": "exemption", "ref": e["ref"],
+                            "name": e["full_name"],
+                            "category": e["category"],
+                            "expires_day": e["expires_day"]})
+        return {"matches": matches, "count": len(matches),
+                "note": ("no record on file — a traveller the scheme has "
+                         "not met" if not matches else None)}
+
+    def reissue(self, ref, *, day, key_id):
+        """Reissue the QR from the desk. The record is unchanged; only a
+        fresh signature on the current claims leaves the building, and
+        the old QR keeps verifying until its key retires — revocation is
+        a separate, reasoned act."""
+        if ref in self.covers:
+            cover = self.covers[ref]
+            cover["qr"] = sign_claims(self._claims(cover),
+                                      key_ring=self.key_ring,
+                                      key_id=key_id, day=day)
+            self.audit.append({"event": "reissued", "ref": ref,
+                               "day": day})
+            return cover["qr"]
+        if ref in self.exemptions:
+            ex = self.exemptions[ref]
+            claims = {
+                "iss": self.issuer, "v": self.profile_version,
+                "kind": "exemption", "ref": ref, "name": ex["full_name"],
+                "pp": ex["passport_sha256"], "cat": ex["category"],
+                "exp": ex["expires_day"],
+                "vu": day + self.profile["qr_offline_days"],
+            }
+            if ex["dob_sha256"]:
+                claims["dob"] = ex["dob_sha256"]
+            ex["qr"] = sign_claims(claims, key_ring=self.key_ring,
+                                   key_id=key_id, day=day)
+            self.audit.append({"event": "reissued", "ref": ref,
+                               "day": day})
+            return ex["qr"]
+        _refuse("unknown ref — reissue serves records, not requests")
+
     # --- verification ------------------------------------------------
     def revoke(self, ref, *, reason, day):
-        self._cover(ref)
+        if ref not in self.covers and ref not in self.exemptions:
+            _refuse("unknown ref — revocation serves records, not "
+                    "requests")
         if not reason:
             _refuse("a revocation without a reason is a disappearance")
         self.revocations.append({"ref": ref, "reason": reason, "day": day})
@@ -385,25 +518,31 @@ class VHCCoverRegistry:
             if day > claims.get("vu", -1):
                 reasons.append("qr beyond offline validity — "
                                "re-verify online")
-            win = claims.get("win", {})
-            to_day = win.get("to", -1)
-            if day > to_day + self.profile["grace_days"]:
-                reasons.append("lapsed")
-            elif day > to_day:
-                reasons.append("grace window — extend at the desk")
-            flag = next((f for f in self.flags if f["ref"] == claims["ref"]
-                         and day - f["day"] <=
-                         self.profile["humanitarian_days"]), None)
-            if flag is not None:
-                reasons.append("humanitarian regularisation pending")
-            if (not reasons and
-                    to_day - day <= self.profile["expiring_soon_days"]):
-                reasons.append("cover expires within 72h")
+            if claims.get("kind") == "exemption":
+                if not reasons and day > claims.get("exp", -1):
+                    reasons.append("exemption expired")
+            else:
+                win = claims.get("win", {})
+                to_day = win.get("to", -1)
+                if day > to_day + self.profile["grace_days"]:
+                    reasons.append("lapsed")
+                elif day > to_day:
+                    reasons.append("grace window — extend at the desk")
+                flag = next((f for f in self.flags
+                             if f["ref"] == claims["ref"] and
+                             day - f["day"] <=
+                             self.profile["humanitarian_days"]), None)
+                if flag is not None:
+                    reasons.append("humanitarian regularisation pending")
+                if (not reasons and
+                        to_day - day <= self.profile["expiring_soon_days"]):
+                    reasons.append("cover expires within 72h")
         if cache is not None and cache_age > cache["max_age_days"]:
             reasons.append("verification data stale — escalate")
         if not ok or any(r.startswith(("unverifiable", "revoked",
                                        "lapsed", "profile mismatch",
-                                       "qr beyond", "verification data"))
+                                       "qr beyond", "verification data",
+                                       "exemption expired"))
                          for r in reasons):
             verdict = "red"
         elif reasons:
@@ -437,6 +576,7 @@ class VHCCoverRegistry:
                 "extensions": sum(len(c["extensions"])
                                   for c in self.covers.values()),
                 "revocations": len(self.revocations),
+                "exemptions": len(self.exemptions),
                 "humanitarian_flags": len(self.flags),
                 "collected_minor": sum(p["minor"] for p in self.payments),
                 "currency": self.profile["currency"]}

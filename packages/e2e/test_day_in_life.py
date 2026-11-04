@@ -183,3 +183,7 @@ class TestConnectedDay(unittest.TestCase):
         self.assertEqual(vhc["offline_verdict"], "green")
         self.assertEqual(vhc["humanitarian_verdict"], "amber")
         self.assertEqual(vhc["ng_quote_kobo"], 850_000)
+        self.assertEqual(vhc["exemption_offline_verdict"], "green")
+        self.assertTrue(vhc["floor_refused"])
+        self.assertEqual(vhc["desk_lookup_found"], 1)
+        self.assertTrue(vhc["reissued_green"])

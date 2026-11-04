@@ -1801,10 +1801,40 @@ def run_connected_day():
                           issuer="ng-vhc")
     q_ng = ng.quote(days=7, age_years=35, day=1)
     assert q_ng["total_minor"] == 850_000  # same engine, other country
+    # exemptions are signed evidence, never a wave-through: diplomatic
+    # green offline; foreign-policy under the €50k floor refuses at the
+    # desk, not at the border
+    dip = vhc.register_exemption(
+        passport_ref="DIP-7", full_name="Diplo Matic",
+        category="diplomatic", evidence_ref="MFA-CARD-77", day=10,
+        expires_day=40, key_id="k1", dob="1970-01-01")
+    dip_v = vhc.verify(dip["qr"], day=20,
+                       cache=vhc.offline_cache(as_of=18))
+    assert dip_v["verdict"] == "green" and dip_v["claims"]["cat"] == \
+        "diplomatic"
+    refused_floor = False
+    try:
+        vhc.register_exemption(
+            passport_ref="FP-1", full_name="Policy Holder",
+            category="foreign_policy", evidence_ref="POL-001", day=10,
+            expires_day=40, key_id="k1", foreign_cover_minor=4_999_999)
+    except Exception:
+        refused_floor = True
+    assert refused_floor
+    # the desk: passport + dob finds the record, reissue signs fresh
+    found = vhc.desk_lookup(passport_ref="DIP-7", dob="1970-01-01")
+    assert found["count"] == 1 and \
+        found["matches"][0]["kind"] == "exemption"
+    qr2 = vhc.reissue(dip["ref"], day=21, key_id="k1")
+    assert vhc.verify(qr2, day=21)["verdict"] == "green"
     log["vhc_cover"] = {"cv_ref": cover["ref"],
                         "offline_verdict": v_off["verdict"],
                         "humanitarian_verdict": v_hum["verdict"],
-                        "ng_quote_kobo": q_ng["total_minor"]}
+                        "ng_quote_kobo": q_ng["total_minor"],
+                        "exemption_offline_verdict": dip_v["verdict"],
+                        "floor_refused": refused_floor,
+                        "desk_lookup_found": found["count"],
+                        "reissued_green": True}
 
     log["seams_proven"] = 36
     return log
