@@ -261,3 +261,10 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(s["fallback_stated"])
         self.assertEqual(s["pt_gap_named"], ["cover.tagline"])
         self.assertIsNotNone(s["loss_ratio"])
+
+    def test_ease_rail(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        e = log["ease_rail"]
+        self.assertEqual(e["messages"], 4)
+        self.assertTrue(e["unplugged_refused"])

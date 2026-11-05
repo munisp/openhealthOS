@@ -2146,6 +2146,27 @@ def run_connected_day():
         "pt_gap_named": cov["languages"]["pt"]["missing"],
         "loss_ratio": mart["loss_ratio"]}
 
+    # ---- 08:55 the single rail: covers and verdicts flow to EASE over
+    # a composed transport — and an unplugged rail refuses, honestly
+    from vhease import EaseAdapter
+    rail_log = []
+    ease = EaseAdapter(lambda t, e: rail_log.append(t) or
+                       {"status": "accepted"})
+    ease.cover_issued(cover)
+    ease.exemption_issued(dip)
+    ease.verification_event(v_off, lane="lagos-airport-3", day=17)
+    ease.manifest_batch(group)
+    assert rail_log == ["cover-issued", "exemption-issued",
+                        "verification-event", "manifest-batch"]
+    unplugged = False
+    try:
+        EaseAdapter(None)
+    except Exception:
+        unplugged = True
+    assert unplugged  # a cable not plugged in is not an interface
+    log["ease_rail"] = {"messages": len(rail_log),
+                        "unplugged_refused": unplugged}
+
     log["seams_proven"] = 38
     return log
 

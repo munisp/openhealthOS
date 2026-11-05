@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Border verification — OpenHealth OS VHC</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; display:flex; gap:10px; align-items:center; }
+  header h1 { font-size:1.05rem; margin:0; }
+  main { max-width:720px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border-radius:12px; padding:14px; border:1px solid #2a3532; }
+  label { font-size:.8rem; font-weight:600; display:block; margin-top:8px; color:#b9c8c4; }
+  input, textarea { background:#0d1312; border:1px solid #2a3532; color:#e8ecea; padding:9px 10px;
+          border-radius:10px; font-size:.95rem; width:100%; box-sizing:border-box; margin-top:4px; }
+  textarea { min-height:90px; font-family: ui-monospace, monospace; font-size:.8rem; }
+  button { background:#1d6fd1; color:#fff; border:none; border-radius:10px;
+           padding:12px 16px; font-weight:700; cursor:pointer; margin-top:12px; width:100%;
+           font-size:1rem; }
+  .verdict { border-radius:14px; padding:22px 18px; text-align:center; display:none; }
+  .verdict h2 { margin:0 0 6px; font-size:2rem; letter-spacing:.06em; }
+  .v-green { background:#0f3d22; color:#7be3a3; border:2px solid #2f9e5f; }
+  .v-amber { background:#4a3512; color:#ffce7a; border:2px solid #d19a1d; }
+  .v-red   { background:#4a1512; color:#ff9d92; border:2px solid #d1451d; }
+  .reasons { text-align:left; margin:10px auto 0; max-width:420px; font-size:.9rem; }
+  .reasons li { margin:4px 0; }
+  .field { display:flex; justify-content:space-between; padding:8px 0;
+           border-bottom:1px solid #243130; font-size:.95rem; }
+  .field b { color:#9ec7ff; font-weight:600; font-size:.8rem; text-transform:uppercase;
+             letter-spacing:.04em; }
+  .muted { color:#8aa39d; font-size:.8rem; }
+  .err { background:#4a1512; color:#ff9d92; padding:10px 14px; border-radius:10px;
+         font-size:.9rem; display:none; white-space:pre-wrap; }
+  #cacheState { font-size:.75rem; padding:2px 10px; border-radius:999px;
+                background:#243130; color:#8aa39d; }
+  #cacheState.live { background:#0f3d22; color:#7be3a3; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BORDER VERIFICATION — offline-first, every verdict named</h1>
+  <span id="cacheState">no cache loaded</span>
+</header>
+<main>
+  <section class="card">
+    <p class="muted">Load the offline cache (key ring + revocations, stamped). The QR is a
+      <b>signed claim, not a pointer</b> — verification runs entirely on this device.
+      A cache past its max age turns every verdict RED: <b>stale data is a finding, not
+      evidence</b>.</p>
+    <label>Offline cache (JSON)</label>
+    <input type="file" id="cacheFile" accept="application/json">
+    <label>QR token (compact JWS)</label>
+    <textarea id="token" placeholder="eyJhbGciOi..."></textarea>
+    <label>Today (integer day, platform clock)</label>
+    <input id="day" type="number" value="0">
+    <button id="verifyBtn">VERIFY</button>
+    <div class="err" id="err"></div>
+  </section>
+
+  <section class="verdict" id="verdictCard">
+    <h2 id="verdictWord">—</h2>
+    <div id="officerAction" class="muted"></div>
+    <ul class="reasons" id="reasonList"></ul>
+  </section>
+
+  <section class="card" id="evidenceCard" style="display:none">
+    <div class="field"><b>ref</b><span id="evRef">—</span></div>
+    <div class="field"><b>window</b><span id="evWin">—</span></div>
+    <div class="field"><b>scope</b><span id="evScope">—</span></div>
+    <div class="field"><b>mode</b><span id="evMode">offline</span></div>
+    <div class="field"><b>cache age (days)</b><span id="evAge">—</span></div>
+    <div class="field"><b>latency</b><span id="evLatency">—</span></div>
+  </section>
+</main>
+<script>
+const b64u = s => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/") +
+  "===".slice((s.length+3)%4)), c => c.charCodeAt(0));
+const enc = new TextEncoder();
+let CACHE = null;
+
+document.getElementById("cacheFile").addEventListener("change", async ev => {
+  const f = ev.target.files[0]; if (!f) return;
+  try {
+    CACHE = JSON.parse(await f.text());
+    const el = document.getElementById("cacheState");
+    el.textContent = "cache loaded · stamped day " + CACHE.stamped +
+      " · " + Object.keys(CACHE.keys).length + " keys · " +
+      CACHE.revocations.length + " revocations";
+    el.classList.add("live");
+  } catch (e) { showErr("cache unreadable: " + e.message); }
+});
+
+function showErr(msg){ const e=document.getElementById("err");
+  e.textContent=msg; e.style.display="block"; }
+
+async function verify(){
+  document.getElementById("err").style.display="none";
+  const t0 = performance.now();
+  const reasons = [];
+  if (!CACHE) { showErr("no cache — a cable not plugged in is not an interface"); return; }
+  const day = parseInt(document.getElementById("day").value, 10);
+  const token = document.getElementById("token").value.trim();
+  const parts = token.split(".");
+  let claims = null, ok = false;
+  if (parts.length !== 3) reasons.push("unverifiable: malformed");
+  else {
+    let header;
+    try { header = JSON.parse(new TextDecoder().decode(b64u(parts[0]))); }
+    catch { reasons.push("unverifiable: malformed header"); }
+    if (header && header.alg === "HS256" && header.kid) {
+      const key = CACHE.keys[header.kid];
+      if (!key) reasons.push("unverifiable: unknown key");
+      else if (day < key.active_from || (key.active_to !== null && day > key.active_to))
+        reasons.push("unverifiable: key not active");
+      else {
+        const cryptoKey = await crypto.subtle.importKey(
+          "raw", enc.encode(key.secret),
+          {name:"HMAC", hash:"SHA-256"}, false, ["sign"]);
+        const sig = await crypto.subtle.sign("HMAC", cryptoKey,
+          enc.encode(parts[0]+"."+parts[1]));
+        const actual = b64u(parts[2]);
+        const a = new Uint8Array(sig);
+        if (a.length !== actual.length || !a.every((b,i)=>b===actual[i]))
+          reasons.push("unverifiable: bad signature");
+        else {
+          try { claims = JSON.parse(new TextDecoder().decode(b64u(parts[1]))); ok = true; }
+          catch { reasons.push("unverifiable: malformed payload"); }
+        }
+      }
+    } else if (header) reasons.push("unverifiable: unsupported header");
+  }
+  if (ok) {
+    if (claims.v !== CACHE.profile_version) reasons.push("profile mismatch");
+    if (CACHE.revocations.includes(claims.ref)) reasons.push("revoked");
+    if (day > (claims.vu ?? -1))
+      reasons.push("qr beyond offline validity — re-verify online");
+    if (claims.kind === "exemption") {
+      if (!reasons.length && day > (claims.exp ?? -1))
+        reasons.push("exemption expired");
+    } else {
+      const to = claims.win?.to ?? -1;
+      if (day > to + 1) reasons.push("lapsed");
+      else if (day > to) reasons.push("grace window — extend at the desk");
+      if (!reasons.length && to - day <= 3)
+        reasons.push("cover expires within 72h");
+    }
+  }
+  const cacheAge = CACHE ? day - CACHE.stamped : 0;
+  if (cacheAge > CACHE.max_age_days)
+    reasons.push("verification data stale — escalate");
+  const redFlags = ["unverifiable","revoked","lapsed","profile mismatch",
+                    "qr beyond","verification data","exemption expired"];
+  const verdict = (!ok || reasons.some(r => redFlags.some(p => r.startsWith(p))))
+    ? "red" : (reasons.length ? "amber" : "green");
+  const action = {green:"ADMIT", amber:"DESK", red:"SUPERVISOR"}[verdict];
+  const ms = (performance.now() - t0).toFixed(2);
+  render(verdict, action, reasons, claims, cacheAge, ms);
+}
+
+function render(verdict, action, reasons, claims, cacheAge, ms){
+  const card = document.getElementById("verdictCard");
+  card.className = "verdict v-" + verdict; card.style.display = "block";
+  document.getElementById("verdictWord").textContent = verdict.toUpperCase();
+  document.getElementById("officerAction").textContent =
+    "officer action: " + action + " · " + ms + "ms (budget 2000ms)";
+  const ul = document.getElementById("reasonList"); ul.innerHTML = "";
+  (reasons.length ? reasons : ["ok — cover valid, cache fresh"]).forEach(r => {
+    const li = document.createElement("li"); li.textContent = r; ul.appendChild(li);
+  });
+  if (claims) {
+    document.getElementById("evidenceCard").style.display = "block";
+    document.getElementById("evRef").textContent = claims.ref;
+    document.getElementById("evWin").textContent = claims.win
+      ? claims.win.from + " → " + claims.win.to
+      : "exemption until day " + claims.exp;
+    document.getElementById("evScope").textContent =
+      (claims.scope || [claims.cat]).join(", ");
+    document.getElementById("evAge").textContent = cacheAge;
+    document.getElementById("evLatency").textContent = ms + " ms";
+  }
+}
+document.getElementById("verifyBtn").addEventListener("click", verify);
+</script>
+</body>
+</html>
