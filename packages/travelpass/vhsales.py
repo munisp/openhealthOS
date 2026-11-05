@@ -8,7 +8,9 @@ Spec coverage (VHC-class, e.g. CV-VHC-PLAT-SPEC §6.1):
     validated before anyone is charged.
   - FR-SAL-04 / INT-02: airline/OTA partner API — named partners with
     hashed keys, every quote and purchase attributed, revoked partners
-    refused at the door.
+    refused at the door; checkout binds are idempotent (a retried
+    bind returns the same cover, never a second charge), and payment
+    rides a redirect reference — the PAN never lands.
 
 Doctrines:
 - A manifest validates completely or not at all: a group that pays for
@@ -17,9 +19,12 @@ Doctrines:
   timestamp.
 - Attribution is not optional: a sale without a partner is a sale the
   scheme cannot audit.
+- A retried bind is the same sale, not a new one — idempotency keys
+  make the network's doubt the platform's problem.
 """
 
 import hashlib
+import re
 import secrets
 
 VHSALES_VERSION = "vhc-sales@1.0.0"
@@ -77,6 +82,7 @@ class PartnerRegistry:
 
     def __init__(self):
         self.partners = {}     # partner_id -> record
+        self.idem = {}         # (partner_id, idem_key) -> cover ref
         self.audit = []
 
     def register(self, partner_id, *, legal_name, api_key, day):
@@ -125,8 +131,20 @@ class PartnerRegistry:
 
     def purchase_for(self, vhc, partner_id, api_key, *, quote_id,
                      passport_ref, full_name, entry_day, day, key_id,
-                     dob=None):
+                     dob=None, idem_key=None, payment_redirect_ref=None):
         p = self.authenticate(partner_id, api_key)
+        if payment_redirect_ref is not None and \
+                re.fullmatch(r"\d{13,19}", str(payment_redirect_ref)):
+            _refuse("the PAN never lands — send the redirect "
+                    "reference, not the card")
+        if idem_key is not None:
+            prior = self.idem.get((partner_id, idem_key))
+            if prior is not None:
+                self.audit.append({"event": "partner_bind_replayed",
+                                   "partner": partner_id,
+                                   "ref": prior, "day": day})
+                cover = vhc.covers[prior]
+                return {**cover, "idempotent_replay": True}
         q = vhc.quotes.get(quote_id)
         if q is None or q.get("partner_id") != partner_id:
             _refuse("partners bind their own quotes — a quote without "
@@ -136,12 +154,27 @@ class PartnerRegistry:
                              full_name=full_name, entry_day=entry_day,
                              day=day, key_id=key_id, dob=dob)
         cover["partner_id"] = partner_id
+        if payment_redirect_ref is not None:
+            cover["payment_redirect_ref"] = payment_redirect_ref
+        if idem_key is not None:
+            self.idem[(partner_id, idem_key)] = cover["ref"]
         p["sales"] += 1
         p["gross_minor"] += q["total_minor"]
         self.audit.append({"event": "partner_sale",
                            "partner": partner_id, "ref": cover["ref"],
                            "day": day})
         return cover
+
+    def checkout_status(self, partner_id, api_key, *, idem_key):
+        """The status endpoint: a partner asks what became of its bind.
+        Not-found is stated, not assumed."""
+        self.authenticate(partner_id, api_key)
+        ref = self.idem.get((partner_id, idem_key))
+        if ref is None:
+            return {"state": "not-found",
+                    "note": "no bind under this key — stated, not "
+                            "assumed"}
+        return {"state": "bound", "ref": ref}
 
     def report(self):
         return {"partners": len(self.partners),

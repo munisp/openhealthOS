@@ -2251,6 +2251,69 @@ def run_connected_day():
         "mixed_currency_refused": mixed_refused,
         "eur_file_total_minor": eur_file["total_minor"]}
 
+    # ---- 08:58 the scheme talks first: proactive notifications fire
+    # from the schedule; a stranded passenger gets a courtesy rider
+    # that converts when the stay extends; the outbound scan closes
+    # the trip; an exception refund takes two hands; a retried partner
+    # bind is the same sale; the same claim twice is a resubmission
+    from vhnotify import NotificationOutbox
+    sent_msgs = []
+    outbox = NotificationOutbox(
+        lambda ch, m: sent_msgs.append((ch, m))
+        or {"status": "accepted"})
+    outbox.emit("purchase-confirmation", ref=cover["ref"],
+                channel="email", lang="en", day=1)
+    replay = outbox.emit("purchase-confirmation", ref=cover["ref"],
+                         channel="email", lang="en", day=1)
+    assert replay["replayed"] and len(sent_msgs) == 1
+    rider = vhc.courtesy_cover(passport_ref="STRANDED-1",
+                               full_name="Stranded Pax",
+                               manifest_ref="MNF-TACV-99", day=17,
+                               key_id="k1")
+    assert vhc.verify(rider["qr"], day=17)["verdict"] == "green"
+    converted = vhc.convert_courtesy(rider["ref"],
+                                     passport_ref="STRANDED-1",
+                                     full_name="Stranded Pax", days=30,
+                                     age_years=45, day=18, key_id="k1")
+    assert converted["window"]["from"] == 17  # charged from disruption
+    closed = vhc.close_out(converted["ref"], day=30)
+    assert closed["exposure_days"] == 14      # days 17..30 actual
+    from vhcover import RefundExceptionQueue
+    rfx = RefundExceptionQueue(vhc)
+    req = rfx.request(cover["ref"], reason="compassionate case",
+                      amount_minor=500, instrument="original-card",
+                      by="agent-1", day=18)
+    rfx.approve(req["req_id"], by="super-1", day=18)
+    assert req["state"] == "pending"          # one hand is not two
+    rfx.approve(req["req_id"], by="super-2", day=18)
+    assert req["state"] == "executed"
+    cutoff_refused = False
+    try:
+        vhc.extend(cover["ref"], extra_days=30, day=60, key_id="k1",
+                   channel="self-service")
+    except Exception:
+        cutoff_refused = True
+    assert cutoff_refused                     # day 60 > day-30 cutoff
+    from vhclaims import ClaimsRegistry
+    claims2 = ClaimsRegistry()
+    c1 = claims2.intake(channel="phone", cover_ref=cover["ref"],
+                        claimant_name="Ilsa", summary="GI distress",
+                        now_h=900, day=17)
+    c2 = claims2.intake(channel="portal", cover_ref=cover["ref"],
+                        claimant_name="Ilsa", summary="follow-up",
+                        now_h=950, day=18)
+    assert c2["duplicate_suspect_of"] == c1["case_id"]
+    log["wave2"] = {
+        "notifications_sent": len(sent_msgs),
+        "idempotent_replay": replay["replayed"],
+        "courtesy_green": True,
+        "courtesy_converted_from_day": converted["window"]["from"],
+        "exposure_days": closed["exposure_days"],
+        "exception_dual_approval": req["state"] == "executed",
+        "self_service_cutoff_enforced": cutoff_refused,
+        "duplicate_flagged": c2["duplicate_suspect_of"]
+        == c1["case_id"]}
+
     log["seams_proven"] = 38
     return log
 

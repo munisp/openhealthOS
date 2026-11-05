@@ -117,6 +117,30 @@ class ClaimsRegistry:
             _refuse("unknown intake channel — the door list is config")
         if not cover_ref or not claimant_name or not summary:
             _refuse("intake needs a cover, a claimant, and a summary")
+        # FR-CLM-05: duplicate-claim detection. The same cover, the
+        # same claimant, the same summary on the same day is a
+        # resubmission, not a new case — refuse it. The same cover and
+        # claimant with an open case but a different story is a
+        # suspect: the case opens flagged for the fraud sample, because
+        # a second hospitalisation happens — and so does a second
+        # invoice for the first one.
+        for c in self.cases.values():
+            if c["cover_ref"] != cover_ref:
+                continue
+            if c["claimant_name"] == claimant_name and \
+                    c["summary"] == summary and c["intake_day"] == day:
+                _refuse("exact duplicate — the same claim twice in one "
+                        "day is a resubmission, not a new case "
+                        "(FR-CLM-05)")
+        def _open(c):
+            if c["state"] not in ("paid", "closed"):
+                return True
+            return bool(c["appeal"]) and not c["appeal"]["resolution"]
+        duplicate_of = next(
+            (c["case_id"] for c in self.cases.values()
+             if c["cover_ref"] == cover_ref
+             and c["claimant_name"] == claimant_name
+             and _open(c)), None)
         case_id = "CLM-" + secrets.token_hex(4).upper()
         self.cases[case_id] = {
             "case_id": case_id, "cover_ref": cover_ref,
@@ -125,9 +149,14 @@ class ClaimsRegistry:
             "intake_h": now_h, "intake_day": day,
             "gop": None, "dossier": None, "adjudication": None,
             "payment": None, "appeal": None, "breaches": [],
+            "duplicate_suspect_of": duplicate_of,
         }
         self.audit.append({"event": "intake", "case": case_id,
                            "channel": channel, "day": day})
+        if duplicate_of is not None:
+            self.audit.append({"event": "duplicate_flagged",
+                               "case": case_id, "of": duplicate_of,
+                               "day": day})
         return self.cases[case_id]
 
     # --- FR-CLM-02: guarantee of payment -----------------------------
@@ -340,6 +369,9 @@ class ClaimsRegistry:
                 "by_state": {s: sum(1 for c in self.cases.values()
                                     if c["state"] == s)
                              for s in CASE_STATES},
+                "duplicate_suspects": sum(
+                    1 for c in self.cases.values()
+                    if c.get("duplicate_suspect_of")),
                 "gop_sla": _compliance("gop"),
                 "adjudication_sla": _compliance("adjudication"),
                 "payment_sla": _compliance("payment"),

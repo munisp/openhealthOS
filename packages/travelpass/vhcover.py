@@ -52,6 +52,9 @@ VHC_PROFILES = {
         "quote_valid_days": 1,
         "grace_days": 1,                     # BR-06 grace window
         "expiring_soon_days": 3,             # amber at ≤72h to expiry
+        "self_service_ext_cutoff_day": 30,   # FR-SAL-06: self-serve to
+                                             # day 30 of term, then desk
+        "courtesy_rider_days": 1,            # S-029: 24h rider
         "humanitarian_days": 3,              # 72h regularisation flag
         "qr_offline_days": 90,               # offline-verifiable validity
         "cache_max_age_days": 3,             # ≥72h offline cache budget
@@ -76,6 +79,8 @@ VHC_PROFILES = {
         "quote_valid_days": 1,
         "grace_days": 1,
         "expiring_soon_days": 3,
+        "self_service_ext_cutoff_day": 30,
+        "courtesy_rider_days": 1,
         "humanitarian_days": 3,
         "qr_offline_days": 90,
         "cache_max_age_days": 3,
@@ -389,13 +394,26 @@ class VHCCoverRegistry:
             claims["dob"] = cover["dob_sha256"]
         if cover.get("photo_sha256"):
             claims["ph"] = cover["photo_sha256"]
+        if cover.get("courtesy"):
+            claims["crt"] = 1
         return claims
 
-    def extend(self, ref, *, extra_days, day, key_id):
+    def extend(self, ref, *, extra_days, day, key_id, channel="desk"):
         """Extensions must keep cover contiguous: the new window starts
         the day after the old one ends. A cover lapsed beyond the grace
-        window is not extended — it is re-purchased."""
+        window is not extended — it is re-purchased. FR-SAL-06: the
+        self-service door closes at the profile's cutoff day of term;
+        beyond it the desk extends, with its own audit."""
         cover = self._cover(ref)
+        if channel not in ("self-service", "desk"):
+            _refuse("unknown extension channel — the door list is "
+                    "config")
+        if channel == "self-service" and \
+                day > cover["window"]["from"] + \
+                self.profile["self_service_ext_cutoff_day"]:
+            _refuse("self-service extensions close at day %d of term — "
+                    "the desk takes it from here"
+                    % self.profile["self_service_ext_cutoff_day"])
         if day > cover["window"]["to"] + self.profile["grace_days"]:
             _refuse("cover lapsed beyond grace — re-purchase, "
                     "do not backdate")
@@ -405,7 +423,8 @@ class VHCCoverRegistry:
                       if self.profile["model"] == "block" else 1)
         cover["window"]["to"] += units * block_days
         cover["extensions"].append({"days": extra_days, "units": units,
-                                    "minor": total, "day": day})
+                                    "minor": total, "day": day,
+                                    "channel": channel})
         self.payments.append({"ref": ref, "kind": "extension",
                               "minor": total, "day": day})
         cover["qr"] = sign_claims(self._claims(cover),
@@ -528,6 +547,89 @@ class VHCCoverRegistry:
                                "day": day})
             return ex["qr"]
         _refuse("unknown ref — reissue serves records, not requests")
+
+    # --- S-029: courtesy rider on manifest match ----------------------
+    def courtesy_cover(self, *, passport_ref, full_name, manifest_ref,
+                       day, key_id):
+        """S-029: a missed connection forces an unplanned overnight —
+        the scheme issues a 24h courtesy rider automatically on the
+        manifest match, at zero premium. A rider without its manifest
+        is a favour, not a cover. If the stay extends, the rider
+        converts to a full policy — contiguous, linked, charged from
+        the disruption day."""
+        if not manifest_ref:
+            _refuse("a courtesy rider needs its manifest match — "
+                    "auto-issue without a manifest is a favour")
+        if not passport_ref or not full_name:
+            _refuse("a rider binds to a passport and a name")
+        ref = "CRT-" + secrets.token_hex(4).upper()
+        window = {"from": day,
+                  "to": day + self.profile["courtesy_rider_days"]}
+        cover = {
+            "ref": ref, "courtesy": True, "manifest_ref": manifest_ref,
+            "passport_sha256": hashlib.sha256(
+                passport_ref.encode()).hexdigest(),
+            "dob_sha256": None, "photo_sha256": None,
+            "full_name": full_name, "window": window,
+            "extensions": [], "corrections": [], "refunds": [],
+            "profile_version": self.profile_version,
+            "quote": None, "purchased_day": day,
+        }
+        self.covers[ref] = cover
+        self.payments.append({"ref": ref, "kind": "courtesy-issue",
+                              "minor": 0, "day": day})
+        cover["qr"] = sign_claims(self._claims(cover),
+                                  key_ring=self.key_ring,
+                                  key_id=key_id, day=day)
+        self.audit.append({"event": "courtesy_issued", "ref": ref,
+                           "manifest": manifest_ref, "day": day})
+        return cover
+
+    def convert_courtesy(self, ref, *, passport_ref, full_name,
+                         days, age_years, day, key_id):
+        """The stay extended: the rider converts to a full paid cover,
+        charged from the disruption day — the courtesy day is not
+        charged twice, and the link between rider and policy is
+        recorded on both sides."""
+        rider = self._cover(ref)
+        if not rider.get("courtesy"):
+            _refuse("only a courtesy rider converts — a paid cover "
+                    "extends")
+        if rider.get("converted_to"):
+            _refuse("already converted — a rider converts once")
+        q = self.quote(days=days, age_years=age_years, day=day)
+        cover = self.purchase(quote_id=q["quote_id"],
+                              passport_ref=passport_ref,
+                              full_name=full_name,
+                              entry_day=rider["window"]["from"],
+                              day=day, key_id=key_id)
+        cover["converted_from"] = ref
+        rider["converted_to"] = cover["ref"]
+        rider["departed_day"] = day  # the rider's job is done
+        self.audit.append({"event": "courtesy_converted", "rider": ref,
+                           "cover": cover["ref"], "day": day})
+        return cover
+
+    # --- S-033: departure close-out scan ------------------------------
+    def close_out(self, ref, *, day):
+        """S-033: the outbound scan marks the trip closed. Exposure
+        stops at departure — the registry's denominators and the
+        refund arithmetic are actual days, not purchased days. A
+        traveller departs once."""
+        rec = self.covers.get(ref) or self.exemptions.get(ref)
+        if rec is None:
+            _refuse("unknown ref — close-out serves records, not "
+                    "requests")
+        if rec.get("departed_day") is not None:
+            _refuse("already closed — a traveller departs once")
+        rec["departed_day"] = day
+        if "window" in rec:
+            rec["exposure_days"] = max(
+                0, min(day, rec["window"]["to"])
+                - rec["window"]["from"] + 1)
+        self.audit.append({"event": "closed_out", "ref": ref,
+                           "day": day})
+        return rec
 
     # --- corrections & refunds (S-009, S-020) -------------------------
     def correct_cover(self, ref, *, new_name=None, by, day, key_id,
@@ -670,7 +772,7 @@ class VHCCoverRegistry:
                              self.profile["humanitarian_days"]), None)
                 if flag is not None:
                     reasons.append("humanitarian regularisation pending")
-                if (not reasons and
+                if (not reasons and not claims.get("crt") and
                         to_day - day <= self.profile["expiring_soon_days"]):
                     reasons.append("cover expires within 72h")
             if (presented_photo_sha256 is not None and
@@ -720,3 +822,102 @@ class VHCCoverRegistry:
                 "humanitarian_flags": len(self.flags),
                 "collected_minor": sum(p["minor"] for p in self.payments),
                 "currency": self.profile["currency"]}
+
+
+
+class RefundExceptionQueue:
+    """FR-PAY-04: refunds outside the standard table — a different
+    instrument, an override amount, a compassionate case — never
+    execute on one signature. Request → two distinct approvers,
+    neither the requester → the refund posts to the same append-only
+    ledger with its basis stated. One reasoned rejection kills the
+    request."""
+
+    def __init__(self, registry):
+        self.registry = registry     # the VHCCoverRegistry it posts to
+        self.requests = {}
+        self.audit = []
+
+    def request(self, ref, *, reason, amount_minor, instrument, by,
+                day):
+        self.registry._cover(ref)
+        if not reason or not by:
+            _refuse("an exception names its reason and its requester")
+        if amount_minor is None or amount_minor < 0:
+            _refuse("an exception states its amount")
+        if not instrument:
+            _refuse("an exception states its instrument — the money "
+                    "always has a destination")
+        req_id = "RFX-" + secrets.token_hex(4).upper()
+        self.requests[req_id] = {
+            "req_id": req_id, "ref": ref, "reason": reason,
+            "amount_minor": amount_minor, "instrument": instrument,
+            "requested_by": by, "requested_day": day,
+            "state": "pending", "approvals": [], "rejection": None,
+        }
+        self.audit.append({"event": "exception_requested",
+                           "req": req_id, "ref": ref, "by": by,
+                           "day": day})
+        return self.requests[req_id]
+
+    def approve(self, req_id, *, by, day):
+        req = self._req(req_id)
+        if req["state"] != "pending":
+            _refuse("only a pending request takes an approval")
+        if by == req["requested_by"]:
+            _refuse("the requester cannot approve — four-eyes, not "
+                    "two signatures from one hand")
+        if by in req["approvals"]:
+            _refuse("one approver signs once — a second signature from "
+                    "the same hand is not dual approval")
+        req["approvals"].append(by)
+        self.audit.append({"event": "exception_approved", "req": req_id,
+                           "by": by, "day": day})
+        if len(req["approvals"]) == 2:
+            req["state"] = "executed"
+            self._execute(req, day)
+        return req
+
+    def reject(self, req_id, *, by, reason, day):
+        req = self._req(req_id)
+        if req["state"] != "pending":
+            _refuse("only a pending request takes a rejection")
+        if not reason:
+            _refuse("a rejection without a reason is a disappearance")
+        req["state"] = "rejected"
+        req["rejection"] = {"by": by, "reason": reason, "day": day}
+        self.audit.append({"event": "exception_rejected", "req": req_id,
+                           "by": by, "day": day})
+        return req
+
+    def _execute(self, req, day):
+        cover = self.registry._cover(req["ref"])
+        self.registry.payments.append({
+            "ref": req["ref"], "kind": "refund-exception",
+            "minor": -req["amount_minor"], "day": day})
+        cover["refunds"].append({
+            "reason": "manual-exception",
+            "refund_minor": req["amount_minor"],
+            "basis": "manual exception — dual approval (%s, %s); %s"
+                     % (req["approvals"][0], req["approvals"][1],
+                        req["reason"]),
+            "day": day, "evidence_ref": req["req_id"],
+            "instrument": req["instrument"],
+            "sla_business_days": 10, "sla_day": day + 14})
+        self.audit.append({"event": "exception_executed",
+                           "req": req["req_id"], "ref": req["ref"],
+                           "amount_minor": req["amount_minor"],
+                           "day": day})
+
+    def report(self):
+        return {"requests": len(self.requests),
+                "by_state": {s: sum(1 for r in self.requests.values()
+                                    if r["state"] == s)
+                             for s in ("pending", "executed",
+                                       "rejected")}}
+
+    def _req(self, req_id):
+        req = self.requests.get(req_id)
+        if req is None:
+            _refuse("unknown exception request")
+        return req

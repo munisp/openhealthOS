@@ -286,3 +286,16 @@ class TestConnectedDay(unittest.TestCase):
         self.assertTrue(c["hsm_snapshot_refused"])
         self.assertTrue(c["mixed_currency_refused"])
         self.assertEqual(c["eur_file_total_minor"], 2500)
+
+    def test_wave2_notifications_courtesy_closeout(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        w = log["wave2"]
+        self.assertEqual(w["notifications_sent"], 1)
+        self.assertTrue(w["idempotent_replay"])
+        self.assertTrue(w["courtesy_green"])
+        self.assertEqual(w["courtesy_converted_from_day"], 17)
+        self.assertEqual(w["exposure_days"], 14)
+        self.assertTrue(w["exception_dual_approval"])
+        self.assertTrue(w["self_service_cutoff_enforced"])
+        self.assertTrue(w["duplicate_flagged"])

@@ -16,9 +16,11 @@ def _reg():
                           tariff_set="cv-tariffs")
 
 
-def _to_dossier(reg, *, case_id=None, intake_h=100, gop_h=101, day=10):
+def _to_dossier(reg, *, case_id=None, intake_h=100, gop_h=101, day=10,
+                summary=None):
     case = reg.intake(channel="phone", cover_ref="VHC-1",
-                      claimant_name="Ada", summary="laceration, ED",
+                      claimant_name="Ada",
+                      summary=summary or "laceration, ED #%d" % intake_h,
                       now_h=intake_h, day=day)
     reg.issue_gop(case["case_id"], provider_ref="HOSP-1",
                   limit_minor=100_000, now_h=gop_h)
