@@ -284,7 +284,7 @@ class VHCCoverRegistry:
         return self.quotes[quote_id]
 
     def purchase(self, *, quote_id, passport_ref, full_name, entry_day,
-                 day, key_id, dob=None):
+                 day, key_id, dob=None, photo_sha256=None):
         q = self.quotes.get(quote_id)
         if q is None:
             _refuse("unknown quote — a price without a table is a bribe")
@@ -299,8 +299,10 @@ class VHCCoverRegistry:
                 passport_ref.encode()).hexdigest(),
             "dob_sha256": (hashlib.sha256(dob.encode()).hexdigest()
                            if dob else None),
+            "photo_sha256": photo_sha256,
             "full_name": full_name, "window": window,
-            "extensions": [], "profile_version": self.profile_version,
+            "extensions": [], "corrections": [], "refunds": [],
+            "profile_version": self.profile_version,
             "quote": q, "purchased_day": day,
         }
         self.covers[ref] = cover
@@ -328,6 +330,8 @@ class VHCCoverRegistry:
         }
         if cover.get("dob_sha256"):
             claims["dob"] = cover["dob_sha256"]
+        if cover.get("photo_sha256"):
+            claims["ph"] = cover["photo_sha256"]
         return claims
 
     def extend(self, ref, *, extra_days, day, key_id):
@@ -468,6 +472,80 @@ class VHCCoverRegistry:
             return ex["qr"]
         _refuse("unknown ref — reissue serves records, not requests")
 
+    # --- corrections & refunds (S-009, S-020) -------------------------
+    def correct_cover(self, ref, *, new_name=None, by, day, key_id,
+                      supervisor=None):
+        """S-009: one free name correction before travel; a second
+        correction needs a supervisor. Passports and windows never
+        correct — a new traveller is a new cover, not an edit."""
+        cover = self._cover(ref)
+        if not new_name:
+            _refuse("the only correctable field is the name spelling")
+        if not by:
+            _refuse("a correction names its agent")
+        if cover["corrections"] and supervisor is None:
+            _refuse("a second correction needs a supervisor — one free "
+                    "fix, then four-eyes")
+        cover["full_name"] = new_name
+        cover["corrections"].append({"by": by, "day": day,
+                                     "supervisor": supervisor})
+        cover["qr"] = sign_claims(self._claims(cover),
+                                  key_ring=self.key_ring,
+                                  key_id=key_id, day=day)
+        self.audit.append({"event": "corrected", "ref": ref, "by": by,
+                           "day": day})
+        return cover
+
+    def refund_cover(self, ref, *, reason, day, evidence_ref=None):
+        """S-020: full refund before the window opens; pro-rata over
+        unused full blocks after; visa-refusal refunds carry their
+        evidence. The refund states its arithmetic and its SLA clock —
+        the instrument is always the one that paid."""
+        cover = self._cover(ref)
+        if cover["refunds"]:
+            _refuse("already refunded — a second refund is the scheme "
+                    "paying twice")
+        if reason not in ("pre-travel", "early-exit", "visa-refusal"):
+            _refuse("unknown refund reason — the table is the law")
+        if reason == "visa-refusal" and not evidence_ref:
+            _refuse("a visa-refusal refund without the refusal letter "
+                    "is a gift")
+        q = cover["quote"]
+        paid = q["total_minor"]
+        if day < cover["window"]["from"]:
+            refund_minor = paid
+            basis = "full — the window never opened"
+        else:
+            # pro-rata over the ORIGINAL purchase; extensions are
+            # separate purchases with their own refunds
+            total_days = q["days"]
+            used_days = max(0, day - cover["window"]["from"])
+            if self.profile["model"] == "block":
+                block = self.profile["block_days"]
+                blocks = max(1, -(-total_days // block))
+                unused_full = max(0, (total_days - used_days) // block)
+                unit = paid / blocks
+                refund_minor = int(round(unused_full * unit))
+                basis = ("pro-rata over %d unused full %d-day blocks "
+                         "of the original purchase"
+                         % (unused_full, block))
+            else:
+                unused = max(0, total_days - used_days)
+                refund_minor = self.profile["per_day_minor"] * unused
+                basis = "pro-rata over %d unused days" % unused
+        self.payments.append({"ref": ref, "kind": "refund",
+                              "minor": -refund_minor, "day": day})
+        cover["refunds"].append({
+            "reason": reason, "refund_minor": refund_minor,
+            "basis": basis, "day": day, "evidence_ref": evidence_ref,
+            "instrument": "original — refunds return the way the money "
+                          "came",
+            "sla_business_days": 10, "sla_day": day + 14})
+        self.audit.append({"event": "refunded", "ref": ref,
+                           "refund_minor": refund_minor, "day": day,
+                           "reason": reason})
+        return cover["refunds"][-1]
+
     # --- verification ------------------------------------------------
     def revoke(self, ref, *, reason, day):
         if ref not in self.covers and ref not in self.exemptions:
@@ -493,7 +571,8 @@ class VHCCoverRegistry:
                 "stamped": as_of, "profile_version": self.profile_version,
                 "max_age_days": self.profile["cache_max_age_days"]}
 
-    def verify(self, token, *, day, cache=None):
+    def verify(self, token, *, day, cache=None,
+               presented_photo_sha256=None):
         """The verdict matrix. Online (cache=None) verifies against the
         live ring; offline verifies against a cache whose age is stated
         in the evidence. Every verdict carries reasons, an officer
@@ -537,6 +616,10 @@ class VHCCoverRegistry:
                 if (not reasons and
                         to_day - day <= self.profile["expiring_soon_days"]):
                     reasons.append("cover expires within 72h")
+            if (presented_photo_sha256 is not None and
+                    claims.get("ph") is not None and
+                    presented_photo_sha256 != claims["ph"]):
+                reasons.append("photo mismatch — to the desk")
         if cache is not None and cache_age > cache["max_age_days"]:
             reasons.append("verification data stale — escalate")
         if not ok or any(r.startswith(("unverifiable", "revoked",

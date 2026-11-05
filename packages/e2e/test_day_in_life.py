@@ -268,3 +268,12 @@ class TestConnectedDay(unittest.TestCase):
         e = log["ease_rail"]
         self.assertEqual(e["messages"], 4)
         self.assertTrue(e["unplugged_refused"])
+
+    def test_preclearance_and_refunds(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        p = log["preclearance"]
+        self.assertEqual(p["statuses"], ["cleared", "cleared-exempt",
+                                         "not-cleared"])
+        self.assertTrue(p["checksummed"])
+        self.assertEqual(p["refund_minor"], 2500)

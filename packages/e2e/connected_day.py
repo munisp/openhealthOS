@@ -2167,6 +2167,28 @@ def run_connected_day():
     log["ease_rail"] = {"messages": len(rail_log),
                         "unplugged_refused": unplugged}
 
+    # ---- 08:56 pre-clearance: the airline's manifest comes back with
+    # a named status per passenger before anyone reaches the border;
+    # a refund returns to the instrument that paid, with its arithmetic
+    from vhclearance import preclear_manifest
+    manifest = preclear_manifest(
+        vhc, flight_ref="TACV-201", travel_day=20, submitted_day=15,
+        rows=[{"passport_ref": "CV-9911"},          # covered to day 79
+              {"passport_ref": "DIP-7"},            # exempt to day 40
+              {"passport_ref": "NOBODY-9"}])        # never met
+    statuses = [r["status"] for r in manifest["rows"]]
+    assert statuses == ["cleared", "cleared-exempt", "not-cleared"]
+    assert "Ilsa" not in str(manifest)  # names never ride back
+    ease.manifest_batch(group)
+    refund = vhc.refund_cover(cover["ref"], reason="early-exit", day=12)
+    # original purchase: 40 days = 2 blocks at €25; 38 days remain →
+    # one full block refunds; extensions refund as their own purchases
+    assert refund["refund_minor"] == 2500
+    assert refund["instrument"].startswith("original")
+    log["preclearance"] = {"statuses": statuses,
+                           "checksummed": len(manifest["manifest_sha256"]) == 64,
+                           "refund_minor": refund["refund_minor"]}
+
     log["seams_proven"] = 38
     return log
 
