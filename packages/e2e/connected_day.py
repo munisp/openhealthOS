@@ -2189,6 +2189,68 @@ def run_connected_day():
                            "checksummed": len(manifest["manifest_sha256"]) == 64,
                            "refund_minor": refund["refund_minor"]}
 
+    # ---- 08:57 key custody and the currency dimension: the signing
+    # key moves behind an HSM boundary without the engine noticing,
+    # the offline cache refuses what it cannot carry, and settlement
+    # refuses to sum two currencies into one number
+    import hashlib as _hl
+    import hmac as _hm
+    from vhcover import KeyRing as _KR, sign_claims as _sign
+    from vhsettle import settlement_file as _stlf, SettleError as _SE
+
+    def _hsm(secret):
+        def sign(payload):
+            return _hm.new(secret.encode(), payload,
+                           _hl.sha256).digest()
+
+        def verify(payload, sig):
+            return _hm.compare_digest(
+                _hm.new(secret.encode(), payload, _hl.sha256).digest(),
+                sig)
+        return sign, verify
+
+    hsm_sign, hsm_verify = _hsm("vault-secret")
+    hsm_ring = _KR()
+    hsm_ring.register("hsm-1", signer=hsm_sign, verifier=hsm_verify,
+                      active_from=0)
+    from vhcover import VHCCoverRegistry as _VCR
+    hsm_vhc = _VCR(profile_version="cv-vhc@1.0.0", key_ring=hsm_ring,
+                   issuer="cv-vhc")
+    hq = hsm_vhc.quote(days=30, age_years=35, day=1)
+    hcover = hsm_vhc.purchase(quote_id=hq["quote_id"],
+                              passport_ref="HSM-1",
+                              full_name="Cesaria Evora", entry_day=10,
+                              day=1, key_id="hsm-1")
+    assert hsm_vhc.verify(hcover["qr"], day=12)["verdict"] == "green"
+    refused_cache = False
+    try:
+        hsm_ring.snapshot()
+    except Exception:
+        refused_cache = True
+    assert refused_cache  # an HSM does not ride in a field kit
+
+    mixed_refused = False
+    try:
+        _stlf([{"ref": "a", "amount_minor": 2500, "psp": "vinti4",
+                "day": 15, "currency": "EUR"},
+               {"ref": "b", "amount_minor": 5000, "psp": "vinti4",
+                "day": 15, "currency": "NGN"}],
+              day=15, psp="vinti4")
+    except _SE:
+        mixed_refused = True
+    assert mixed_refused  # mixed-currency sums refuse
+    eur_file = _stlf([{"ref": "a", "amount_minor": 2500, "psp": "vinti4",
+                       "day": 15, "currency": "EUR"},
+                      {"ref": "b", "amount_minor": 5000, "psp": "vinti4",
+                       "day": 15, "currency": "NGN"}],
+                     day=15, psp="vinti4", currency="EUR")
+    assert eur_file["total_minor"] == 2500 and eur_file["count"] == 1
+    log["custody_currency"] = {
+        "hsm_signed_green": True,
+        "hsm_snapshot_refused": refused_cache,
+        "mixed_currency_refused": mixed_refused,
+        "eur_file_total_minor": eur_file["total_minor"]}
+
     log["seams_proven"] = 38
     return log
 

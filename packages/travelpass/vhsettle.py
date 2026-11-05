@@ -17,6 +17,8 @@ Doctrines:
   never a quiet write-off.
 - An auto-refund carries the evidence of the duplicate; a refund
   without evidence is a gift.
+- Currency is a dimension of the money: mixed-currency sums refuse,
+  and a settlement file is per currency, never a blended number.
 """
 
 import hashlib
@@ -42,16 +44,48 @@ def _refuse(msg):
     raise SettleError(msg)
 
 
-def settlement_file(txns, *, day, psp):
+def _row_currency(t):
+    return t.get("currency")
+
+
+def _filter_currency(rows, currency, *, side):
+    """Currency is a dimension of the money, not an annotation. With an
+    explicit currency, keep only its rows; without one, mixed-currency
+    input refuses — a sum over two currencies is not a number."""
+    present = {_row_currency(r) for r in rows if _row_currency(r)}
+    if currency is not None:
+        foreign = sorted(c for c in present if c != currency)
+        if foreign and side == "psp":
+            _refuse("PSP file mixes currencies (%s) into a %s "
+                    "reconciliation — split the file per currency"
+                    % ("/".join(foreign), currency))
+        return [r for r in rows
+                if _row_currency(r) in (None, currency)]
+    if len(present) > 1:
+        _refuse("mixed-currency sums refuse — currencies present: %s; "
+                "settle per currency" % "/".join(sorted(present)))
+    return list(rows)
+
+
+def settlement_file(txns, *, day, psp, currency=None):
     """The daily file for one PSP: rows, totals, checksum. `txns` are
-    the platform's ledger rows: {ref, amount_minor, psp, day}."""
+    the platform's ledger rows: {ref, amount_minor, psp, day,
+    currency?}. The file is per currency — a mixed-currency sum is
+    refused, never rounded into a single number."""
+    mine = [t for t in txns
+            if t.get("psp") == psp and t.get("day") == day]
+    mine = _filter_currency(mine, currency, side="platform")
     rows = sorted(({"ref": t["ref"], "amount_minor": t["amount_minor"]}
-                   for t in txns
-                   if t.get("psp") == psp and t.get("day") == day),
+                   for t in mine),
                   key=lambda r: r["ref"])
+    currencies = sorted({_row_currency(t) for t in mine
+                         if _row_currency(t)})
     body = {"file_id": "STL-%s-%d-%s" % (psp, day,
                                          secrets.token_hex(3).upper()),
-            "psp": psp, "day": day, "rows": rows,
+            "psp": psp, "day": day,
+            "currency": currency or (currencies[0]
+                                     if currencies else None),
+            "rows": rows,
             "count": len(rows),
             "total_minor": sum(r["amount_minor"] for r in rows)}
     body["file_sha256"] = hashlib.sha256(
@@ -59,17 +93,21 @@ def settlement_file(txns, *, day, psp):
     return body
 
 
-def reconcile(txns, *, day, psp, psp_rows,
+def reconcile(txns, *, day, psp, psp_rows, currency=None,
               rules_version="vhc-settle@1.0.0"):
     """The platform ledger meets the PSP's file. Every break is named:
     missing on the PSP side, missing on the platform side, or an amount
     mismatch. The break rate is measured in ppm against the tolerance —
-    past tolerance is a breach, stated, not smoothed."""
+    past tolerance is a breach, stated, not smoothed. Reconciliation is
+    per currency: a PSP row in the wrong currency refuses the file."""
     rules = SETTLE_RULES.get(rules_version)
     if rules is None:
         _refuse("unknown settle rules version")
-    ours = {t["ref"]: t["amount_minor"] for t in txns
-            if t.get("psp") == psp and t.get("day") == day}
+    ours_txns = _filter_currency(
+        [t for t in txns if t.get("psp") == psp and t.get("day") == day],
+        currency, side="platform")
+    ours = {t["ref"]: t["amount_minor"] for t in ours_txns}
+    psp_rows = _filter_currency(list(psp_rows), currency, side="psp")
     theirs = {}
     for row in psp_rows:
         if not row.get("ref") or row.get("amount_minor") is None:
@@ -94,7 +132,7 @@ def reconcile(txns, *, day, psp, psp_rows,
     total = max(len(ours), len(theirs))
     rate_ppm = (len(breaks) * 1_000_000 // total) if total else 0
     breach = bool(total) and rate_ppm > rules["break_tolerance_ppm"]
-    return {"day": day, "psp": psp, "breaks": breaks,
+    return {"day": day, "psp": psp, "currency": currency, "breaks": breaks,
             "break_count": len(breaks), "txn_count": total,
             "break_rate_ppm": rate_ppm,
             "tolerance_ppm": rules["break_tolerance_ppm"],
@@ -118,7 +156,10 @@ def auto_refund_duplicates(txns, *, day, window_days=None,
         else rules["duplicate_window_days"]
     seen, refunds = {}, []
     for t in sorted(txns, key=lambda t: (t.get("day", 0), t["ref"])):
-        key = (t.get("payer_key"), t["amount_minor"])
+        # the same amount in two currencies is not a duplicate — the
+        # currency rides in the dedup key
+        key = (t.get("payer_key"), t["amount_minor"],
+               t.get("currency"))
         first = seen.get(key)
         if first is not None and t["day"] - first["day"] <= window:
             refunds.append({

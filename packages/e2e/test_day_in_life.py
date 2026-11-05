@@ -277,3 +277,12 @@ class TestConnectedDay(unittest.TestCase):
                                          "not-cleared"])
         self.assertTrue(p["checksummed"])
         self.assertEqual(p["refund_minor"], 2500)
+
+    def test_custody_and_currency(self):
+        from connected_day import run_connected_day
+        log = run_connected_day()
+        c = log["custody_currency"]
+        self.assertTrue(c["hsm_signed_green"])
+        self.assertTrue(c["hsm_snapshot_refused"])
+        self.assertTrue(c["mixed_currency_refused"])
+        self.assertEqual(c["eur_file_total_minor"], 2500)

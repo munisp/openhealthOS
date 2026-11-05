@@ -165,18 +165,37 @@ def display_amount(profile, total_minor):
 class KeyRing:
     """Versioned signing keys with rotation windows. In production the
     private half lives in an HSM; here the ring is the trust boundary,
-    and rotation is a first-class act, not a redeploy."""
+    and rotation is a first-class act, not a redeploy.
+
+    Custody is pluggable: a key may carry a raw secret (ring custody)
+    or a signer/verifier callable pair (HSM custody). The engine never
+    knows the difference — production swaps custody without touching
+    the engine. The one thing an HSM key cannot do is ride in an
+    offline cache: snapshot() refuses, loudly."""
 
     def __init__(self):
         self.keys = {}
         self.audit = []
 
-    def register(self, key_id, secret, *, active_from, active_to=None):
-        if not key_id or not secret:
-            _refuse("a key needs an id and a secret")
-        self.keys[key_id] = {"secret": secret, "active_from": active_from,
+    def register(self, key_id, secret=None, *, signer=None,
+                 verifier=None, active_from, active_to=None):
+        """A key needs an id and a way to sign: a raw secret (ring
+        custody) or a signer callable (HSM custody — the secret never
+        lands here). A verifier callable lets an HSM-custodied key
+        still verify online; without secret or verifier the ring
+        states the boundary instead of guessing."""
+        if not key_id:
+            _refuse("a key needs an id")
+        if not secret and signer is None:
+            _refuse("a key needs a secret or a signer — a key that "
+                    "cannot sign is a decoration")
+        self.keys[key_id] = {"secret": secret, "signer": signer,
+                             "verifier": verifier,
+                             "active_from": active_from,
                              "active_to": active_to}
         self.audit.append({"event": "key_registered", "key_id": key_id,
+                           "custody": ("hsm" if signer is not None
+                                       and not secret else "ring"),
                            "active_from": active_from,
                            "active_to": active_to})
 
@@ -194,24 +213,51 @@ class KeyRing:
         return key
 
     def snapshot(self):
-        return {kid: dict(k) for kid, k in self.keys.items()}
+        """The offline cache carries shared secrets only. An HSM-
+        custodied key cannot leave its boundary — the snapshot refuses
+        rather than smuggling a custody question into a field kit."""
+        for kid, k in self.keys.items():
+            if k.get("secret") is None:
+                _refuse("offline cache cannot carry key '%s' — custody "
+                        "lives in an HSM; escrow a verification copy or "
+                        "verify online" % kid)
+        return {kid: {"secret": k["secret"],
+                      "active_from": k["active_from"],
+                      "active_to": k["active_to"]}
+                for kid, k in self.keys.items()}
 
     @classmethod
     def from_snapshot(cls, snap):
         ring = cls()
-        ring.keys = {kid: dict(k) for kid, k in snap.items()}
+        ring.keys = {kid: {"secret": k.get("secret"),
+                           "signer": None, "verifier": None,
+                           "active_from": k["active_from"],
+                           "active_to": k.get("active_to")}
+                     for kid, k in snap.items()}
         return ring
 
 
 def sign_claims(claims, *, key_ring, key_id, day):
     """Compact JWS (HS256). The signature is over the canonical payload —
-    the checksum is the contract."""
-    if key_ring.active(key_id, day) is None:
+    the checksum is the contract. Signing goes through the key's signer
+    when one is registered (HSM custody) and through the raw secret
+    otherwise — the engine does not know which it is holding."""
+    key = key_ring.active(key_id, day)
+    if key is None:
         _refuse("signing key is not active — silence is a finding")
-    secret = key_ring.keys[key_id]["secret"].encode()
     header = {"alg": "HS256", "typ": "JWT", "kid": key_id}
     signing_input = _b64u(_canon(header)) + "." + _b64u(_canon(claims))
-    sig = hmac.new(secret, signing_input.encode(), hashlib.sha256).digest()
+    if key.get("signer") is not None:
+        sig = key["signer"](signing_input.encode())
+        if not isinstance(sig, (bytes, bytearray)):
+            _refuse("a signer must return bytes — custody keeps its "
+                    "contract or the signature does not happen")
+        sig = bytes(sig)
+    elif key.get("secret"):
+        sig = hmac.new(key["secret"].encode(), signing_input.encode(),
+                       hashlib.sha256).digest()
+    else:
+        _refuse("key '%s' cannot sign — custody boundary" % key_id)
     return signing_input + "." + _b64u(sig)
 
 
@@ -233,14 +279,25 @@ def read_qr(token, *, key_ring, day):
     if day < key["active_from"] or (key["active_to"] is not None
                                     and day > key["active_to"]):
         return None, False, ["unverifiable: key not active"]
-    expected = hmac.new(key["secret"].encode(),
-                        (parts[0] + "." + parts[1]).encode(),
-                        hashlib.sha256).digest()
     try:
         actual = _b64u_dec(parts[2])
     except VHCError:
         return None, False, ["unverifiable: malformed signature"]
-    if not hmac.compare_digest(expected, actual):
+    signing_input = (parts[0] + "." + parts[1]).encode()
+    if key.get("verifier") is not None:
+        try:
+            ok_sig = bool(key["verifier"](signing_input, actual))
+        except Exception:
+            return None, False, ["unverifiable: verifier refused"]
+    elif key.get("secret"):
+        expected = hmac.new(key["secret"].encode(), signing_input,
+                            hashlib.sha256).digest()
+        ok_sig = hmac.compare_digest(expected, actual)
+    else:
+        return None, False, ["unverifiable: key custody boundary — "
+                             "this ring cannot verify key '%s'"
+                             % header["kid"]]
+    if not ok_sig:
         return None, False, ["unverifiable: bad signature"]
     try:
         claims = json.loads(_b64u_dec(parts[1]))
