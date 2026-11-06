@@ -445,5 +445,72 @@ class TestEcowasFrench(unittest.TestCase):
             self.assertIn("Dispositif VHC", open(out).read())
 
 
+class TestDemoBoard(unittest.TestCase):
+    """The board wires scenes to surfaces that exist — and refuses a
+    dead link, because a cable not plugged in is not an interface."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.narrative = seed_pilot(seed=42)["narrative"]
+        cls.script = build_walkthrough(cls.narrative)
+
+    def test_board_links_only_existing_surfaces(self):
+        from vhdemo import SCENE_SURFACES, build_board
+        board = build_board(self.script, self.narrative)
+        pwa = os.path.abspath(os.path.join(_HERE, "..", "..", "apps", "pwa"))
+        for s in board["scenes"]:
+            if s["link"]:
+                self.assertTrue(os.path.exists(os.path.join(pwa, s["link"])),
+                                f"{s['link']} must exist in apps/pwa")
+                self.assertFalse(s["unwired"])
+            else:
+                self.assertTrue(s["unwired"])
+
+    def test_wired_and_unwired_scenes_named_honestly(self):
+        from vhdemo import build_board
+        board = build_board(self.script, self.narrative)
+        by_scene = {s["scene"]: s for s in board["scenes"]}
+        self.assertEqual(by_scene["arrival"]["link"], "vhc-verify.html")
+        self.assertEqual(by_scene["rescue"]["link"], "dispatch.html")
+        self.assertEqual(by_scene["care"]["link"], "traveler.html")
+        self.assertIsNone(by_scene["money"]["link"])
+        self.assertIsNone(by_scene["proof"]["link"])  # the terminal
+
+    def test_board_carries_red_findings(self):
+        from vhdemo import build_board
+        rigged = dict(self.narrative)
+        rigged["br10_all_acknowledged"] = False
+        rigged["settlement_breaches"] = 2
+        board = build_board(self.script, rigged)
+        self.assertEqual(len(board["red_findings"]), 2)
+        self.assertTrue(any("BR-10" in r for r in board["red_findings"]))
+
+    def test_cli_board_out_refuses_dead_links(self):
+        import vhdemo
+        import vhdemo as m
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "board.json")
+            # tempdir has no PWA surfaces — links would be dead
+            rc = m.main(["--seed", "42", "--board-out", out])
+            self.assertEqual(rc, 1)
+            self.assertFalse(os.path.exists(out))
+
+    def test_cli_board_out_writes_into_pwa(self):
+        import vhdemo as m
+        pwa = os.path.abspath(os.path.join(_HERE, "..", "..", "apps", "pwa"))
+        out = os.path.join(pwa, "vhc-demo-board.json")
+        try:
+            rc = m.main(["--seed", "42", "--board-out", out])
+            self.assertEqual(rc, 0)
+            import json as _json
+            board = _json.load(open(out))
+            self.assertEqual(board["seed"], 42)
+            self.assertEqual(board["red_findings"], [])
+            self.assertEqual(len(board["scenes"]), 8)
+        finally:
+            if os.path.exists(out):
+                os.unlink(out)
+
+
 if __name__ == "__main__":
     unittest.main()

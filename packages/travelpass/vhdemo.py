@@ -835,6 +835,54 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
     }
 
 
+# --- demo board: scenes wired to real PWA surfaces ----------------------
+# A scene names the surface the presenter stands on; the board makes that
+# a link. Only surfaces that EXIST are linked — a scene without a surface
+# says so honestly, because a cable not plugged in is not an interface.
+SCENE_SURFACES = {
+    "arrival": ("vhc-verify.html", "border verification console"),
+    "verdict": ("vhc-verify.html", "border verification console"),
+    "care": ("traveler.html", "traveler medical pass"),
+    "rescue": ("dispatch.html", "dispatch board"),
+    "money": None,          # fund-buckets dashboard surface: not yet built
+    "surveillance": None,   # BR-10 alert list surface: not yet built
+    "oversight": None,      # helpdesk console surface: not yet built
+    "proof": None,          # the terminal — no surface, by design
+}
+
+
+def build_board(walkthrough: dict, narrative: dict) -> dict:
+    """Wire a walkthrough to the real PWA surfaces. The board is data:
+    a page renders it, a test audits it. Red findings ride the board —
+    a demo board that hides a red finding is complicit."""
+    red = []
+    if not narrative["br10_all_acknowledged"]:
+        red.append("BR-10 alert unacknowledged")
+    if narrative["settlement_breaches"] > 0:
+        red.append(f"{narrative['settlement_breaches']} settlement breach(es)")
+    scenes = []
+    for s in walkthrough["scenes"]:
+        link = SCENE_SURFACES.get(s["scene"])
+        scenes.append({
+            "scene": s["scene"],
+            "surface": s["surface"],
+            "link": link[0] if link else None,
+            "link_label": link[1] if link else None,
+            "unwired": link is None,
+            "talking_points": s["talking_points"],
+        })
+    return {
+        "version": walkthrough["version"],
+        "seed": walkthrough["seed"],
+        "audience": walkthrough.get("audience", "ministry"),
+        "lang": walkthrough.get("lang", "en"),
+        "disclaimer": walkthrough["disclaimer"],
+        "red_findings": red,
+        "scenes": scenes,
+        "narrative": narrative,
+    }
+
+
 def render_markdown(walkthrough: dict) -> str:
     """Render the script as a presenter-ready Markdown run-of-show."""
     lang = walkthrough.get("lang", "en")
@@ -907,6 +955,9 @@ def main(argv=None) -> int:
                     help="presenter language; pt falls back to en, stated")
     ap.add_argument("--out", default=None,
                     help="write the Markdown run-of-show here")
+    ap.add_argument("--board-out", default=None,
+                    help="write the PWA demo board JSON here (write it into "
+                         "apps/pwa/ so linked surfaces resolve)")
     ap.add_argument("--json", action="store_true",
                     help="print the narrative as JSON instead of the script")
     args = ap.parse_args(argv)
@@ -927,6 +978,21 @@ def main(argv=None) -> int:
         with open(args.out, "w") as fh:
             fh.write(render_markdown(script))
         print(f"walkthrough written to {args.out}")
+
+    if args.board_out:
+        import os as _os
+        board = build_board(script, narrative)
+        # linked surfaces must exist — the board refuses a dead link
+        board_dir = _os.path.dirname(_os.path.abspath(args.board_out))
+        dead = [s["link"] for s in board["scenes"]
+                if s["link"] and not _os.path.exists(
+                    _os.path.join(board_dir, s["link"]))]
+        if dead:
+            print(f"dead surface links refused: {sorted(set(dead))}")
+            return 1
+        with open(args.board_out, "w") as fh:
+            json.dump(board, fh, indent=2, ensure_ascii=False)
+        print(f"demo board written to {args.board_out}")
 
     if args.json:
         print(json.dumps(narrative, indent=2, sort_keys=True))

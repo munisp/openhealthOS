@@ -20,9 +20,10 @@ CURRENCY="${VHC_DEMO_CURRENCY:-€}"
 AUDIENCE="${VHC_DEMO_AUDIENCE:-ministry}"
 LANG="${VHC_DEMO_LANG:-en}"
 OUT="${VHC_DEMO_OUT:-docs/demo/ministry-walkthrough.md}"
+BOARD="${VHC_DEMO_BOARD:-apps/pwa/vhc-demo-board.json}"
 
 python3 -m vhdemo --seed "$SEED" --days "$DAYS" \
   --currency "$CURRENCY" --audience "$AUDIENCE" --lang "$LANG" \
-  --out "$OUT" "$@"
+  --out "$OUT" --board-out "$BOARD" "$@"
 
 echo "== walkthrough complete =="

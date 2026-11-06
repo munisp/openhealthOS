@@ -1,0 +1,138 @@
+{
+  "version": "vhc-demo@1.0.0",
+  "seed": 42,
+  "audience": "ministry",
+  "lang": "en",
+  "disclaimer": "All travellers, passports, providers and money in this walkthrough are synthetic (Pax-NNNN / SIM-NNNN). The demonstration maps to no person.",
+  "red_findings": [],
+  "scenes": [
+    {
+      "scene": "arrival",
+      "surface": "border lane console — officer view",
+      "link": "vhc-verify.html",
+      "link_label": "border verification console",
+      "unwired": false,
+      "talking_points": [
+        "DAY ONE, LANE THREE. 328 travellers arrive over 14 days — every one synthetic (Pax-NNNN, SIM-NNNN; this demo maps to no person, and the registry can prove it).",
+        "Each buys or carries cover: 328 covers issued, of which 2 are lawful exemptions — a diplomat and a transit passenger are not revenue, and the system never treats them as such.",
+        "Point at the QR on the officer's screen: compact JWS, signed by the HSM-held key, verifiable offline for 72 hours. A stale cache shows RED, not a silent pass."
+      ]
+    },
+    {
+      "scene": "verdict",
+      "surface": "border lane console — verdict screen",
+      "link": "vhc-verify.html",
+      "link_label": "border verification console",
+      "unwired": false,
+      "talking_points": [
+        "THE VERDICT IS A DECISION, NOT A VIBE. Every scan returns green, amber, or red with a *named reason* and a named officer action — admit, desk, or supervisor.",
+        "In this fortnight: 127 green, 0 amber (desk lookup, resolve on the spot), 0 red. Denominators on screen, always.",
+        "The officer never sees a raw passport number — the desk lookup works from the cover reference."
+      ]
+    },
+    {
+      "scene": "money",
+      "surface": "finance dashboard — fund buckets + settlement recon",
+      "link": null,
+      "link_label": null,
+      "unwired": true,
+      "talking_points": [
+        "FOLLOW THE MONEY — ALL FIVE MONIES. Premium collected: €9,312.50. It splits at the moment of sale into reserve, claims, ops, surveillance, and administration buckets per the versioned country profile — a rule that cannot be traced to a table is a bribe with a receipt.",
+        "Channel mix: 65 sales came through the partner API, 3 group manifests (airline, tour operator) — all-or-nothing, priced per head.",
+        "Duplicate charges refund themselves: 0 auto-refunds this fortnight, first charge kept, the rest returned inside the window.",
+        "Settlement reconciles daily: 0 breaches against the 1000 ppm break tolerance. Zero is the expected answer, and the report says the denominator."
+      ]
+    },
+    {
+      "scene": "care",
+      "surface": "provider portal + claims workbench",
+      "link": "traveler.html",
+      "link_label": "traveler medical pass",
+      "unwired": false,
+      "talking_points": [
+        "WHEN SOMEONE GETS SICK. A traveller walks into an accredited clinic; the provider portal sees only its own cases.",
+        "10 claims this fortnight. The clock that matters: GOP inside 2 hours of intake — the guarantee of payment is what gets the traveller treated without a credit card on a gurney.",
+        "Adjudicated against the four-eyes tariff book; paid €700.00. Loss ratio 0.0723 — the actuarial mart reads the same registries, so finance and operations never argue about whose number is real."
+      ]
+    },
+    {
+      "scene": "rescue",
+      "surface": "assistance ops console — medevac board",
+      "link": "dispatch.html",
+      "link_label": "dispatch board",
+      "unwired": false,
+      "talking_points": [
+        "THE WORST DAY. A medevac request: approve, dispatch inside the 2-hour clock, arrive, close. This fortnight: 1 medevac(s).",
+        "If an *uninsured* traveller needs rescue, the scheme does not let them die at the border of a spreadsheet: the uninsured fund posts the cost, and subrogation pursues recovery afterwards — bounded by what is actually outstanding, never a blank cheque."
+      ]
+    },
+    {
+      "scene": "surveillance",
+      "surface": "public-health registry — BR-10 alert list",
+      "link": null,
+      "link_label": null,
+      "unwired": true,
+      "talking_points": [
+        "THE SYSTEM WATCHES ITSELF. Every incident is pseudonymized at registration — salted hash, no reversible identity in the registry. Synthetic here, protected in production.",
+        "BR-10: five GI cases in one facility in one week trips an alert. This fortnight: 1 alert(s), acknowledged: yes. An unacknowledged alert is a finding, not a statistic.",
+        "The IHR/UKHSA/ECDC export pack carries a SHA-256 — the checksum is the contract — and k-floor 5 suppression means small cells never leak a person. Pack hash: 1a1f2fa3ce1bc77f…"
+      ]
+    },
+    {
+      "scene": "oversight",
+      "surface": "helpdesk console + ops clocks dashboard",
+      "link": null,
+      "link_label": null,
+      "unwired": true,
+      "talking_points": [
+        "WHO ANSWERS THE PHONE. Travellers get a 24/7 helpdesk with content in their language; a missing translation falls back *with the fallback stated* — nobody silently signs a waiver they cannot read.",
+        "8 tickets this fortnight; first-response SLA compliance {'compliant': 8, 'responded': 8}. A late response is a named breach with an owner, not a shrug.",
+        "Every ops clock — GOP 2h, adjudication 10d, payment 30d, appeal 5d, dispatch 2h, recon daily — has a named owner and a visible denominator. The dashboards read the reports, not vibes."
+      ]
+    },
+    {
+      "scene": "proof",
+      "surface": "the terminal — one command, one seed",
+      "link": null,
+      "link_label": null,
+      "unwired": true,
+      "talking_points": [
+        "WHY YOU CAN BELIEVE ANY OF THIS. This entire fortnight is one function call: seed_pilot(seed=42). Same seed, same pilot, byte for byte — a demo you cannot reproduce is a story you cannot audit.",
+        "Every claim made on these slides is backed by a module with its own test suite; the platform runs its full suite on the deployment tag before a gate flips.",
+        "What is still environment, and we say so honestly: the live PSP contract, the HSM ceremony, and the lane kit are proven in the go-live gates G0–G5, not in this demo."
+      ]
+    }
+  ],
+  "narrative": {
+    "covers": 328,
+    "exempt": 2,
+    "groups": 3,
+    "partner_sales": 65,
+    "verdicts": {
+      "green": 127,
+      "amber": 0,
+      "red": 0
+    },
+    "claims": 10,
+    "medevacs": 1,
+    "tickets": 8,
+    "version": "vhc-pilot@1.0.0",
+    "seed": 42,
+    "days": 14,
+    "arrivals": 328,
+    "premium_collected_minor": 931250,
+    "claims_paid_minor": 70000,
+    "loss_ratio": 0.0723,
+    "br10_alerts": 1,
+    "br10_all_acknowledged": true,
+    "export_pack_sha256": "1a1f2fa3ce1bc77fbe73be4ca6ee84c8208f56ae1ff174b93dd2367014909248",
+    "settlement_breaches": 0,
+    "auto_refunds": 0,
+    "helpdesk_sla": {
+      "compliant": 8,
+      "responded": 8
+    },
+    "providers_accredited": 3,
+    "registry_cost_minor": 353500
+  }
+}
