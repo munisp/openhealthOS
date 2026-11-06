@@ -13,7 +13,7 @@ for _pkg in ("crosslink", "drugkb", "surveillance", "poe_screen", "steward",
              "vitals", "mdt"):
     sys.path.insert(0, os.path.abspath(os.path.join(_HERE, "..", _pkg)))
 
-from vhdemo import SCENES, build_walkthrough, render_markdown
+from vhdemo import AUDIENCE_ARCS, SCENES, build_walkthrough, render_markdown
 from vhpilot import seed_pilot
 
 
@@ -146,6 +146,83 @@ class TestDemoRedFindings(unittest.TestCase):
             self.assertEqual(vhdemo.main(["--seed", "42"]), 1)
         finally:
             self._unrig(original)
+
+
+class TestAudiences(unittest.TestCase):
+    """The audience chooses the arc, never the numbers."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.narrative = seed_pilot(seed=42)["narrative"]
+
+    def test_campus_arc_leads_with_care_and_covers_all_scenes(self):
+        arc = AUDIENCE_ARCS["campus"]
+        self.assertEqual(sorted(arc), sorted(SCENES))      # same scenes
+        self.assertEqual(arc[0], "arrival")
+        self.assertEqual(arc[1], "care")                   # clinic door first
+        self.assertEqual(arc[-1], "proof")                 # always end on proof
+        self.assertNotEqual(list(arc), list(SCENES))       # different arc
+
+    def test_campus_scenes_carry_stakes(self):
+        script = build_walkthrough(self.narrative, audience="campus")
+        self.assertEqual(script["audience"], "campus")
+        for s in script["scenes"]:
+            self.assertIn("stakes", s)
+            self.assertTrue(s["stakes"])
+
+    def test_ministry_is_the_default_and_stays_compatible(self):
+        script = build_walkthrough(self.narrative)
+        self.assertEqual(script["audience"], "ministry")
+        self.assertEqual([s["scene"] for s in script["scenes"]], list(SCENES))
+        # ministry has no stakes layer — absence of a frame is honest
+        self.assertTrue(all("stakes" not in s for s in script["scenes"]))
+
+    def test_audience_changes_arc_never_numbers(self):
+        ministry_md = render_markdown(build_walkthrough(self.narrative))
+        campus_md = render_markdown(
+            build_walkthrough(self.narrative, audience="campus"))
+        n = self.narrative
+        for needle in (str(n["arrivals"]), str(n["covers"]),
+                       str(n["claims"]), f"{n['loss_ratio']:.4f}"):
+            self.assertIn(needle, ministry_md)
+            self.assertIn(needle, campus_md)
+        self.assertNotEqual(ministry_md, campus_md)
+
+    def test_unknown_audience_refused(self):
+        with self.assertRaises(ValueError):
+            build_walkthrough(self.narrative, audience=" Martians ")
+
+    def test_campus_markdown_renders_stakes_and_header(self):
+        md = render_markdown(build_walkthrough(self.narrative,
+                                               audience="campus"))
+        self.assertIn("# VHC scheme — campus walkthrough", md)
+        self.assertIn("**Why this room cares:**", md)
+        self.assertEqual(md.count("## Scene"), len(SCENES))
+
+    def test_cli_audience_flag(self):
+        import vhdemo
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "campus.md")
+            rc = vhdemo.main(["--seed", "42", "--audience", "campus",
+                              "--currency", "₦", "--out", out])
+            self.assertEqual(rc, 0)
+            md = open(out).read()
+            self.assertIn("campus walkthrough", md)
+            self.assertIn("₦", md)
+
+    def test_red_finding_gate_holds_for_campus_too(self):
+        import vhdemo
+        import sys as _sys
+        narrative = dict(self.narrative)
+        narrative["br10_all_acknowledged"] = False
+        vhpilot_mod = _sys.modules["vhpilot"]
+        original = vhpilot_mod.seed_pilot
+        vhpilot_mod.seed_pilot = lambda **kw: {"narrative": narrative,
+                                               "registries": {}}
+        try:
+            self.assertEqual(vhdemo.main(["--audience", "campus"]), 1)
+        finally:
+            vhpilot_mod.seed_pilot = original
 
 
 if __name__ == "__main__":

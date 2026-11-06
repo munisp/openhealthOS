@@ -164,6 +164,51 @@ _BUILDERS = {
     "proof": _scene_proof,
 }
 
+# --- audiences ---------------------------------------------------------
+# The engine is audience-agnostic exactly as it is country-agnostic: the
+# narrative drives the numbers, the audience drives the *arc* — which
+# scene leads, and why the person in the room should care. Adding an
+# audience is adding an entry here, never an if-audience branch in a
+# scene builder.
+
+AUDIENCE_ARCS = {
+    # Ministry of health: the state watches the border, then the money.
+    "ministry": SCENES,
+    # University (Unilag-style): the room is the vice-chancellor, the
+    # bursar, the clinic director, the insurer partners. Lead with the
+    # student at the clinic door; end with the proof.
+    "campus": ("arrival", "care", "surveillance", "money",
+               "oversight", "rescue", "verdict", "proof"),
+}
+
+# One framing line per (audience, scene): why this room cares. Missing
+# entries fall back to the audience question — absence of a frame is
+# honest, absence of a number is not.
+_AUDIENCE_STAKES = {
+    "campus": {
+        "arrival": "Every international student your registry admits is a "
+                   "cover the scheme must honour — and a fee the bursar "
+                   "can reconcile.",
+        "care": "The campus clinic is the provider portal: a sick student "
+                "is treated on a guarantee of payment, not on a cash "
+                "deposit at the door.",
+        "surveillance": "A dormitory is a facility: five GI cases in one "
+                        "hall in one week is a BR-10 alert before it is "
+                        "a campus outbreak.",
+        "money": "The bursar sees the five buckets and the daily "
+                 "settlement recon — the premium split is a table, not "
+                 "a promise.",
+        "oversight": "Students call the helpdesk at 2am; the SLA clock "
+                     "does not care what time it is.",
+        "rescue": "The worst day on campus is a medevac; the dispatch "
+                  "clock and the uninsured fund are the answer.",
+        "verdict": "Registration week is a border lane: QR verdicts keep "
+                   "a fraudulent cover out of the clinic queue.",
+        "proof": "Your council can rerun this entire fortnight from one "
+                 "seed — the demo is auditable because it is reproducible.",
+    },
+}
+
 _SURFACES = {
     "arrival": "border lane console — officer view",
     "verdict": "border lane console — verdict screen",
@@ -187,13 +232,18 @@ _QUESTIONS = {
 }
 
 
-def build_walkthrough(narrative: dict, *, currency_symbol: str = "€") -> dict:
+def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
+                      audience: str = "ministry") -> dict:
     """Generate the presenter script from a pilot narrative.
 
     Every number in every line comes from `narrative`. The function
     refuses a narrative missing keys the script needs — a demo with an
-    improvised number is worse than no demo.
+    improvised number is worse than no demo. The audience chooses the
+    arc (scene order and framing), never the numbers.
     """
+    if audience not in AUDIENCE_ARCS:
+        raise ValueError(f"unknown audience {audience!r}; "
+                         f"audiences are {tuple(AUDIENCE_ARCS)}")
     required = {"arrivals", "covers", "exempt", "verdicts", "groups",
                 "partner_sales", "premium_collected_minor", "auto_refunds",
                 "settlement_breaches", "claims", "claims_paid_minor",
@@ -205,18 +255,23 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€") -> dict:
         raise ValueError(f"narrative is missing {sorted(missing)}; "
                          "the script reads the narrative, it does not improvise")
 
+    stakes = _AUDIENCE_STAKES.get(audience, {})
     scenes = []
-    for sid in SCENES:
-        scenes.append({
+    for sid in AUDIENCE_ARCS[audience]:
+        scene = {
             "scene": sid,
             "surface": _SURFACES[sid],
             "audience_question": _QUESTIONS[sid],
             "talking_points": _BUILDERS[sid](narrative, currency_symbol),
-        })
+        }
+        if sid in stakes:
+            scene["stakes"] = stakes[sid]
+        scenes.append(scene)
     return {
         "version": DEMO_VERSION,
         "pilot_version": narrative["version"],
         "seed": narrative["seed"],
+        "audience": audience,
         "scenes": scenes,
         "disclaimer": ("All travellers, passports, providers and money in "
                        "this walkthrough are synthetic (Pax-NNNN / SIM-NNNN). "
@@ -226,7 +281,7 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€") -> dict:
 
 def render_markdown(walkthrough: dict) -> str:
     """Render the script as a presenter-ready Markdown run-of-show."""
-    lines = [f"# VHC scheme — ministry walkthrough",
+    lines = [f"# VHC scheme — {walkthrough.get('audience', 'ministry')} walkthrough",
              f"",
              f"_{walkthrough['disclaimer']}_",
              f"",
@@ -237,6 +292,8 @@ def render_markdown(walkthrough: dict) -> str:
         lines.append(f"## Scene {i}: {s['scene']}")
         lines.append(f"**Stand on:** {s['surface']}")
         lines.append(f"**They are silently asking:** {s['audience_question']}")
+        if "stakes" in s:
+            lines.append(f"**Why this room cares:** {s['stakes']}")
         lines.append("")
         for tp in s["talking_points"]:
             lines.append(f"- {tp}")
@@ -260,6 +317,9 @@ def main(argv=None) -> int:
     ap.add_argument("--seed", type=int, default=42)
     ap.add_argument("--days", type=int, default=14)
     ap.add_argument("--currency", default="€")
+    ap.add_argument("--audience", default="ministry",
+                    choices=sorted(AUDIENCE_ARCS),
+                    help="ministry of health or campus (university council)")
     ap.add_argument("--out", default=None,
                     help="write the Markdown run-of-show here")
     ap.add_argument("--json", action="store_true",
@@ -268,7 +328,8 @@ def main(argv=None) -> int:
 
     from vhpilot import seed_pilot  # late import: needs the sys.path
     narrative = seed_pilot(seed=args.seed, days=args.days)["narrative"]
-    script = build_walkthrough(narrative, currency_symbol=args.currency)
+    script = build_walkthrough(narrative, currency_symbol=args.currency,
+                               audience=args.audience)
 
     # You do not present past a red finding.
     red = []
@@ -286,7 +347,7 @@ def main(argv=None) -> int:
         print(json.dumps(narrative, indent=2, sort_keys=True))
     else:
         n = narrative
-        print(f"VHC pilot walkthrough — seed {n['seed']}, {n['days']} days")
+        print(f"VHC {args.audience} walkthrough — seed {n['seed']}, {n['days']} days")
         print(f"  {n['arrivals']} arrivals · {n['covers']} covers "
               f"({n['exempt']} exempt) · {n['partner_sales']} partner sales "
               f"· {n['groups']} group manifests")
