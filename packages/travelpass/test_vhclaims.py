@@ -187,14 +187,19 @@ class TestAppeals(unittest.TestCase):
 class TestFraudAndReport(unittest.TestCase):
     def test_fraud_sample_is_deterministic(self):
         reg = _reg()
-        for i in range(20):
+        # Population must be large enough that the 5% sample is almost
+        # surely non-empty and seed-distinct: case_ids carry
+        # secrets.token_hex entropy, so with only 20 cases two seeds
+        # collide on an empty sample ~13% of the time (observed flake).
+        for i in range(200):
             cid = _to_dossier(reg, intake_h=100 + i * 10,
                               gop_h=101 + i * 10)
             reg.adjudicate(cid, day=12)
         s1 = reg.fraud_sample(seed="q1", day=13)
         s2 = reg.fraud_sample(seed="q1", day=13)
         self.assertEqual(s1, s2)
-        self.assertEqual(s1["population"], 20)
+        self.assertEqual(s1["population"], 200)
+        self.assertGreater(len(s1["sampled"]), 0)
         s3 = reg.fraud_sample(seed="q2", day=13)
         self.assertNotEqual(s1["sampled"], s3["sampled"])
 
