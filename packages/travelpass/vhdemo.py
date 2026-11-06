@@ -31,7 +31,24 @@ SCENES = ("arrival", "verdict", "money", "care", "rescue",
 
 
 def _fmt_minor(minor: int, symbol: str) -> str:
+    if symbol == "CVE":
+        return _fmt_cve(minor)
     return f"{symbol}{minor / 100:,.2f}"
+
+
+def _fmt_cve(eur_minor: int) -> str:
+    """Escudo display off the BCV peg in the cv-vhc profile — the rate is
+    read from the versioned profile, never hardcoded here. Escudo style:
+    thousands separated with '.', '$' before the two decimals."""
+    from vhcover import VHC_PROFILES
+    code, peg = VHC_PROFILES["cv-vhc@1.0.0"]["alt_currency"]
+    assert code == "CVE"
+    cve = eur_minor / 100 * peg
+    escudos = int(cve)
+    centavos = round((cve - escudos) * 100)
+    if centavos == 100:                       # carry on rounding
+        escudos, centavos = escudos + 1, 0
+    return f"{escudos:,}${centavos:02d}".replace(",", ".")
 
 
 def _scene_arrival(n, currency_symbol):
@@ -179,6 +196,14 @@ AUDIENCE_ARCS = {
     # student at the clinic door; end with the proof.
     "campus": ("arrival", "care", "surveillance", "money",
                "oversight", "rescue", "verdict", "proof"),
+    # Cabo Verde: the room is the ministry and the tourism economy of an
+    # archipelago. Rescue moves up — on nine inhabited islands the worst
+    # day is an inter-island medevac, not an ambulance ride — and the
+    # money scene answers the question a tourism-dependent treasury
+    # actually asks. Escudo display rides the BCV peg (alt_currency in
+    # the cv-vhc profile), never a hardcoded rate.
+    "cabo-verde": ("arrival", "verdict", "rescue", "money", "care",
+                   "surveillance", "oversight", "proof"),
 }
 
 # One framing line per (audience, scene): why this room cares. Missing
@@ -206,6 +231,33 @@ _AUDIENCE_STAKES = {
                    "a fraudulent cover out of the clinic queue.",
         "proof": "Your council can rerun this entire fortnight from one "
                  "seed — the demo is auditable because it is reproducible.",
+    },
+    "cabo-verde": {
+        "arrival": "Tourism is the economy: every arrival through Sal, "
+                   "Praia or São Vicente is covered revenue and a health "
+                   "obligation at the same counter.",
+        "verdict": "The lane at Amílcar Cabral is the border: a QR that "
+                   "verifies offline for 72 hours survives the inter-island "
+                   "network better than any always-online system.",
+        "rescue": "On nine inhabited islands the worst day is an "
+                  "inter-island medevac — fixed-wing, rotary or boat — "
+                  "and the 2-hour dispatch clock is the promise that "
+                  "matters.",
+        "money": "The treasury asks where the escudos sit: five buckets, "
+                 "a versioned split, and a settlement file that "
+                 "reconciles daily against the PSP.",
+        "care": "A visitor falls ill on Santo Antão; the GOP inside 2 "
+                "hours is what gets them treated before the ferry "
+                "decision.",
+        "surveillance": "Port health is national health: five GI cases "
+                        "in one facility in one week is an IHR-relevant "
+                        "signal with an export pack, not a rumour.",
+        "oversight": "Visitors need help in PT, EN, FR, DE, NL — a "
+                     "missing translation falls back with the fallback "
+                     "stated, never silently.",
+        "proof": "The pilot fortnight reruns from one seed in front of "
+                 "the ministry — a demo you cannot reproduce is a story "
+                 "you cannot audit.",
     },
 }
 
@@ -244,6 +296,8 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
     if audience not in AUDIENCE_ARCS:
         raise ValueError(f"unknown audience {audience!r}; "
                          f"audiences are {tuple(AUDIENCE_ARCS)}")
+    if currency_symbol.lower() in ("cve", "cve$", "escudo"):
+        currency_symbol = "CVE"
     required = {"arrivals", "covers", "exempt", "verdicts", "groups",
                 "partner_sales", "premium_collected_minor", "auto_refunds",
                 "settlement_breaches", "claims", "claims_paid_minor",
@@ -347,13 +401,15 @@ def main(argv=None) -> int:
         print(json.dumps(narrative, indent=2, sort_keys=True))
     else:
         n = narrative
+        sym = "CVE" if args.currency.lower() in ("cve", "cve$", "escudo") \
+            else args.currency
         print(f"VHC {args.audience} walkthrough — seed {n['seed']}, {n['days']} days")
         print(f"  {n['arrivals']} arrivals · {n['covers']} covers "
               f"({n['exempt']} exempt) · {n['partner_sales']} partner sales "
               f"· {n['groups']} group manifests")
-        print(f"  premium {args.currency}{n['premium_collected_minor'] / 100:,.2f} "
+        print(f"  premium {_fmt_minor(n['premium_collected_minor'], sym)} "
               f"· claims {n['claims']} paid "
-              f"{args.currency}{n['claims_paid_minor'] / 100:,.2f} "
+              f"{_fmt_minor(n['claims_paid_minor'], sym)} "
               f"· loss ratio {n['loss_ratio']:.4f}")
         print(f"  medevacs {n['medevacs']} · BR-10 alerts {n['br10_alerts']} "
               f"(acknowledged: {n['br10_all_acknowledged']}) · "

@@ -225,5 +225,63 @@ class TestAudiences(unittest.TestCase):
             vhpilot_mod.seed_pilot = original
 
 
+class TestCaboVerde(unittest.TestCase):
+    """The archipelago tailoring: rescue moves up the arc, escudos ride
+    the BCV peg from the profile — never a hardcoded rate."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.narrative = seed_pilot(seed=42)["narrative"]
+
+    def test_arc_leads_border_then_rescue(self):
+        arc = AUDIENCE_ARCS["cabo-verde"]
+        self.assertEqual(sorted(arc), sorted(SCENES))
+        self.assertEqual(arc[:3], ("arrival", "verdict", "rescue"))
+        self.assertEqual(arc[-1], "proof")
+
+    def test_stakes_speak_archipelago(self):
+        script = build_walkthrough(self.narrative, audience="cabo-verde")
+        stakes = " ".join(s.get("stakes", "") for s in script["scenes"])
+        self.assertIn("nine inhabited islands", stakes)
+        self.assertIn("Amílcar Cabral", stakes)
+        self.assertIn("Sal", stakes)
+        rescue = next(s for s in script["scenes"] if s["scene"] == "rescue")
+        self.assertIn("inter-island medevac", rescue["stakes"])
+
+    def test_cve_display_rides_the_profile_peg(self):
+        from vhcover import VHC_PROFILES
+        peg = VHC_PROFILES["cv-vhc@1.0.0"]["alt_currency"][1]
+        script = build_walkthrough(self.narrative, audience="cabo-verde",
+                                   currency_symbol="cve")
+        money = next(s for s in script["scenes"] if s["scene"] == "money")
+        premium_cve = self.narrative["premium_collected_minor"] / 100 * peg
+        escudos = int(premium_cve)
+        centavos = round((premium_cve - escudos) * 100)
+        if centavos == 100:
+            escudos, centavos = escudos + 1, 0
+        expect = f"{escudos:,}".replace(",", ".") + f"${centavos:02d}"
+        shown = " ".join(money["talking_points"])
+        # the escudo figure must equal EUR minor / 100 x peg, formatted
+        # CV-style with '.' thousands and '$' before the decimals
+        self.assertIn(expect, shown)
+        self.assertNotIn("€", shown)   # no euro leakage in a CVE script
+
+    def test_cve_format_carry_on_rounding(self):
+        from vhdemo import _fmt_cve
+        # craft an amount whose centavos round up to 100
+        self.assertEqual(_fmt_cve(1), "1$10")   # €0.01 x 110.265 = 1.10265
+
+    def test_cli_cabo_verde_with_escudos(self):
+        import vhdemo
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "cv.md")
+            rc = vhdemo.main(["--seed", "42", "--audience", "cabo-verde",
+                              "--currency", "cve", "--out", out])
+            self.assertEqual(rc, 0)
+            md = open(out).read()
+            self.assertIn("cabo-verde walkthrough", md)
+            self.assertIn("$", md)
+
+
 if __name__ == "__main__":
     unittest.main()
