@@ -1,5 +1,6 @@
 import os
 import sys
+import tempfile
 import unittest
 
 _HERE = os.path.dirname(__file__)
@@ -85,6 +86,66 @@ class TestDemoWalkthrough(unittest.TestCase):
         other = build_walkthrough(seed_pilot(seed=7)["narrative"])
         self.assertNotEqual(render_markdown(self.script),
                             render_markdown(other))
+
+
+class TestDemoCli(unittest.TestCase):
+    def test_main_green_pilot_exits_zero(self):
+        import vhdemo
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "walkthrough.md")
+            rc = vhdemo.main(["--seed", "42", "--out", out, "--json"])
+            self.assertEqual(rc, 0)
+            self.assertTrue(os.path.exists(out))
+            self.assertIn("# VHC scheme — ministry walkthrough",
+                          open(out).read())
+
+    def test_main_writes_run_of_show(self):
+        import vhdemo
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "ros.md")
+            self.assertEqual(vhdemo.main(["--seed", "42", "--out", out]), 0)
+            md = open(out).read()
+            self.assertEqual(md.count("## Scene"), 8)
+
+
+class TestDemoRedFindings(unittest.TestCase):
+    """You do not present past a red finding: a narrative with an
+    unacknowledged alert or a settlement breach must exit 1. The CLI
+    reads the narrative; we exercise the gate via a rigged seed result
+    patched into seed_pilot."""
+
+    def _rig(self, **overrides):
+        import vhdemo
+        import vhpilot
+        original = vhpilot.seed_pilot
+        narrative = dict(seed_pilot(seed=42)["narrative"])
+        narrative.update(overrides)
+        vhdemo_seed = lambda **kw: {"narrative": narrative, "registries": {}}
+        # patch the name main() resolves at call time
+        import sys as _sys
+        vhpilot_mod = _sys.modules["vhpilot"]
+        vhpilot_mod.seed_pilot = vhdemo_seed
+        return original
+
+    def _unrig(self, original):
+        import sys as _sys
+        _sys.modules["vhpilot"].seed_pilot = original
+
+    def test_unacknowledged_br10_exits_one(self):
+        import vhdemo
+        original = self._rig(br10_all_acknowledged=False)
+        try:
+            self.assertEqual(vhdemo.main(["--seed", "42"]), 1)
+        finally:
+            self._unrig(original)
+
+    def test_settlement_breach_exits_one(self):
+        import vhdemo
+        original = self._rig(settlement_breaches=2)
+        try:
+            self.assertEqual(vhdemo.main(["--seed", "42"]), 1)
+        finally:
+            self._unrig(original)
 
 
 if __name__ == "__main__":

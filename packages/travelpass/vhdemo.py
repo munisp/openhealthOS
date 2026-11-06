@@ -242,3 +242,67 @@ def render_markdown(walkthrough: dict) -> str:
             lines.append(f"- {tp}")
         lines.append("")
     return "\n".join(lines)
+
+
+def main(argv=None) -> int:
+    """One-command ministry demo: seed the pilot, build the script,
+    render the run-of-show. Refuses to present past a red finding —
+    an unacknowledged BR-10 alert or a settlement breach exits 1.
+
+      PYTHONPATH=packages/travelpass:packages/crosslink:... \\
+          python3 -m vhdemo --seed 42 --out docs/demo/ministry-walkthrough.md
+    """
+    import argparse
+    import json
+
+    ap = argparse.ArgumentParser(prog="vhdemo",
+                                 description="VHC ministry walkthrough generator")
+    ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--days", type=int, default=14)
+    ap.add_argument("--currency", default="€")
+    ap.add_argument("--out", default=None,
+                    help="write the Markdown run-of-show here")
+    ap.add_argument("--json", action="store_true",
+                    help="print the narrative as JSON instead of the script")
+    args = ap.parse_args(argv)
+
+    from vhpilot import seed_pilot  # late import: needs the sys.path
+    narrative = seed_pilot(seed=args.seed, days=args.days)["narrative"]
+    script = build_walkthrough(narrative, currency_symbol=args.currency)
+
+    # You do not present past a red finding.
+    red = []
+    if not narrative["br10_all_acknowledged"]:
+        red.append("BR-10 alert unacknowledged")
+    if narrative["settlement_breaches"] > 0:
+        red.append(f"{narrative['settlement_breaches']} settlement breach(es)")
+
+    if args.out:
+        with open(args.out, "w") as fh:
+            fh.write(render_markdown(script))
+        print(f"walkthrough written to {args.out}")
+
+    if args.json:
+        print(json.dumps(narrative, indent=2, sort_keys=True))
+    else:
+        n = narrative
+        print(f"VHC pilot walkthrough — seed {n['seed']}, {n['days']} days")
+        print(f"  {n['arrivals']} arrivals · {n['covers']} covers "
+              f"({n['exempt']} exempt) · {n['partner_sales']} partner sales "
+              f"· {n['groups']} group manifests")
+        print(f"  premium {args.currency}{n['premium_collected_minor'] / 100:,.2f} "
+              f"· claims {n['claims']} paid "
+              f"{args.currency}{n['claims_paid_minor'] / 100:,.2f} "
+              f"· loss ratio {n['loss_ratio']:.4f}")
+        print(f"  medevacs {n['medevacs']} · BR-10 alerts {n['br10_alerts']} "
+              f"(acknowledged: {n['br10_all_acknowledged']}) · "
+              f"settlement breaches {n['settlement_breaches']}")
+        print(f"  scenes: {' -> '.join(s['scene'] for s in script['scenes'])}")
+    if red:
+        print("STOP THE DEMO: " + "; ".join(red))
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
