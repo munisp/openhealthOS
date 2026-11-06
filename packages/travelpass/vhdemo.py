@@ -240,8 +240,6 @@ _BUILDERS = {
 # Portuguese deck: it falls back *with the fallback stated* and named in
 # the coverage report. Denominators always visible.
 
-PRESENTER_LANGS = ("en", "pt")
-
 PT_TEMPLATES = {
     "arrival.volume":
         "DIA UM, CORREDOR TRÊS. {arrivals} viajantes chegam ao longo de "
@@ -407,6 +405,192 @@ PT_STAKES_CV = {
 }
 
 
+FR_TEMPLATES = {
+    "arrival.volume":
+        "PREMIER JOUR, COULOIR TROIS. {arrivals} voyageurs arrivent sur "
+        "{days} jours — tous synthétiques (Pax-NNNN, SIM-NNNN ; cette "
+        "démonstration ne correspond à aucune personne, et le registre "
+        "peut le prouver).",
+    "arrival.covers":
+        "Chacun achète ou détient une couverture : {covers} couvertures "
+        "émises, dont {exempt} exemptions légales — un diplomate et un "
+        "passager en transit ne sont pas des revenus, et le système ne "
+        "les traite jamais comme tels.",
+    "arrival.qr":
+        "Pointez le QR sur l'écran de l'agent : JWS compact, signé par "
+        "la clé détenue dans le HSM, vérifiable hors ligne pendant 72 "
+        "heures. Un cache périmé affiche ROUGE, pas un passage "
+        "silencieux.",
+    "verdict.decision":
+        "LE VERDICT EST UNE DÉCISION, PAS UNE INTUITION. Chaque scan "
+        "renvoie vert, orange ou rouge avec un *motif nommé* et une "
+        "action nommée de l'agent — admettre, guichet ou superviseur.",
+    "verdict.fortnight":
+        "Sur cette quinzaine : {green} verts, {amber} oranges "
+        "(vérification au guichet, résolue sur place), {red} rouges. "
+        "Dénominateurs à l'écran, toujours.",
+    "verdict.privacy":
+        "L'agent ne voit jamais un numéro de passeport en clair — la "
+        "vérification au guichet fonctionne à partir de la référence de "
+        "couverture.",
+    "money.five":
+        "SUIVEZ L'ARGENT — LES CINQ CAISSES. Prime collectée : "
+        "{premium}. Elle se répartit au moment de la vente entre les "
+        "caisses réserve, sinistres, opérations, surveillance et "
+        "administration selon le profil pays versionné — une règle "
+        "introuvable dans une table est un pot-de-vin avec reçu.",
+    "money.channel":
+        "Mix de canaux : {partner_sales} ventes via l'API partenaire, "
+        "{groups} manifestes de groupe (compagnie aérienne, "
+        "tour-opérateur) — tout-ou-rien, tarifé par personne.",
+    "money.refunds":
+        "Les doubles débits se remboursent d'eux-mêmes : {auto_refunds} "
+        "remboursements automatiques sur cette quinzaine ; le premier "
+        "débit est conservé, les autres repartent dans la fenêtre.",
+    "money.settlement":
+        "Le règlement se réconcilie quotidiennement : "
+        "{settlement_breaches} écarts contre une tolérance de 1000 ppm. "
+        "Zéro est la réponse attendue, et le rapport affiche le "
+        "dénominateur.",
+    "care.sick":
+        "QUAND QUELQU'UN TOMBE MALADE. Un voyageur entre dans une "
+        "clinique accréditée ; le portail prestataire ne voit que ses "
+        "propres dossiers.",
+    "care.clock":
+        "{claims} sinistres sur cette quinzaine. L'horloge qui compte : "
+        "GOP sous 2 heures après l'admission — la garantie de paiement "
+        "est ce qui fait soigner le voyageur sans carte bancaire sur un "
+        "brancard.",
+    "care.adjudicated":
+        "Adjudicé contre le tarifaire à quatre yeux ; payé {paid}. "
+        "Ratio sinistres/primes {loss_ratio} — le mart actuariel lit les "
+        "mêmes registres, donc la finance et les opérations ne se "
+        "disputent jamais sur le bon chiffre.",
+    "rescue.worst":
+        "LE PIRE JOUR. Une demande d'évacuation sanitaire : approuver, "
+        "dépêcher sous l'horloge de 2 heures, arriver, clôturer. Sur "
+        "cette quinzaine : {medevacs} évacuation(s).",
+    "rescue.uninsured":
+        "Si un voyageur *non assuré* doit être secouru, le dispositif "
+        "ne le laisse pas mourir au bord d'un tableur : le fonds des "
+        "non-assurés porte le coût, et la subrogation poursuit le "
+        "recouvrement ensuite — bornée au montant réellement dû, "
+        "jamais un chèque en blanc.",
+    "surveillance.watches":
+        "LE SYSTÈME SE SURVEILLE LUI-MÊME. Chaque incident est "
+        "pseudonymisé à l'enregistrement — hachage salé, aucune "
+        "identité réversible dans le registre. Synthétique ici, protégé "
+        "en production.",
+    "surveillance.br10":
+        "BR-10 : cinq cas GI dans un établissement en une semaine "
+        "déclenchent une alerte. Sur cette quinzaine : {br10_alerts} "
+        "alerte(s), acquittée : {ack}. Une alerte non acquittée est un "
+        "constat, pas une statistique.",
+    "surveillance.export":
+        "Le paquet d'export RSI/UKHSA/ECDC porte un SHA-256 — la somme "
+        "de contrôle est le contrat — et la suppression au seuil k=5 "
+        "garantit que les petites cellules ne révèlent jamais une "
+        "personne. Empreinte du paquet : {pack_hash}…",
+    "oversight.phone":
+        "QUI DÉCROCHE LE TÉLÉPHONE. Les voyageurs ont une assistance "
+        "24/7 avec du contenu dans leur langue ; une traduction "
+        "manquante bascule *avec le basculement déclaré* — personne ne "
+        "signe silencieusement une décharge qu'il ne peut lire.",
+    "oversight.sla":
+        "{tickets} tickets sur cette quinzaine ; conformité du SLA de "
+        "première réponse {sla}. Une réponse tardive est un manquement "
+        "nommé avec un responsable, pas un haussement d'épaules.",
+    "oversight.clocks":
+        "Chaque horloge opérationnelle — GOP 2h, adjudication 10j, "
+        "paiement 30j, appel 5j, dépêchement 2h, réconciliation "
+        "quotidienne — a un responsable nommé et un dénominateur "
+        "visible. Les tableaux de bord lisent les rapports, pas les "
+        "impressions.",
+    "proof.believe":
+        "POURQUOI POUVEZ-VOUS Y CROIRE. Toute cette quinzaine est un "
+        "appel de fonction : seed_pilot(seed={seed}). Même graine, même "
+        "pilote, octet par octet — une démo qu'on ne peut reproduire "
+        "est une histoire qu'on ne peut auditer.",
+    "proof.suites":
+        "Chaque affirmation de ces diapositives est adossée à un module "
+        "avec sa propre suite de tests ; la plateforme exécute la suite "
+        "complète sur le tag de déploiement avant qu'un portail ne "
+        "bascule.",
+    "proof.environment":
+        "Ce qui reste de l'environnement, et nous le disons "
+        "honnêtement : le contrat PSP réel, la cérémonie HSM et le kit "
+        "de couloir se prouvent dans les portails de mise en production "
+        "G0–G5, pas dans cette démo.",
+}
+
+FR_FRAMES = {
+    "surface": {
+        "arrival": "console du couloir frontalier — vue agent",
+        "verdict": "console du couloir frontalier — écran de verdict",
+        "money": "tableau financier — caisses du fonds + réconciliation",
+        "care": "portail prestataire + atelier sinistres",
+        "rescue": "console d'assistance — tableau des évacuations",
+        "surveillance": "registre de santé publique — alertes BR-10",
+        "oversight": "console d'assistance + horloges opérationnelles",
+        "proof": "le terminal — une commande, une graine",
+    },
+    "question": {
+        "arrival": "qui sont ces personnes et le système les connaît-il ?",
+        "verdict": "qu'est-ce qui arrête un faux QR au couloir ?",
+        "money": "où va l'argent et qui peut y toucher ?",
+        "care": "un voyageur malade est-il vraiment soigné ?",
+        "rescue": "que se passe-t-il le pire jour ?",
+        "surveillance": "la CEDEAO saurait-elle avant l'épidémie ?",
+        "oversight": "qui répond quand l'horloge dépasse ?",
+        "proof": "pourquoi devrions-nous y croire ?",
+    },
+}
+
+FR_STAKES_ECOWAS = {
+    "arrival": "La mobilité régionale est le moteur : chaque arrivée par "
+               "les corridors Abidjan–Lagos ou Dakar–Bamako est un "
+               "revenu couvert et une obligation sanitaire au même "
+               "guichet.",
+    "verdict": "Le poste frontière est le couloir : un QR vérifiable "
+               "hors ligne pendant 72 heures survit aux réseaux "
+               "intermittents des corridors terrestres.",
+    "rescue": "Le pire jour régional est une évacuation transfrontalière "
+              "— et l'horloge de dépêchement de 2 heures est la promesse "
+              "qui compte.",
+    "money": "Le trésor demande où sont les francs : cinq caisses, une "
+             "répartition versionnée, un fichier de règlement réconcilié "
+             "quotidiennement contre le PSP.",
+    "care": "Un voyageur tombe malade loin de chez lui ; le GOP sous 2 "
+            "heures est ce qui le fait soigner avant la question du "
+            "transport.",
+    "surveillance": "La santé frontalière est la santé régionale : cinq "
+                    "cas GI dans un établissement en une semaine sont un "
+                    "signal RSI avec paquet d'export, pas une rumeur.",
+    "oversight": "Les voyageurs ont besoin d'aide en FR, EN, PT — une "
+                 "traduction manquante bascule avec le basculement "
+                 "déclaré, jamais en silence.",
+    "proof": "La quinzaine pilote se relance d'une seule graine devant "
+             "la commission — une démo qu'on ne peut reproduire est une "
+             "histoire qu'on ne peut auditer.",
+}
+
+# Language registry — adding a language is adding an entry here, never
+# an if-lang branch in the builders. Each entry: point templates, scene
+# frames, per-audience stakes, and the stated-fallback note.
+TRANSLATIONS = {
+    "pt": {"templates": PT_TEMPLATES, "frames": PT_FRAMES,
+           "stakes": {"cabo-verde": PT_STAKES_CV},
+           "fallback_note": "sem tradução em português — apresentado em "
+                            "inglês, declarado"},
+    "fr": {"templates": FR_TEMPLATES, "frames": FR_FRAMES,
+           "stakes": {"ecowas": FR_STAKES_ECOWAS},
+           "fallback_note": "sans traduction française — présenté en "
+                            "anglais, déclaré"},
+}
+
+PRESENTER_LANGS = ("en",) + tuple(TRANSLATIONS)
+
+
 # --- audiences ---------------------------------------------------------
 # The engine is audience-agnostic exactly as it is country-agnostic: the
 # narrative drives the numbers, the audience drives the *arc* — which
@@ -430,6 +614,13 @@ AUDIENCE_ARCS = {
     # the cv-vhc profile), never a hardcoded rate.
     "cabo-verde": ("arrival", "verdict", "rescue", "money", "care",
                    "surveillance", "oversight", "proof"),
+    # ECOWAS: the room is a regional commission — fifteen member states,
+    # cross-border corridors, a shared surveillance mandate. Surveillance
+    # moves up: a regional body's first question is whether it sees the
+    # outbreak before the communique. Care before money: the treatment
+    # guarantee is the political sell; the treasury follows.
+    "ecowas": ("arrival", "surveillance", "care", "rescue", "money",
+               "verdict", "oversight", "proof"),
 }
 
 # One framing line per (audience, scene): why this room cares. Missing
@@ -483,6 +674,33 @@ _AUDIENCE_STAKES = {
                      "stated, never silently.",
         "proof": "The pilot fortnight reruns from one seed in front of "
                  "the ministry — a demo you cannot reproduce is a story "
+                 "you cannot audit.",
+    },
+    "ecowas": {
+        "arrival": "Regional mobility is the engine: every arrival "
+                   "through the Abidjan–Lagos or Dakar–Bamako corridors "
+                   "is covered revenue and a health obligation at the "
+                   "same desk.",
+        "surveillance": "Border health is regional health: five GI cases "
+                        "in one facility in one week is an IHR-relevant "
+                        "signal with an export pack, not a rumour.",
+        "care": "A traveller falls ill far from home; the GOP inside 2 "
+                "hours is what gets them treated before the transport "
+                "question.",
+        "rescue": "The worst regional day is a cross-border medevac — "
+                  "and the 2-hour dispatch clock is the promise that "
+                  "matters.",
+        "money": "The treasury asks where the money sits: five buckets, "
+                 "a versioned split, and a settlement file that "
+                 "reconciles daily against the PSP.",
+        "verdict": "The border post is the lane: a QR verifiable offline "
+                   "for 72 hours survives the intermittent networks of "
+                   "land corridors.",
+        "oversight": "Travellers need help in FR, EN, PT — a missing "
+                     "translation falls back with the fallback stated, "
+                     "never silently.",
+        "proof": "The pilot fortnight reruns from one seed in front of "
+                 "the commission — a demo you cannot reproduce is a story "
                  "you cannot audit.",
     },
 }
@@ -545,30 +763,32 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
     total_points = 0
     fallback_keys = []
 
-    def _pt(key, values, en_text):
-        """Resolve one point in PT; a miss is a stated fallback, counted."""
+    def _localized(key, values, en_text):
+        """Resolve one point in the presenter language; a miss is a
+        stated fallback, counted — never a silent English paragraph."""
         nonlocal translated, total_points
         total_points += 1
-        if lang == "pt":
-            tpl = PT_TEMPLATES.get(key)
-            if tpl is not None:
-                translated += 1
-                return tpl.format(**values)
-            fallback_keys.append(key)
-            return en_text + "  _(sem tradução em português — apresentado " \
-                             "em inglês, declarado)_"
-        return en_text
+        if lang == "en":
+            return en_text
+        pack = TRANSLATIONS[lang]
+        tpl = pack["templates"].get(key)
+        if tpl is not None:
+            translated += 1
+            return tpl.format(**values)
+        fallback_keys.append(key)
+        return en_text + f"  _({pack['fallback_note']})_"
 
     scenes = []
     for sid in AUDIENCE_ARCS[audience]:
         points = _BUILDERS[sid](narrative, currency_symbol)
         keys = [k for k, _, _ in points]
-        texts = [_pt(k, vals, text) for k, text, vals in points]
-        if lang == "pt":
-            surface = PT_FRAMES["surface"].get(sid, _SURFACES[sid])
-            question = PT_FRAMES["question"].get(sid, _QUESTIONS[sid])
-        else:
+        texts = [_localized(k, vals, text) for k, text, vals in points]
+        if lang == "en":
             surface, question = _SURFACES[sid], _QUESTIONS[sid]
+        else:
+            frames = TRANSLATIONS[lang]["frames"]
+            surface = frames["surface"].get(sid, _SURFACES[sid])
+            question = frames["question"].get(sid, _QUESTIONS[sid])
         scene = {
             "scene": sid,
             "surface": surface,
@@ -577,17 +797,17 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
             "talking_point_keys": keys,
         }
         if sid in stakes:
-            if lang == "pt":
-                pt_stake = PT_STAKES_CV.get(sid) if audience == "cabo-verde" \
-                    else None
-                if pt_stake is not None:
-                    scene["stakes"] = pt_stake
+            if lang == "en":
+                scene["stakes"] = stakes[sid]
+            else:
+                pack = TRANSLATIONS[lang]
+                loc_stake = pack["stakes"].get(audience, {}).get(sid)
+                if loc_stake is not None:
+                    scene["stakes"] = loc_stake
                 else:
                     fallback_keys.append(f"stakes.{audience}.{sid}")
                     scene["stakes"] = stakes[sid] + \
-                        "  _(sem tradução em português — declarado)_"
-            else:
-                scene["stakes"] = stakes[sid]
+                        f"  _({pack['fallback_note']})_"
         scenes.append(scene)
     return {
         "version": DEMO_VERSION,
@@ -604,6 +824,11 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
                         "(Pax-NNNN / SIM-NNNN). A demonstração não "
                         "corresponde a nenhuma pessoa.")
                        if lang == "pt" else
+                       ("Tous les voyageurs, passeports, prestataires et "
+                        "montants de cette présentation sont synthétiques "
+                        "(Pax-NNNN / SIM-NNNN). La démonstration ne "
+                        "correspond à aucune personne.")
+                       if lang == "fr" else
                        ("All travellers, passports, providers and money in "
                         "this walkthrough are synthetic (Pax-NNNN / SIM-NNNN). "
                         "The demonstration maps to no person.")),
@@ -612,18 +837,27 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
 
 def render_markdown(walkthrough: dict) -> str:
     """Render the script as a presenter-ready Markdown run-of-show."""
-    pt = walkthrough.get("lang") == "pt"
-    labels = {"stand_on": "Posicione-se em",
-              "asking": "A pergunta silenciosa",
-              "stakes": "Porque esta sala se importa",
-              "scene": "Cena"} if pt else \
-             {"stand_on": "Stand on",
-              "asking": "They are silently asking",
-              "stakes": "Why this room cares",
-              "scene": "Scene"}
-    title = (f"# Esquema VHC — apresentação {walkthrough.get('audience', 'ministry')}"
-             if pt else
-             f"# VHC scheme — {walkthrough.get('audience', 'ministry')} walkthrough")
+    lang = walkthrough.get("lang", "en")
+    _LABELS = {
+        "en": {"stand_on": "Stand on", "asking": "They are silently asking",
+               "stakes": "Why this room cares", "scene": "Scene",
+               "title": "# VHC scheme — {aud} walkthrough",
+               "coverage": "translation coverage: {t} of {n} points in "
+                           "{lang}; stated fallbacks: {f}"},
+        "pt": {"stand_on": "Posicione-se em", "asking": "A pergunta silenciosa",
+               "stakes": "Porque esta sala se importa", "scene": "Cena",
+               "title": "# Esquema VHC — apresentação {aud}",
+               "coverage": "cobertura de tradução: {t} de {n} pontos em "
+                           "português; recuos declarados: {f}"},
+        "fr": {"stand_on": "Positionnez-vous sur",
+               "asking": "La question silencieuse",
+               "stakes": "Pourquoi cette salle s'en soucie", "scene": "Scène",
+               "title": "# Dispositif VHC — présentation {aud}",
+               "coverage": "couverture de traduction : {t} points sur {n} "
+                           "en français ; basculements déclarés : {f}"},
+    }
+    labels = _LABELS[lang]
+    title = labels["title"].format(aud=walkthrough.get("audience", "ministry"))
     lines = [title,
              f"",
              f"_{walkthrough['disclaimer']}_",
@@ -632,10 +866,10 @@ def render_markdown(walkthrough: dict) -> str:
              f"`{walkthrough['seed']}` · script `{walkthrough['version']}`",
              ""]
     tr = walkthrough.get("translation")
-    if tr and tr["lang"] == "pt":
-        lines.append(f"_cobertura de tradução: {tr['translated']} de "
-                     f"{tr['total']} pontos em português; recuos "
-                     f"declarados: {len(tr['fallback_keys'])}_")
+    if tr and tr["lang"] != "en":
+        lines.append("_" + labels["coverage"].format(
+            t=tr["translated"], n=tr["total"], lang=tr["lang"],
+            f=len(tr["fallback_keys"])) + "_")
         lines.append("")
     for i, s in enumerate(walkthrough["scenes"], 1):
         lines.append(f"## {labels['scene']} {i}: {s['scene']}")

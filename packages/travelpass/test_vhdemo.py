@@ -374,5 +374,76 @@ class TestPortugueseLayer(unittest.TestCase):
         self.assertIn("Pax-NNNN", script["disclaimer"])
 
 
+class TestEcowasFrench(unittest.TestCase):
+    """The regional commission deck: surveillance leads, French carries
+    the room, fallbacks stay stated."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.narrative = seed_pilot(seed=42)["narrative"]
+
+    def test_ecowas_arc_leads_with_surveillance_after_arrival(self):
+        arc = AUDIENCE_ARCS["ecowas"]
+        self.assertEqual(sorted(arc), sorted(SCENES))
+        self.assertEqual(arc[0], "arrival")
+        self.assertEqual(arc[1], "surveillance")
+        self.assertLess(arc.index("care"), arc.index("money"))
+        self.assertEqual(arc[-1], "proof")
+
+    def test_fr_full_coverage_no_fallbacks(self):
+        script = build_walkthrough(self.narrative, audience="ecowas",
+                                   lang="fr")
+        tr = script["translation"]
+        self.assertEqual(tr["translated"], tr["total"])
+        self.assertEqual(tr["fallback_keys"], [])
+
+    def test_fr_numbers_identical_to_en(self):
+        en = build_walkthrough(self.narrative, audience="ecowas")
+        fr = build_walkthrough(self.narrative, audience="ecowas", lang="fr")
+        for needle in ("328", "10", "0.0723", "€9,312.50"):
+            self.assertIn(needle, " ".join(tp for s in en["scenes"]
+                                           for tp in s["talking_points"]))
+            self.assertIn(needle, " ".join(tp for s in fr["scenes"]
+                                           for tp in s["talking_points"]))
+
+    def test_fr_frames_stakes_disclaimer(self):
+        script = build_walkthrough(self.narrative, audience="ecowas",
+                                   lang="fr")
+        surv = next(s for s in script["scenes"] if s["scene"] == "surveillance")
+        self.assertIn("alertes BR-10", surv["surface"])
+        self.assertTrue(surv["audience_question"].endswith("?"))
+        self.assertIn("santé régionale", surv["stakes"])
+        self.assertIn("synthétiques", script["disclaimer"])
+
+    def test_fr_markdown_labels_and_coverage(self):
+        md = render_markdown(build_walkthrough(self.narrative,
+                                               audience="ecowas",
+                                               lang="fr"))
+        self.assertIn("# Dispositif VHC — présentation ecowas", md)
+        self.assertIn("**Positionnez-vous sur:**", md)
+        self.assertIn("**Pourquoi cette salle s'en soucie:**", md)
+        self.assertIn("couverture de traduction", md)
+        self.assertIn("basculements déclarés : 0", md)
+
+    def test_fr_fallback_stated_when_stakes_missing(self):
+        # campus has EN stakes but no FR stakes table — the fallback
+        # must be stated and counted, never silent
+        script = build_walkthrough(self.narrative, audience="campus",
+                                   lang="fr")
+        self.assertTrue(any(k.startswith("stakes.campus.")
+                            for k in script["translation"]["fallback_keys"]))
+        arrival = script["scenes"][0]
+        self.assertIn("sans traduction française", arrival["stakes"])
+
+    def test_cli_ecowas_fr(self):
+        import vhdemo
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "ecowas.md")
+            rc = vhdemo.main(["--seed", "42", "--audience", "ecowas",
+                              "--lang", "fr", "--out", out])
+            self.assertEqual(rc, 0)
+            self.assertIn("Dispositif VHC", open(out).read())
+
+
 if __name__ == "__main__":
     unittest.main()
