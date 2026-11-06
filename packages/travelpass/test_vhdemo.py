@@ -283,5 +283,96 @@ class TestCaboVerde(unittest.TestCase):
             self.assertIn("$", md)
 
 
+class TestPortugueseLayer(unittest.TestCase):
+    """The PT presenter layer: translated points, stated fallbacks,
+    coverage with denominators — never a silently half-translated deck."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.narrative = seed_pilot(seed=42)["narrative"]
+
+    def test_full_pt_coverage_no_fallbacks(self):
+        script = build_walkthrough(self.narrative, audience="cabo-verde",
+                                   lang="pt")
+        tr = script["translation"]
+        self.assertEqual(tr["translated"], tr["total"])
+        self.assertEqual(tr["fallback_keys"], [])
+
+    def test_pt_numbers_identical_to_en(self):
+        en = build_walkthrough(self.narrative, audience="cabo-verde",
+                               currency_symbol="cve")
+        pt = build_walkthrough(self.narrative, audience="cabo-verde",
+                               currency_symbol="cve", lang="pt")
+        n = self.narrative
+        for needle in (str(n["arrivals"]), str(n["covers"]),
+                       str(n["claims"]), f"{n['loss_ratio']:.4f}",
+                       "1.026.842$81"):
+            en_text = " ".join(tp for s in en["scenes"]
+                               for tp in s["talking_points"])
+            pt_text = " ".join(tp for s in pt["scenes"]
+                               for tp in s["talking_points"])
+            self.assertIn(needle, en_text)
+            self.assertIn(needle, pt_text)
+
+    def test_pt_frames_and_stakes_translated(self):
+        script = build_walkthrough(self.narrative, audience="cabo-verde",
+                                   lang="pt")
+        rescue = next(s for s in script["scenes"] if s["scene"] == "rescue")
+        self.assertIn("quadro de evacuações", rescue["surface"])
+        self.assertTrue(rescue["audience_question"].endswith("?"))
+        self.assertIn("nove ilhas habitadas", rescue["stakes"])
+
+    def test_missing_pt_key_falls_back_stated_and_counted(self):
+        import vhdemo
+        key = "proof.suites"
+        saved = vhdemo.PT_TEMPLATES.pop(key)
+        try:
+            script = build_walkthrough(self.narrative, lang="pt")
+            tr = script["translation"]
+            self.assertIn(key, tr["fallback_keys"])
+            self.assertEqual(tr["translated"], tr["total"] - 1)
+            proof = next(s for s in script["scenes"] if s["scene"] == "proof")
+            fallen = proof["talking_points"][
+                proof["talking_point_keys"].index(key)]
+            self.assertIn("sem tradução em português", fallen)
+            self.assertIn("declarado", fallen)
+        finally:
+            vhdemo.PT_TEMPLATES[key] = saved
+
+    def test_unknown_lang_refused(self):
+        with self.assertRaises(ValueError):
+            build_walkthrough(self.narrative, lang="de")
+
+    def test_pt_markdown_labels_and_coverage_line(self):
+        md = render_markdown(build_walkthrough(self.narrative,
+                                               audience="cabo-verde",
+                                               lang="pt"))
+        self.assertIn("# Esquema VHC — apresentação cabo-verde", md)
+        self.assertIn("**Posicione-se em:**", md)
+        self.assertIn("**Porque esta sala se importa:**", md)
+        self.assertIn("cobertura de tradução:", md)
+        self.assertIn("recuos declarados: 0", md)
+
+    def test_en_script_has_no_pt_markers(self):
+        md = render_markdown(build_walkthrough(self.narrative))
+        self.assertNotIn("Posicione-se", md)
+        self.assertNotIn("cobertura de tradução", md)
+
+    def test_cli_lang_pt(self):
+        import vhdemo
+        with tempfile.TemporaryDirectory() as td:
+            out = os.path.join(td, "cv-pt.md")
+            rc = vhdemo.main(["--seed", "42", "--audience", "cabo-verde",
+                              "--currency", "cve", "--lang", "pt",
+                              "--out", out])
+            self.assertEqual(rc, 0)
+            self.assertIn("Esquema VHC", open(out).read())
+
+    def test_pt_disclaimer_translated(self):
+        script = build_walkthrough(self.narrative, lang="pt")
+        self.assertIn("sintéticos", script["disclaimer"])
+        self.assertIn("Pax-NNNN", script["disclaimer"])
+
+
 if __name__ == "__main__":
     unittest.main()

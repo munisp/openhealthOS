@@ -18,9 +18,11 @@ SEED="${VHC_DEMO_SEED:-42}"
 DAYS="${VHC_DEMO_DAYS:-14}"
 CURRENCY="${VHC_DEMO_CURRENCY:-€}"
 AUDIENCE="${VHC_DEMO_AUDIENCE:-ministry}"
+LANG="${VHC_DEMO_LANG:-en}"
 OUT="${VHC_DEMO_OUT:-docs/demo/ministry-walkthrough.md}"
 
 python3 -m vhdemo --seed "$SEED" --days "$DAYS" \
-  --currency "$CURRENCY" --audience "$AUDIENCE" --out "$OUT" "$@"
+  --currency "$CURRENCY" --audience "$AUDIENCE" --lang "$LANG" \
+  --out "$OUT" "$@"
 
 echo "== walkthrough complete =="

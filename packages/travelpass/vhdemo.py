@@ -53,124 +53,177 @@ def _fmt_cve(eur_minor: int) -> str:
 
 def _scene_arrival(n, currency_symbol):
     return [
-        f"DAY ONE, LANE THREE. {n['arrivals']} travellers arrive over "
-        f"{n['days']} days — every one synthetic (Pax-NNNN, SIM-NNNN; "
-        "this demo maps to no person, and the registry can prove it).",
-        f"Each buys or carries cover: {n['covers']} covers issued, of "
-        f"which {n['exempt']} are lawful exemptions — a diplomat and a "
-        "transit passenger are not revenue, and the system never treats "
-        "them as such.",
-        "Point at the QR on the officer's screen: compact JWS, signed by "
-        "the HSM-held key, verifiable offline for 72 hours. A stale "
-        "cache shows RED, not a silent pass.",
+        ("arrival.volume",
+         f"DAY ONE, LANE THREE. {n['arrivals']} travellers arrive over "
+         f"{n['days']} days — every one synthetic (Pax-NNNN, SIM-NNNN; "
+         "this demo maps to no person, and the registry can prove it).",
+         {"arrivals": n["arrivals"], "days": n["days"]}),
+        ("arrival.covers",
+         f"Each buys or carries cover: {n['covers']} covers issued, of "
+         f"which {n['exempt']} are lawful exemptions — a diplomat and a "
+         "transit passenger are not revenue, and the system never treats "
+         "them as such.",
+         {"covers": n["covers"], "exempt": n["exempt"]}),
+        ("arrival.qr",
+         "Point at the QR on the officer's screen: compact JWS, signed by "
+         "the HSM-held key, verifiable offline for 72 hours. A stale "
+         "cache shows RED, not a silent pass.",
+         {}),
     ]
 
 
 def _scene_verdict(n, currency_symbol):
     v = n["verdicts"]
     return [
-        "THE VERDICT IS A DECISION, NOT A VIBE. Every scan returns "
-        "green, amber, or red with a *named reason* and a named officer "
-        "action — admit, desk, or supervisor.",
-        f"In this fortnight: {v.get('green', 0)} green, "
-        f"{v.get('amber', 0)} amber (desk lookup, resolve on the spot), "
-        f"{v.get('red', 0)} red. Denominators on screen, always.",
-        "The officer never sees a raw passport number — the desk lookup "
-        "works from the cover reference.",
+        ("verdict.decision",
+         "THE VERDICT IS A DECISION, NOT A VIBE. Every scan returns "
+         "green, amber, or red with a *named reason* and a named officer "
+         "action — admit, desk, or supervisor.",
+         {}),
+        ("verdict.fortnight",
+         f"In this fortnight: {v.get('green', 0)} green, "
+         f"{v.get('amber', 0)} amber (desk lookup, resolve on the spot), "
+         f"{v.get('red', 0)} red. Denominators on screen, always.",
+         {"green": v.get("green", 0), "amber": v.get("amber", 0),
+          "red": v.get("red", 0)}),
+        ("verdict.privacy",
+         "The officer never sees a raw passport number — the desk lookup "
+         "works from the cover reference.",
+         {}),
     ]
 
 
 def _scene_money(n, currency_symbol):
     sym = currency_symbol
+    premium = _fmt_minor(n["premium_collected_minor"], sym)
     return [
-        "FOLLOW THE MONEY — ALL FIVE MONIES. Premium collected: "
-        f"{_fmt_minor(n['premium_collected_minor'], sym)}. It splits at "
-        "the moment of sale into reserve, claims, ops, surveillance, and "
-        "administration buckets per the versioned country profile — a "
-        "rule that cannot be traced to a table is a bribe with a receipt.",
-        f"Channel mix: {n['partner_sales']} sales came through the "
-        f"partner API, {n['groups']} group manifests (airline, tour "
-        "operator) — all-or-nothing, priced per head.",
-        f"Duplicate charges refund themselves: {n['auto_refunds']} "
-        "auto-refunds this fortnight, first charge kept, the rest "
-        "returned inside the window.",
-        f"Settlement reconciles daily: {n['settlement_breaches']} "
-        "breaches against the 1000 ppm break tolerance. Zero is the "
-        "expected answer, and the report says the denominator.",
+        ("money.five",
+         "FOLLOW THE MONEY — ALL FIVE MONIES. Premium collected: "
+         f"{premium}. It splits at "
+         "the moment of sale into reserve, claims, ops, surveillance, and "
+         "administration buckets per the versioned country profile — a "
+         "rule that cannot be traced to a table is a bribe with a receipt.",
+         {"premium": premium}),
+        ("money.channel",
+         f"Channel mix: {n['partner_sales']} sales came through the "
+         f"partner API, {n['groups']} group manifests (airline, tour "
+         "operator) — all-or-nothing, priced per head.",
+         {"partner_sales": n["partner_sales"], "groups": n["groups"]}),
+        ("money.refunds",
+         f"Duplicate charges refund themselves: {n['auto_refunds']} "
+         "auto-refunds this fortnight, first charge kept, the rest "
+         "returned inside the window.",
+         {"auto_refunds": n["auto_refunds"]}),
+        ("money.settlement",
+         f"Settlement reconciles daily: {n['settlement_breaches']} "
+         "breaches against the 1000 ppm break tolerance. Zero is the "
+         "expected answer, and the report says the denominator.",
+         {"settlement_breaches": n["settlement_breaches"]}),
     ]
 
 
 def _scene_care(n, currency_symbol):
+    paid = _fmt_minor(n["claims_paid_minor"], currency_symbol)
+    loss = f"{n['loss_ratio']:.4f}"
     return [
-        "WHEN SOMEONE GETS SICK. A traveller walks into an accredited "
-        "clinic; the provider portal sees only its own cases.",
-        f"{n['claims']} claims this fortnight. The clock that matters: "
-        "GOP inside 2 hours of intake — the guarantee of payment is what "
-        "gets the traveller treated without a credit card on a gurney.",
-        f"Adjudicated against the four-eyes tariff book; paid "
-        f"{_fmt_minor(n['claims_paid_minor'], currency_symbol)}. Loss "
-        f"ratio {n['loss_ratio']:.4f} — the actuarial mart reads the "
-        "same registries, so finance and operations never argue about "
-        "whose number is real.",
+        ("care.sick",
+         "WHEN SOMEONE GETS SICK. A traveller walks into an accredited "
+         "clinic; the provider portal sees only its own cases.",
+         {}),
+        ("care.clock",
+         f"{n['claims']} claims this fortnight. The clock that matters: "
+         "GOP inside 2 hours of intake — the guarantee of payment is what "
+         "gets the traveller treated without a credit card on a gurney.",
+         {"claims": n["claims"]}),
+        ("care.adjudicated",
+         f"Adjudicated against the four-eyes tariff book; paid "
+         f"{paid}. Loss "
+         f"ratio {loss} — the actuarial mart reads the "
+         "same registries, so finance and operations never argue about "
+         "whose number is real.",
+         {"paid": paid, "loss_ratio": loss}),
     ]
 
 
 def _scene_rescue(n, currency_symbol):
     return [
-        "THE WORST DAY. A medevac request: approve, dispatch inside the "
-        f"2-hour clock, arrive, close. This fortnight: {n['medevacs']} "
-        "medevac(s).",
-        "If an *uninsured* traveller needs rescue, the scheme does not "
-        "let them die at the border of a spreadsheet: the uninsured fund "
-        "posts the cost, and subrogation pursues recovery afterwards — "
-        "bounded by what is actually outstanding, never a blank cheque.",
+        ("rescue.worst",
+         "THE WORST DAY. A medevac request: approve, dispatch inside the "
+         f"2-hour clock, arrive, close. This fortnight: {n['medevacs']} "
+         "medevac(s).",
+         {"medevacs": n["medevacs"]}),
+        ("rescue.uninsured",
+         "If an *uninsured* traveller needs rescue, the scheme does not "
+         "let them die at the border of a spreadsheet: the uninsured fund "
+         "posts the cost, and subrogation pursues recovery afterwards — "
+         "bounded by what is actually outstanding, never a blank cheque.",
+         {}),
     ]
 
 
 def _scene_surveillance(n, currency_symbol):
+    ack = "yes" if n["br10_all_acknowledged"] else "NO — STOP THE DEMO"
     return [
-        "THE SYSTEM WATCHES ITSELF. Every incident is pseudonymized at "
-        "registration — salted hash, no reversible identity in the "
-        "registry. Synthetic here, protected in production.",
-        f"BR-10: five GI cases in one facility in one week trips an "
-        f"alert. This fortnight: {n['br10_alerts']} alert(s), "
-        f"acknowledged: {'yes' if n['br10_all_acknowledged'] else 'NO — STOP THE DEMO'}. "
-        "An unacknowledged alert is a finding, not a statistic.",
-        "The IHR/UKHSA/ECDC export pack carries a SHA-256 — the "
-        "checksum is the contract — and k-floor 5 suppression means "
-        "small cells never leak a person. Pack hash: "
-        f"{n['export_pack_sha256'][:16]}…",
+        ("surveillance.watches",
+         "THE SYSTEM WATCHES ITSELF. Every incident is pseudonymized at "
+         "registration — salted hash, no reversible identity in the "
+         "registry. Synthetic here, protected in production.",
+         {}),
+        ("surveillance.br10",
+         f"BR-10: five GI cases in one facility in one week trips an "
+         f"alert. This fortnight: {n['br10_alerts']} alert(s), "
+         f"acknowledged: {ack}. "
+         "An unacknowledged alert is a finding, not a statistic.",
+         {"br10_alerts": n["br10_alerts"], "ack": ack}),
+        ("surveillance.export",
+         "The IHR/UKHSA/ECDC export pack carries a SHA-256 — the "
+         "checksum is the contract — and k-floor 5 suppression means "
+         "small cells never leak a person. Pack hash: "
+         f"{n['export_pack_sha256'][:16]}…",
+         {"pack_hash": n["export_pack_sha256"][:16]}),
     ]
 
 
 def _scene_oversight(n, currency_symbol):
     sla = n["helpdesk_sla"]
     return [
-        "WHO ANSWERS THE PHONE. Travellers get a 24/7 helpdesk with "
-        "content in their language; a missing translation falls back "
-        "*with the fallback stated* — nobody silently signs a waiver "
-        "they cannot read.",
-        f"{n['tickets']} tickets this fortnight; first-response SLA "
-        f"compliance {sla}. A late response is a named breach with an "
-        "owner, not a shrug.",
-        "Every ops clock — GOP 2h, adjudication 10d, payment 30d, "
-        "appeal 5d, dispatch 2h, recon daily — has a named owner and a "
-        "visible denominator. The dashboards read the reports, not vibes.",
+        ("oversight.phone",
+         "WHO ANSWERS THE PHONE. Travellers get a 24/7 helpdesk with "
+         "content in their language; a missing translation falls back "
+         "*with the fallback stated* — nobody silently signs a waiver "
+         "they cannot read.",
+         {}),
+        ("oversight.sla",
+         f"{n['tickets']} tickets this fortnight; first-response SLA "
+         f"compliance {sla}. A late response is a named breach with an "
+         "owner, not a shrug.",
+         {"tickets": n["tickets"], "sla": sla}),
+        ("oversight.clocks",
+         "Every ops clock — GOP 2h, adjudication 10d, payment 30d, "
+         "appeal 5d, dispatch 2h, recon daily — has a named owner and a "
+         "visible denominator. The dashboards read the reports, not vibes.",
+         {}),
     ]
 
 
 def _scene_proof(n, currency_symbol):
     return [
-        "WHY YOU CAN BELIEVE ANY OF THIS. This entire fortnight is one "
-        f"function call: seed_pilot(seed={n['seed']}). Same seed, same "
-        "pilot, byte for byte — a demo you cannot reproduce is a story "
-        "you cannot audit.",
-        "Every claim made on these slides is backed by a module with "
-        "its own test suite; the platform runs its full suite on the "
-        "deployment tag before a gate flips.",
-        "What is still environment, and we say so honestly: the live "
-        "PSP contract, the HSM ceremony, and the lane kit are proven in "
-        "the go-live gates G0–G5, not in this demo.",
+        ("proof.believe",
+         "WHY YOU CAN BELIEVE ANY OF THIS. This entire fortnight is one "
+         f"function call: seed_pilot(seed={n['seed']}). Same seed, same "
+         "pilot, byte for byte — a demo you cannot reproduce is a story "
+         "you cannot audit.",
+         {"seed": n["seed"]}),
+        ("proof.suites",
+         "Every claim made on these slides is backed by a module with "
+         "its own test suite; the platform runs its full suite on the "
+         "deployment tag before a gate flips.",
+         {}),
+        ("proof.environment",
+         "What is still environment, and we say so honestly: the live "
+         "PSP contract, the HSM ceremony, and the lane kit are proven in "
+         "the go-live gates G0–G5, not in this demo.",
+         {}),
     ]
 
 
@@ -180,6 +233,179 @@ _BUILDERS = {
     "surveillance": _scene_surveillance, "oversight": _scene_oversight,
     "proof": _scene_proof,
 }
+
+# --- presenter languages ------------------------------------------------
+# The walkthrough speaks English and Portuguese (Cabo Verde). A point
+# without a PT template is NOT silently shipped in English inside a
+# Portuguese deck: it falls back *with the fallback stated* and named in
+# the coverage report. Denominators always visible.
+
+PRESENTER_LANGS = ("en", "pt")
+
+PT_TEMPLATES = {
+    "arrival.volume":
+        "DIA UM, CORREDOR TRÊS. {arrivals} viajantes chegam ao longo de "
+        "{days} dias — todos sintéticos (Pax-NNNN, SIM-NNNN; esta "
+        "demonstração não corresponde a nenhuma pessoa, e o registo "
+        "consegue prová-lo).",
+    "arrival.covers":
+        "Cada um compra ou traz cobertura: {covers} coberturas emitidas, "
+        "das quais {exempt} são isenções legais — um diplomata e um "
+        "passageiro em trânsito não são receita, e o sistema nunca os "
+        "trata como tal.",
+    "arrival.qr":
+        "Aponte para o QR no ecrã do funcionário: JWS compacto, assinado "
+        "pela chave guardada no HSM, verificável offline durante 72 "
+        "horas. Uma cache expirada mostra VERMELHO, não um passe "
+        "silencioso.",
+    "verdict.decision":
+        "O VEREDITO É UMA DECISÃO, NÃO UMA INTUIÇÃO. Cada leitura devolve "
+        "verde, âmbar ou vermelho com um *motivo nomeado* e uma ação "
+        "nomeada do funcionário — admitir, balcão ou supervisor.",
+    "verdict.fortnight":
+        "Nesta quinzena: {green} verdes, {amber} âmbar (consulta ao "
+        "balcão, resolvido no momento), {red} vermelhos. Denominadores "
+        "no ecrã, sempre.",
+    "verdict.privacy":
+        "O funcionário nunca vê um número de passaporte em claro — a "
+        "consulta ao balcão funciona a partir da referência da cobertura.",
+    "money.five":
+        "SIGA O DINHEIRO — AS CINCO VERBAS. Prémio cobrado: {premium}. "
+        "Divide-se no momento da venda em dotações de reserva, sinistros, "
+        "operações, vigilância e administração conforme o perfil de país "
+        "versionado — uma regra que não pode ser rastreada até uma tabela "
+        "é um suborno com recibo.",
+    "money.channel":
+        "Mistura de canais: {partner_sales} vendas pela API de "
+        "parceiros, {groups} manifestos de grupo (companhia aérea, "
+        "operador turístico) — tudo-ou-nada, com preço por pessoa.",
+    "money.refunds":
+        "Cobranças duplicadas reembolsam-se a si próprias: "
+        "{auto_refunds} reembolsos automáticos nesta quinzena; a "
+        "primeira cobrança fica, as restantes voltam dentro da janela.",
+    "money.settlement":
+        "A liquidação reconcilia diariamente: {settlement_breaches} "
+        "quebras contra a tolerância de 1000 ppm. Zero é a resposta "
+        "esperada, e o relatório mostra o denominador.",
+    "care.sick":
+        "QUANDO ALGUÉM ADOECE. Um viajante entra numa clínica "
+        "credenciada; o portal do prestador vê apenas os seus próprios "
+        "casos.",
+    "care.clock":
+        "{claims} sinistros nesta quinzena. O relógio que importa: GOP "
+        "dentro de 2 horas após a admissão — a garantia de pagamento é "
+        "o que faz o viajante ser tratado sem cartão de crédito numa "
+        "maca.",
+    "care.adjudicated":
+        "Adjudicado contra a tabela de tarifas a quatro olhos; pago "
+        "{paid}. Rácio de sinistralidade {loss_ratio} — o mart atuarial "
+        "lê os mesmos registos, por isso finanças e operações nunca "
+        "discutem sobre qual número é real.",
+    "rescue.worst":
+        "O PIOR DIA. Um pedido de evacuação médica: aprovar, despachar "
+        "dentro do relógio de 2 horas, chegar, encerrar. Nesta "
+        "quinzena: {medevacs} evacuação(ões).",
+    "rescue.uninsured":
+        "Se um viajante *sem seguro* precisar de resgate, o esquema não "
+        "o deixa morrer na fronteira de uma folha de cálculo: o fundo "
+        "de não segurados regista o custo e a sub-rogação procura a "
+        "recuperação depois — limitada ao que está realmente em dívida, "
+        "nunca um cheque em branco.",
+    "surveillance.watches":
+        "O SISTEMA VIGIA-SE A SI PRÓPRIO. Cada incidente é pseudonimizado "
+        "no registo — hash com sal, sem identidade reversível no registo. "
+        "Sintético aqui, protegido em produção.",
+    "surveillance.br10":
+        "BR-10: cinco casos GI numa unidade numa semana disparam um "
+        "alerta. Nesta quinzena: {br10_alerts} alerta(s), reconhecido: "
+        "{ack}. Um alerta não reconhecido é uma constatação, não uma "
+        "estatística.",
+    "surveillance.export":
+        "O pacote de exportação IHR/UKHSA/ECDC traz um SHA-256 — o "
+        "checksum é o contrato — e a supressão com limiar k=5 garante "
+        "que células pequenas nunca revelam uma pessoa. Hash do pacote: "
+        "{pack_hash}…",
+    "oversight.phone":
+        "QUEM ATENDE O TELEFONE. Os viajantes têm um balcão de apoio "
+        "24/7 com conteúdo na sua língua; uma tradução em falta recua "
+        "*com o recuo declarado* — ninguém assina silenciosamente um "
+        "termo que não consegue ler.",
+    "oversight.sla":
+        "{tickets} tickets nesta quinzena; cumprimento do SLA de "
+        "primeira resposta {sla}. Uma resposta atrasada é uma quebra "
+        "nomeada com um responsável, não um encolher de ombros.",
+    "oversight.clocks":
+        "Cada relógio operacional — GOP 2h, adjudicação 10d, pagamento "
+        "30d, recurso 5d, despacho 2h, reconciliação diária — tem um "
+        "responsável nomeado e um denominador visível. Os painéis leem "
+        "os relatórios, não impressões.",
+    "proof.believe":
+        "PORQUE PODE ACREDITAR NISTO. Toda esta quinzena é uma chamada "
+        "de função: seed_pilot(seed={seed}). Mesma semente, mesmo piloto, "
+        "byte a byte — uma demonstração que não se consegue reproduzir "
+        "é uma história que não se consegue auditar.",
+    "proof.suites":
+        "Cada afirmação nestes slides é sustentada por um módulo com a "
+        "sua própria bateria de testes; a plataforma corre a bateria "
+        "completa na etiqueta de implantação antes de um portão virar.",
+    "proof.environment":
+        "O que ainda é ambiente, e dizemo-lo com honestidade: o contrato "
+        "PSP ao vivo, a cerimónia HSM e o kit de corredor provam-se nos "
+        "portões de entrada em produção G0–G5, não nesta demonstração.",
+}
+
+# Scene frames in PT: surfaces, silent questions, and the cabo-verde
+# stakes. Keyed by scene id so a scene builder change never invalidates
+# a translation silently — a missing key falls back, stated.
+PT_FRAMES = {
+    "surface": {
+        "arrival": "consola do corredor fronteiriço — vista do funcionário",
+        "verdict": "consola do corredor fronteiriço — ecrã de veredito",
+        "money": "painel financeiro — dotações do fundo + reconciliação",
+        "care": "portal do prestador + bancada de sinistros",
+        "rescue": "consola de assistência — quadro de evacuações",
+        "surveillance": "registo de saúde pública — lista de alertas BR-10",
+        "oversight": "consola de apoio + painel de relógios operacionais",
+        "proof": "o terminal — um comando, uma semente",
+    },
+    "question": {
+        "arrival": "quem são estas pessoas e o sistema conhece-as?",
+        "verdict": "o que impede um QR falso no corredor?",
+        "money": "para onde vai o dinheiro e quem lhe pode mexer?",
+        "care": "um viajante doente é mesmo tratado?",
+        "rescue": "o que acontece no pior dia?",
+        "surveillance": "o ministério saberia antes do surto?",
+        "oversight": "quem responde quando o relógio falha?",
+        "proof": "porque havemos de acreditar nisto?",
+    },
+}
+
+PT_STAKES_CV = {
+    "arrival": "O turismo é a economia: cada chegada pelo Sal, Praia ou "
+               "São Vicente é receita coberta e uma obrigação de saúde "
+               "no mesmo balcão.",
+    "verdict": "O corredor no Amílcar Cabral é a fronteira: um QR que se "
+               "verifica offline durante 72 horas sobrevive à rede "
+               "inter-ilhas melhor do que qualquer sistema sempre-online.",
+    "rescue": "Em nove ilhas habitadas, o pior dia é uma evacuação "
+              "inter-ilhas — asa fixa, helicóptero ou barco — e o "
+              "relógio de despacho de 2 horas é a promessa que importa.",
+    "money": "O tesouro pergunta onde estão os escudos: cinco dotações, "
+             "uma divisão versionada e um ficheiro de liquidação que "
+             "reconcilia diariamente contra o PSP.",
+    "care": "Um visitante adoece em Santo Antão; o GOP dentro de 2 horas "
+            "é o que o faz ser tratado antes da decisão do ferry.",
+    "surveillance": "A saúde portuária é saúde nacional: cinco casos GI "
+                    "numa unidade numa semana são um sinal relevante para "
+                    "o RSI com pacote de exportação, não um boato.",
+    "oversight": "Os visitantes precisam de ajuda em PT, EN, FR, DE, NL — "
+                 "uma tradução em falta recua com o recuo declarado, "
+                 "nunca em silêncio.",
+    "proof": "A quinzena piloto volta a correr de uma só semente em "
+             "frente ao ministério — uma demonstração que não se consegue "
+             "reproduzir é uma história que não se consegue auditar.",
+}
+
 
 # --- audiences ---------------------------------------------------------
 # The engine is audience-agnostic exactly as it is country-agnostic: the
@@ -285,17 +511,22 @@ _QUESTIONS = {
 
 
 def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
-                      audience: str = "ministry") -> dict:
+                      audience: str = "ministry", lang: str = "en") -> dict:
     """Generate the presenter script from a pilot narrative.
 
     Every number in every line comes from `narrative`. The function
     refuses a narrative missing keys the script needs — a demo with an
     improvised number is worse than no demo. The audience chooses the
-    arc (scene order and framing), never the numbers.
+    arc (scene order and framing), never the numbers. The language
+    chooses the words; a point without a translation falls back to
+    English *with the fallback stated and counted* — never silently.
     """
     if audience not in AUDIENCE_ARCS:
         raise ValueError(f"unknown audience {audience!r}; "
                          f"audiences are {tuple(AUDIENCE_ARCS)}")
+    if lang not in PRESENTER_LANGS:
+        raise ValueError(f"unknown presenter language {lang!r}; "
+                         f"languages are {PRESENTER_LANGS}")
     if currency_symbol.lower() in ("cve", "cve$", "escudo"):
         currency_symbol = "CVE"
     required = {"arrivals", "covers", "exempt", "verdicts", "groups",
@@ -310,44 +541,108 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
                          "the script reads the narrative, it does not improvise")
 
     stakes = _AUDIENCE_STAKES.get(audience, {})
+    translated = 0
+    total_points = 0
+    fallback_keys = []
+
+    def _pt(key, values, en_text):
+        """Resolve one point in PT; a miss is a stated fallback, counted."""
+        nonlocal translated, total_points
+        total_points += 1
+        if lang == "pt":
+            tpl = PT_TEMPLATES.get(key)
+            if tpl is not None:
+                translated += 1
+                return tpl.format(**values)
+            fallback_keys.append(key)
+            return en_text + "  _(sem tradução em português — apresentado " \
+                             "em inglês, declarado)_"
+        return en_text
+
     scenes = []
     for sid in AUDIENCE_ARCS[audience]:
+        points = _BUILDERS[sid](narrative, currency_symbol)
+        keys = [k for k, _, _ in points]
+        texts = [_pt(k, vals, text) for k, text, vals in points]
+        if lang == "pt":
+            surface = PT_FRAMES["surface"].get(sid, _SURFACES[sid])
+            question = PT_FRAMES["question"].get(sid, _QUESTIONS[sid])
+        else:
+            surface, question = _SURFACES[sid], _QUESTIONS[sid]
         scene = {
             "scene": sid,
-            "surface": _SURFACES[sid],
-            "audience_question": _QUESTIONS[sid],
-            "talking_points": _BUILDERS[sid](narrative, currency_symbol),
+            "surface": surface,
+            "audience_question": question,
+            "talking_points": texts,
+            "talking_point_keys": keys,
         }
         if sid in stakes:
-            scene["stakes"] = stakes[sid]
+            if lang == "pt":
+                pt_stake = PT_STAKES_CV.get(sid) if audience == "cabo-verde" \
+                    else None
+                if pt_stake is not None:
+                    scene["stakes"] = pt_stake
+                else:
+                    fallback_keys.append(f"stakes.{audience}.{sid}")
+                    scene["stakes"] = stakes[sid] + \
+                        "  _(sem tradução em português — declarado)_"
+            else:
+                scene["stakes"] = stakes[sid]
         scenes.append(scene)
     return {
         "version": DEMO_VERSION,
         "pilot_version": narrative["version"],
         "seed": narrative["seed"],
         "audience": audience,
+        "lang": lang,
         "scenes": scenes,
-        "disclaimer": ("All travellers, passports, providers and money in "
-                       "this walkthrough are synthetic (Pax-NNNN / SIM-NNNN). "
-                       "The demonstration maps to no person."),
+        "translation": {"lang": lang, "translated": translated,
+                        "total": total_points,
+                        "fallback_keys": fallback_keys},
+        "disclaimer": (("Todos os viajantes, passaportes, prestadores e "
+                        "valores nesta apresentação são sintéticos "
+                        "(Pax-NNNN / SIM-NNNN). A demonstração não "
+                        "corresponde a nenhuma pessoa.")
+                       if lang == "pt" else
+                       ("All travellers, passports, providers and money in "
+                        "this walkthrough are synthetic (Pax-NNNN / SIM-NNNN). "
+                        "The demonstration maps to no person.")),
     }
 
 
 def render_markdown(walkthrough: dict) -> str:
     """Render the script as a presenter-ready Markdown run-of-show."""
-    lines = [f"# VHC scheme — {walkthrough.get('audience', 'ministry')} walkthrough",
+    pt = walkthrough.get("lang") == "pt"
+    labels = {"stand_on": "Posicione-se em",
+              "asking": "A pergunta silenciosa",
+              "stakes": "Porque esta sala se importa",
+              "scene": "Cena"} if pt else \
+             {"stand_on": "Stand on",
+              "asking": "They are silently asking",
+              "stakes": "Why this room cares",
+              "scene": "Scene"}
+    title = (f"# Esquema VHC — apresentação {walkthrough.get('audience', 'ministry')}"
+             if pt else
+             f"# VHC scheme — {walkthrough.get('audience', 'ministry')} walkthrough")
+    lines = [title,
              f"",
              f"_{walkthrough['disclaimer']}_",
              f"",
              f"pilot `{walkthrough['pilot_version']}` · seed "
              f"`{walkthrough['seed']}` · script `{walkthrough['version']}`",
              ""]
+    tr = walkthrough.get("translation")
+    if tr and tr["lang"] == "pt":
+        lines.append(f"_cobertura de tradução: {tr['translated']} de "
+                     f"{tr['total']} pontos em português; recuos "
+                     f"declarados: {len(tr['fallback_keys'])}_")
+        lines.append("")
     for i, s in enumerate(walkthrough["scenes"], 1):
-        lines.append(f"## Scene {i}: {s['scene']}")
-        lines.append(f"**Stand on:** {s['surface']}")
-        lines.append(f"**They are silently asking:** {s['audience_question']}")
+        lines.append(f"## {labels['scene']} {i}: {s['scene']}")
+        lines.append(f"**{labels['stand_on']}:** {s['surface']}")
+        lines.append(f"**{labels['asking']}:** {s['audience_question']}")
         if "stakes" in s:
-            lines.append(f"**Why this room cares:** {s['stakes']}")
+            lines.append(f"**{labels['stakes']}:** {s['stakes']}")
         lines.append("")
         for tp in s["talking_points"]:
             lines.append(f"- {tp}")
@@ -374,6 +669,8 @@ def main(argv=None) -> int:
     ap.add_argument("--audience", default="ministry",
                     choices=sorted(AUDIENCE_ARCS),
                     help="ministry of health or campus (university council)")
+    ap.add_argument("--lang", default="en", choices=PRESENTER_LANGS,
+                    help="presenter language; pt falls back to en, stated")
     ap.add_argument("--out", default=None,
                     help="write the Markdown run-of-show here")
     ap.add_argument("--json", action="store_true",
@@ -383,7 +680,7 @@ def main(argv=None) -> int:
     from vhpilot import seed_pilot  # late import: needs the sys.path
     narrative = seed_pilot(seed=args.seed, days=args.days)["narrative"]
     script = build_walkthrough(narrative, currency_symbol=args.currency,
-                               audience=args.audience)
+                               audience=args.audience, lang=args.lang)
 
     # You do not present past a red finding.
     red = []
