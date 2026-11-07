@@ -85,15 +85,26 @@ class PartnerRegistry:
         self.idem = {}         # (partner_id, idem_key) -> cover ref
         self.audit = []
 
-    def register(self, partner_id, *, legal_name, api_key, day):
+    def register(self, partner_id, *, legal_name, api_key, day,
+                 quota_per_day=None, burst_per_minute=None):
         if not partner_id or not legal_name or not api_key:
             _refuse("a partner names itself and presents a key")
         if partner_id in self.partners:
             _refuse("duplicate partner id")
+        # Abuse controls are registry entries, not middleware vibes:
+        # quota_per_day caps volume; burst_per_minute caps velocity.
+        # None means unbounded — stated at registration, in the audit.
+        for q in (quota_per_day, burst_per_minute):
+            if q is not None and (not isinstance(q, int) or q < 1):
+                _refuse("a quota is a positive integer of attempts")
         self.partners[partner_id] = {
             "partner_id": partner_id, "legal_name": legal_name,
             "key_sha256": hashlib.sha256(api_key.encode()).hexdigest(),
             "state": "active", "registered_day": day,
+            "quota_per_day": quota_per_day,
+            "burst_per_minute": burst_per_minute,
+            "_day": None, "_day_count": 0, "_minute": None,
+            "_minute_count": 0,
             "sales": 0, "gross_minor": 0}
         self.audit.append({"event": "partner_registered",
                            "partner": partner_id, "day": day})
@@ -117,6 +128,33 @@ class PartnerRegistry:
         if hashlib.sha256(api_key.encode()).hexdigest() != \
                 p["key_sha256"]:
             _refuse("bad key — the attempt is audited")
+        return p
+
+    def check_abuse_controls(self, partner_id, *, day, minute=None):
+        """Velocity + volume gates. Exceeding either refuses loudly —
+        a throttled partner is an audit event, not a silent 429."""
+        p = self._partner(partner_id)
+        if p["_day"] != day:
+            p["_day"], p["_day_count"] = day, 0
+        if minute is not None and p["_minute"] != minute:
+            p["_minute"], p["_minute_count"] = minute, 0
+        q = p["quota_per_day"]
+        if q is not None and p["_day_count"] >= q:
+            self.audit.append({"event": "partner_quota_refused",
+                               "partner": partner_id, "day": day,
+                               "quota": q})
+            _refuse(f"daily quota {q} reached — the throttle is stated, "
+                    "not silent")
+        b = p["burst_per_minute"]
+        if b is not None and minute is not None \
+                and p["_minute_count"] >= b:
+            self.audit.append({"event": "partner_burst_refused",
+                               "partner": partner_id, "day": day,
+                               "minute": minute, "burst": b})
+            _refuse(f"burst limit {b}/min reached — velocity is governed")
+        p["_day_count"] += 1
+        if minute is not None:
+            p["_minute_count"] += 1
         return p
 
     def quote_for(self, vhc, partner_id, api_key, *, days, age_years,

@@ -30,6 +30,17 @@ NOTIFY_RULES = {
                    "claim-status", "gop-issued", "refund-issued"),
         "pre_travel_days": 7,          # reminder a week out
     },
+    # 1.1.0 adds the prevention-campaign trigger (vhseason). Rules are
+    # versioned, never mutated — 1.0.0 stays byte-stable.
+    "vhc-notify@1.1.0": {
+        "channels": ("email", "sms", "whatsapp", "push"),
+        "events": ("purchase-confirmation", "pre-travel-reminder",
+                   "expiry-warning", "extension-nudge",
+                   "courtesy-issued", "courtesy-conversion",
+                   "claim-status", "gop-issued", "refund-issued",
+                   "prevention-campaign"),
+        "pre_travel_days": 7,
+    },
 }
 
 

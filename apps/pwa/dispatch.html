@@ -142,5 +142,6 @@ setInterval(() => { document.getElementById("clock").textContent = new Date().to
 refreshLists();
 setInterval(refreshLists, 15000);
 </script>
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw-vhc.js").catch(()=>{});}</script>
 </body>
 </html>

@@ -16,6 +16,19 @@ export const CURRENCIES = {
   EUR: { code: "EUR", symbol: "€", minor: "cents",    locale: "en-IE" },
   CVE: { code: "CVE", symbol: "$", minor: "centavos", locale: "pt-CV" },
   USD: { code: "USD", symbol: "$", minor: "cents",    locale: "en-US" },
+  GBP: { code: "GBP", symbol: "£", minor: "pence",    locale: "en-GB" },
+  GHS: { code: "GHS", symbol: "₵", minor: "pesewas",  locale: "en-GH" },
+  KES: { code: "KES", symbol: "KSh", minor: "cents",  locale: "en-KE" },
+  ZAR: { code: "ZAR", symbol: "R", minor: "cents",    locale: "en-ZA" },
+  XOF: { code: "XOF", symbol: "CFA", minor: "francs", locale: "fr-SN" },
+  XAF: { code: "XAF", symbol: "FCFA", minor: "francs", locale: "fr-CM" },
+  RWF: { code: "RWF", symbol: "RF", minor: "francs",  locale: "rw-RW" },
+  TZS: { code: "TZS", symbol: "TSh", minor: "cents",  locale: "sw-TZ" },
+  EGP: { code: "EGP", symbol: "E£", minor: "piastres", locale: "ar-EG" },
+  MAD: { code: "MAD", symbol: "DH", minor: "centimes", locale: "fr-MA" },
+  MZN: { code: "MZN", symbol: "MT", minor: "centavos", locale: "pt-MZ" },
+  AOA: { code: "AOA", symbol: "Kz", minor: "cêntimos", locale: "pt-AO" },
+  ETB: { code: "ETB", symbol: "Br", minor: "santim",  locale: "am-ET" },
 };
 
 export const DEFAULT_CCY = "NGN";

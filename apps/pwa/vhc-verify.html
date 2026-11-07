@@ -183,5 +183,6 @@ function render(verdict, action, reasons, claims, cacheAge, ms){
 }
 document.getElementById("verifyBtn").addEventListener("click", verify);
 </script>
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw-vhc.js").catch(()=>{});}</script>
 </body>
 </html>

@@ -265,5 +265,6 @@ $("revoke").onclick = () => {
   $("ok3").textContent = "pass revoked — revocation is a security event, recorded with reason and name at the service";
 };
 </script>
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw-vhc.js").catch(()=>{});}</script>
 </body>
 </html>

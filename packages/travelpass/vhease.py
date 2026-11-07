@@ -120,3 +120,29 @@ class EaseAdapter:
                 "by_type": {t: sum(1 for e in self.sent
                                    if e["type"] == t)
                             for t in MESSAGE_TYPES}}
+
+
+def http_transport(endpoint, *, token, opener=None):
+    """The production rail: POST each envelope to the EASE endpoint as
+    JSON, return the ack. `opener` is the injected HTTP layer (urllib at
+    deployment, a stub in tests) — the rail is composed, never vendored.
+    No endpoint: refuse — a cable not plugged in is not an interface."""
+    if not endpoint:
+        _refuse("no endpoint — a cable not plugged in is not an interface")
+    if not endpoint.startswith("https://"):
+        _refuse("the rail speaks TLS or it does not speak")
+    if opener is None:
+        import urllib.request
+        def opener(url, body, headers):
+            req = urllib.request.Request(
+                url, data=body, headers=headers, method="POST")
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                return json.loads(resp.read().decode())
+
+    def transport(message_type, envelope):
+        body = json.dumps(envelope).encode()
+        headers = {"Content-Type": "application/json",
+                   "Authorization": "Bearer " + token,
+                   "X-Rail-Version": envelope["rail_version"]}
+        return opener(endpoint, body, headers)
+    return transport

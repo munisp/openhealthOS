@@ -39,6 +39,7 @@ VHCOVER_VERSION = "vhcover@1.0.0"
 VHC_PROFILES = {
     "cv-vhc@1.0.0": {
         "country": "cv",
+        "status": "ratified",              # live: priced and sellable
         "currency": "EUR",
         "model": "block",
         "block_days": 30,
@@ -68,6 +69,7 @@ VHC_PROFILES = {
     },
     "ng-vhc@1.0.0": {
         "country": "ng",
+        "status": "ratified",
         "currency": "NGN",
         "model": "flat_per_day",
         "flat_fee_minor": 500_000,           # ₦5,000 entry fee
@@ -91,6 +93,51 @@ VHC_PROFILES = {
         "foreign_policy_floor_minor": 10_000_000,  # ≥ ₦100,000 own cover
     },
 }
+
+# Template profiles — an entry per market, priced indicatively, NEVER
+# sellable until an operator ratifies: a template price is a placeholder,
+# not a price. price_cover refuses status "template".
+_TEMPLATE_BASE = {
+    "status": "template",
+    "model": "flat_per_day",
+    "extension_price_minor": None,
+    "age_bands": ({"max_age": None, "factor": 1.0},),
+    "alt_currency": None,
+    "quote_valid_days": 1, "grace_days": 1, "expiring_soon_days": 3,
+    "self_service_ext_cutoff_day": 30, "courtesy_rider_days": 1,
+    "humanitarian_days": 3, "qr_offline_days": 90, "cache_max_age_days": 3,
+    "scope": ("emergency_medical",),
+    "exemption_categories": ("resident", "transit", "crew",
+                             "diplomatic", "foreign_policy"),
+    "transit_max_days": 2,
+}
+
+
+def _template(country, currency, flat_fee_minor, per_day_minor,
+              max_covered_days, foreign_policy_floor_minor):
+    p = dict(_TEMPLATE_BASE)
+    p.update({"country": country, "currency": currency,
+              "flat_fee_minor": flat_fee_minor,
+              "per_day_minor": per_day_minor,
+              "max_covered_days": max_covered_days,
+              "foreign_policy_floor_minor": foreign_policy_floor_minor})
+    return p
+
+
+VHC_PROFILES.update({
+    "gh-vhc@0.9.0": _template("gh", "GHS", 120_000, 12_000, 90, 2_000_000),
+    "ke-vhc@0.9.0": _template("ke", "KES", 300_000, 30_000, 90, 5_000_000),
+    "za-vhc@0.9.0": _template("za", "ZAR", 150_000, 15_000, 90, 3_000_000),
+    "sn-vhc@0.9.0": _template("sn", "XOF", 15_000, 1_500, 90, 300_000),
+    "tz-vhc@0.9.0": _template("tz", "TZS", 500_000, 50_000, 90, 8_000_000),
+    "rw-vhc@0.9.0": _template("rw", "RWF", 250_000, 25_000, 90, 4_000_000),
+    "eg-vhc@0.9.0": _template("eg", "EGP", 200_000, 20_000, 90, 3_500_000),
+    "ma-vhc@0.9.0": _template("ma", "MAD", 90_000, 9_000, 90, 1_800_000),
+    "et-vhc@0.9.0": _template("et", "ETB", 400_000, 40_000, 90, 6_000_000),
+    "cm-vhc@0.9.0": _template("cm", "XAF", 15_000, 1_500, 90, 300_000),
+    "mz-vhc@0.9.0": _template("mz", "MZN", 350_000, 35_000, 90, 5_500_000),
+    "ao-vhc@0.9.0": _template("ao", "AOA", 300_000, 30_000, 90, 5_000_000),
+})
 
 VERDICTS = ("green", "amber", "red")
 OFFICER_ACTION = {"green": "admit", "amber": "desk", "red": "supervisor"}
@@ -130,6 +177,9 @@ def price_cover(profile, *, days, age_years, extension=False):
     """The premium from the profile. Returns (total_minor, units) where
     units is blocks or covered days, stated so the receipt can show its
     arithmetic."""
+    if profile.get("status") == "template":
+        _refuse("a template price is a placeholder, not a price — "
+                "an operator ratifies before sale")
     if not isinstance(days, int) or days < 1:
         _refuse("cover window must be at least one day")
     if age_years is None or age_years < 0:
@@ -240,6 +290,31 @@ class KeyRing:
                            "active_to": k.get("active_to")}
                      for kid, k in snap.items()}
         return ring
+
+
+def pkcs11_provider(module, *, slot, key_label):
+    """HSM custody adapter: builds the signer/verifier pair KeyRing
+    expects from an injected PKCS#11-like module (loaded at deployment
+    via the vendor's library). The engine never sees the private half.
+
+    No module: refuse — an HSM that is not there is not an HSM, it is
+    a hope. Module without the required verbs: refuse."""
+    if module is None:
+        _refuse("no pkcs11 module — an HSM that is not loaded is not an HSM")
+    for verb in ("open_session", "sign", "verify"):
+        if not callable(getattr(module, verb, None)):
+            _refuse(f"pkcs11 module lacks {verb}() — custody is a contract, "
+                    "not a label")
+    session = module.open_session(slot)
+    if session is None:
+        _refuse("pkcs11 session refused — the HSM said no")
+
+    def signer(payload: bytes) -> bytes:
+        return module.sign(session, key_label, payload)
+
+    def verifier(payload: bytes, signature: bytes) -> bool:
+        return bool(module.verify(session, key_label, payload, signature))
+    return signer, verifier
 
 
 def sign_claims(claims, *, key_ring, key_id, day):
