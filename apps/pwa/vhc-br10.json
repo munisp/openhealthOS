@@ -1,0 +1,21 @@
+{
+  "version": "vhc-dash@1.0.0",
+  "alerts": [
+    {
+      "alert_id": "BR10-CLIN-SAL-W1",
+      "facility": "CLIN-SAL",
+      "week": 1,
+      "cases": 5,
+      "acknowledged": true,
+      "ack_by": "duty-officer-sim",
+      "response_days": 0
+    }
+  ],
+  "incidents": 33,
+  "alerts_open": 0,
+  "alerts_acknowledged": 1,
+  "ack_response_days": [
+    0
+  ],
+  "sha256": "953e4b8a818e720131c45584920ab8a8cc3181ba229afaa64fe31137ad65c29c"
+}

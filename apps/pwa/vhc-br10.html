@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BR-10 alerts — OpenHealth OS VHC</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
+  main { max-width:860px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
+  .row { display:flex; justify-content:space-between; padding:8px 0;
+         border-bottom:1px solid #243130; font-size:.95rem; }
+  .row b { color:#9ec7ff; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; }
+  table { width:100%; border-collapse:collapse; font-size:.9rem; }
+  th { text-align:left; color:#9ec7ff; font-size:.75rem; text-transform:uppercase;
+       letter-spacing:.05em; padding:8px; border-bottom:2px solid #2a3532; }
+  td { padding:8px; border-bottom:1px solid #243130; }
+  .open { color:#ff9d92; font-weight:700; }
+  .acked { color:#7be3a3; }
+  .err { background:#4a1512; color:#ff9d92; padding:10px 14px; border-radius:10px;
+         font-size:.9rem; display:none; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BR-10 ALERTS — an unacknowledged alert is a finding, not a statistic</h1>
+  <div class="meta" id="meta">loading…</div>
+</header>
+<main>
+  <div class="err" id="err"></div>
+  <div class="card" id="summary"></div>
+  <div class="card">
+    <table>
+      <thead><tr><th>Alert</th><th>Facility</th><th>Week</th><th>Cases</th><th>State</th></tr></thead>
+      <tbody id="alerts"></tbody>
+    </table>
+  </div>
+</main>
+<script>
+(async function () {
+  const err = document.getElementById("err");
+  let d;
+  try {
+    const resp = await fetch("vhc-br10.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error("vhc-br10.json HTTP " + resp.status +
+      " — generate it: bash demo/vhc-walkthrough.sh");
+    d = await resp.json();
+  } catch (e) { err.style.display = "block"; err.textContent = String(e.message || e); return; }
+
+  document.getElementById("meta").textContent =
+    d.version + " · sha256 " + d.sha256.slice(0, 16) + "…";
+
+  const respDays = d.ack_response_days.length
+    ? (d.ack_response_days.reduce((a, b) => a + b, 0) / d.ack_response_days.length).toFixed(1) + "d avg"
+    : "—";
+  document.getElementById("summary").innerHTML =
+    '<div class="row"><b>incidents</b><span>' + d.incidents + "</span></div>" +
+    '<div class="row"><b>alerts open</b><span class="' + (d.alerts_open ? "open" : "") + '">' +
+      d.alerts_open + "</span></div>" +
+    '<div class="row"><b>alerts acknowledged</b><span>' + d.alerts_acknowledged + "</span></div>" +
+    '<div class="row"><b>ack response</b><span>' + respDays + "</span></div>";
+
+  document.getElementById("alerts").innerHTML = d.alerts.map(function (a) {
+    const state = a.acknowledged
+      ? '<span class="acked">ack by ' + a.ack_by + " (" + a.response_days + "d)</span>"
+      : '<span class="open">UNACKNOWLEDGED</span>';
+    return "<tr><td>" + a.alert_id + "</td><td>" + a.facility + "</td><td>wk " +
+           a.week + "</td><td>" + a.cases + "</td><td>" + state + "</td></tr>";
+  }).join("");
+})();
+</script>
+</body>
+</html>

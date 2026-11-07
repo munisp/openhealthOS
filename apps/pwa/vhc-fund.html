@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Fund buckets — OpenHealth OS VHC</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
+  main { max-width:860px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
+  .grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(150px,1fr)); gap:10px; }
+  .bucket { background:#0d1312; border:1px solid #2a3532; border-radius:10px; padding:12px; }
+  .bucket b { display:block; font-size:.75rem; color:#9ec7ff; text-transform:uppercase;
+              letter-spacing:.05em; margin-bottom:6px; }
+  .bucket .amt { font-size:1.2rem; font-weight:800; color:#7be3a3; }
+  .row { display:flex; justify-content:space-between; padding:8px 0;
+         border-bottom:1px solid #243130; font-size:.95rem; }
+  .row b { color:#9ec7ff; font-size:.8rem; text-transform:uppercase; letter-spacing:.04em; }
+  .backstop { border-radius:10px; padding:10px 14px; font-weight:700; font-size:.9rem; }
+  .bs-off { background:#0f3d22; color:#7be3a3; }
+  .bs-on { background:#4a3512; color:#ffce7a; }
+  .err { background:#4a1512; color:#ff9d92; padding:10px 14px; border-radius:10px;
+         font-size:.9rem; display:none; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>FUND BUCKETS — the money is five monies</h1>
+  <div class="meta" id="meta">loading…</div>
+</header>
+<main>
+  <div class="err" id="err"></div>
+  <div class="card">
+    <div class="grid" id="buckets"></div>
+  </div>
+  <div class="card" id="totals"></div>
+  <div class="backstop bs-off" id="backstop"></div>
+</main>
+<script>
+(async function () {
+  const err = document.getElementById("err");
+  let d;
+  try {
+    const resp = await fetch("vhc-fund.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error("vhc-fund.json HTTP " + resp.status +
+      " — generate it: bash demo/vhc-walkthrough.sh (writes apps/pwa/vhc-fund.json)");
+    d = await resp.json();
+  } catch (e) { err.style.display = "block"; err.textContent = String(e.message || e); return; }
+
+  const sym = d.currency_symbol || "€";
+  const fmt = (m) => sym + (m / 100).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2});
+
+  document.getElementById("meta").textContent =
+    d.version + " · rules " + d.rules_version + " · sha256 " + d.sha256.slice(0, 16) + "…";
+
+  document.getElementById("buckets").innerHTML = d.buckets.map(function (b) {
+    return '<div class="bucket"><b>' + b.bucket + '</b><span class="amt">' +
+           fmt(b.balance_minor) + "</span></div>";
+  }).join("");
+
+  document.getElementById("totals").innerHTML =
+    '<div class="row"><b>allocated</b><span>' + fmt(d.allocated_minor) + "</span></div>" +
+    '<div class="row"><b>spent</b><span>' + fmt(d.spent_minor) + "</span></div>" +
+    '<div class="row"><b>ledger entries</b><span>' + d.entries + "</span></div>";
+
+  const bs = document.getElementById("backstop");
+  if (d.backstop && d.backstop.active) {
+    bs.className = "backstop bs-on";
+    bs.textContent = "BACKSTOP ACTIVE — activated by " + d.backstop.by +
+      ", notice " + d.backstop.notice_ref;
+  } else {
+    bs.textContent = "Backstop inactive — scheme solvent on premiums.";
+  }
+})();
+</script>
+</body>
+</html>

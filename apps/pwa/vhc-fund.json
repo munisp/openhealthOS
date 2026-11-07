@@ -1,0 +1,35 @@
+{
+  "version": "vhc-dash@1.0.0",
+  "currency_symbol": "€",
+  "mode": "normal",
+  "rules_version": "cv-fund@1.0.0",
+  "allocated_minor": 931250,
+  "spent_minor": 0,
+  "entries": 1600,
+  "buckets": [
+    {
+      "bucket": "claims_medevac",
+      "balance_minor": 419079
+    },
+    {
+      "bucket": "clinical_capacity",
+      "balance_minor": 232796
+    },
+    {
+      "bucket": "platform",
+      "balance_minor": 93125
+    },
+    {
+      "bucket": "prevention",
+      "balance_minor": 93125
+    },
+    {
+      "bucket": "surveillance",
+      "balance_minor": 93125
+    }
+  ],
+  "backstop": {
+    "active": false
+  },
+  "sha256": "c92aa4d1cf76e592321c3f790c47df95669d478dc836accede1e3a81fa6f3e54"
+}

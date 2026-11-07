@@ -844,9 +844,9 @@ SCENE_SURFACES = {
     "verdict": ("vhc-verify.html", "border verification console"),
     "care": ("traveler.html", "traveler medical pass"),
     "rescue": ("dispatch.html", "dispatch board"),
-    "money": None,          # fund-buckets dashboard surface: not yet built
-    "surveillance": None,   # BR-10 alert list surface: not yet built
-    "oversight": None,      # helpdesk console surface: not yet built
+    "money": ("vhc-fund.html", "fund buckets dashboard"),
+    "surveillance": ("vhc-br10.html", "BR-10 alert list"),
+    "oversight": ("vhc-helpdesk.html", "helpdesk console"),
     "proof": None,          # the terminal — no surface, by design
 }
 
@@ -990,6 +990,17 @@ def main(argv=None) -> int:
         if dead:
             print(f"dead surface links refused: {sorted(set(dead))}")
             return 1
+        # the dashboard surfaces read registry payloads — export them
+        # alongside the board so a linked surface never renders empty
+        from vhdash import export_dashboards
+        from vhpilot import seed_pilot as _seed
+        board_sym = "CVE" if args.currency.lower() in ("cve", "cve$", "escudo") \
+            else args.currency
+        registries = _seed(seed=args.seed, days=args.days)["registries"]
+        for name, path in export_dashboards(
+                registries, board_dir,
+                currency_symbol=board_sym).items():
+            print(f"dashboard payload written to {path}")
         with open(args.board_out, "w") as fh:
             json.dump(board, fh, indent=2, ensure_ascii=False)
         print(f"demo board written to {args.board_out}")

@@ -473,8 +473,12 @@ class TestDemoBoard(unittest.TestCase):
         self.assertEqual(by_scene["arrival"]["link"], "vhc-verify.html")
         self.assertEqual(by_scene["rescue"]["link"], "dispatch.html")
         self.assertEqual(by_scene["care"]["link"], "traveler.html")
-        self.assertIsNone(by_scene["money"]["link"])
-        self.assertIsNone(by_scene["proof"]["link"])  # the terminal
+        self.assertEqual(by_scene["money"]["link"], "vhc-fund.html")
+        self.assertEqual(by_scene["surveillance"]["link"], "vhc-br10.html")
+        self.assertEqual(by_scene["oversight"]["link"], "vhc-helpdesk.html")
+        # the terminal is the surface — proof stays unwired by design
+        self.assertIsNone(by_scene["proof"]["link"])
+        self.assertTrue(by_scene["proof"]["unwired"])
 
     def test_board_carries_red_findings(self):
         from vhdemo import build_board
