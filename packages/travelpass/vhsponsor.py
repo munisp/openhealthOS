@@ -28,7 +28,8 @@ def _refuse(msg):
 
 
 def fx_quote(*, from_currency, to_currency, amount_minor, day):
-    """Sponsor currency -> destination currency via the stated rates.
+    """Convert amount_minor of from_currency into to_currency via the
+    stated rates; the returned amount_minor is in to_currency.
     Unknown rate: refuse — an unstated rate is not a quote."""
     _currency(from_currency)
     _currency(to_currency)
@@ -80,8 +81,11 @@ class SponsorBook:
                              entry_day=day, day=day, key_id=key_id)
         premium = q["total_minor"]
         profile = vhc.profile
-        sponsor_quote = fx_quote(from_currency=sponsor_currency,
-                                 to_currency=profile["currency"],
+        # The cover prices in the destination profile's currency; the
+        # sponsor pays in their own. Quote direction: profile -> sponsor,
+        # so amount_minor is what leaves the sponsor's pocket.
+        sponsor_quote = fx_quote(from_currency=profile["currency"],
+                                 to_currency=sponsor_currency,
                                  amount_minor=premium, day=day)
         rec = {"sponsor_ref": sponsor_ref, "cover_ref": cover["ref"],
                "traveller": traveller_passport,

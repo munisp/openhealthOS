@@ -96,6 +96,14 @@ body {
 }
 .themebtn:hover, .syncbtn:hover { color: var(--accent); border-color: var(--accent); }
 
+.ccysel {
+  font-family: var(--font-data); font-size: var(--fs-10); text-transform: uppercase;
+  letter-spacing: .1em; background: var(--panel-2); color: var(--muted);
+  border: 1px solid var(--line); border-radius: var(--r-sm);
+  padding: 6px 8px; cursor: pointer;
+}
+.ccysel:hover, .ccysel:focus { color: var(--accent); border-color: var(--accent); }
+
 /* ---------- ticker ---------- */
 
 .ticker {

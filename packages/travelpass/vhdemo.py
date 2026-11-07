@@ -29,6 +29,13 @@ DEMO_VERSION = "vhc-demo@1.0.0"
 SCENES = ("arrival", "verdict", "money", "care", "rescue",
           "surveillance", "oversight", "proof")
 
+# Declared rehearsal pace — seconds per scene. A halt condition invented
+# mid-incident is an excuse; a pace invented mid-demo is rambling. The
+# clock is declared here, versioned with the script, and the rehearsal
+# mode measures against it.
+SCENE_TIMING = {"arrival": 120, "verdict": 120, "money": 180, "care": 150,
+                "rescue": 120, "surveillance": 150, "oversight": 120,
+                "proof": 90}
 
 def _fmt_minor(minor: int, symbol: str) -> str:
     if symbol == "CVE":
@@ -729,7 +736,8 @@ _QUESTIONS = {
 
 
 def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
-                      audience: str = "ministry", lang: str = "en") -> dict:
+                      audience: str = "ministry", lang: str = "en",
+                      rehearse: bool = False) -> dict:
     """Generate the presenter script from a pilot narrative.
 
     Every number in every line comes from `narrative`. The function
@@ -738,6 +746,10 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
     arc (scene order and framing), never the numbers. The language
     chooses the words; a point without a translation falls back to
     English *with the fallback stated and counted* — never silently.
+
+    With rehearse=True each scene carries its declared target seconds
+    and the cumulative pace clock, so a rehearsal measures drift
+    against a declared plan — not against vibes.
     """
     if audience not in AUDIENCE_ARCS:
         raise ValueError(f"unknown audience {audience!r}; "
@@ -809,7 +821,7 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
                     scene["stakes"] = stakes[sid] + \
                         f"  _({pack['fallback_note']})_"
         scenes.append(scene)
-    return {
+    result = {
         "version": DEMO_VERSION,
         "pilot_version": narrative["version"],
         "seed": narrative["seed"],
@@ -833,6 +845,18 @@ def build_walkthrough(narrative: dict, *, currency_symbol: str = "€",
                         "this walkthrough are synthetic (Pax-NNNN / SIM-NNNN). "
                         "The demonstration maps to no person.")),
     }
+    if rehearse:
+        elapsed = 0
+        pace = []
+        for s in result["scenes"]:
+            target = SCENE_TIMING[s["scene"]]
+            s["target_seconds"] = target
+            s["opens_at_seconds"] = elapsed
+            pace.append({"scene": s["scene"], "target_seconds": target,
+                         "opens_at_seconds": elapsed})
+            elapsed += target
+        result["rehearsal"] = {"total_seconds": elapsed, "pace": pace}
+    return result
 
 
 # --- demo board: scenes wired to real PWA surfaces ----------------------
@@ -863,15 +887,19 @@ def build_board(walkthrough: dict, narrative: dict) -> dict:
     scenes = []
     for s in walkthrough["scenes"]:
         link = SCENE_SURFACES.get(s["scene"])
-        scenes.append({
+        entry = {
             "scene": s["scene"],
             "surface": s["surface"],
             "link": link[0] if link else None,
             "link_label": link[1] if link else None,
             "unwired": link is None,
             "talking_points": s["talking_points"],
-        })
-    return {
+        }
+        if "target_seconds" in s:
+            entry["target_seconds"] = s["target_seconds"]
+            entry["opens_at_seconds"] = s["opens_at_seconds"]
+        scenes.append(entry)
+    board = {
         "version": walkthrough["version"],
         "seed": walkthrough["seed"],
         "audience": walkthrough.get("audience", "ministry"),
@@ -881,6 +909,9 @@ def build_board(walkthrough: dict, narrative: dict) -> dict:
         "scenes": scenes,
         "narrative": narrative,
     }
+    if "rehearsal" in walkthrough:
+        board["rehearsal"] = walkthrough["rehearsal"]
+    return board
 
 
 def render_markdown(walkthrough: dict) -> str:
@@ -919,8 +950,16 @@ def render_markdown(walkthrough: dict) -> str:
             t=tr["translated"], n=tr["total"], lang=tr["lang"],
             f=len(tr["fallback_keys"])) + "_")
         lines.append("")
+    if "rehearsal" in walkthrough:
+        lines.append(f"_rehearsal pace: "
+                     f"{walkthrough['rehearsal']['total_seconds']}s total, "
+                     "declared per scene — measure drift against the plan_")
+        lines.append("")
     for i, s in enumerate(walkthrough["scenes"], 1):
         lines.append(f"## {labels['scene']} {i}: {s['scene']}")
+        if "target_seconds" in s:
+            lines.append(f"⏱ {s['target_seconds']}s "
+                         f"(opens at {s['opens_at_seconds']}s)")
         lines.append(f"**{labels['stand_on']}:** {s['surface']}")
         lines.append(f"**{labels['asking']}:** {s['audience_question']}")
         if "stakes" in s:
@@ -960,12 +999,16 @@ def main(argv=None) -> int:
                          "apps/pwa/ so linked surfaces resolve)")
     ap.add_argument("--json", action="store_true",
                     help="print the narrative as JSON instead of the script")
+    ap.add_argument("--rehearse", action="store_true",
+                    help="stamp the declared per-scene pace (seconds) into "
+                         "the script and board for rehearsal timing")
     args = ap.parse_args(argv)
 
     from vhpilot import seed_pilot  # late import: needs the sys.path
     narrative = seed_pilot(seed=args.seed, days=args.days)["narrative"]
     script = build_walkthrough(narrative, currency_symbol=args.currency,
-                               audience=args.audience, lang=args.lang)
+                               audience=args.audience, lang=args.lang,
+                               rehearse=args.rehearse)
 
     # You do not present past a red finding.
     red = []
@@ -1001,6 +1044,11 @@ def main(argv=None) -> int:
                 registries, board_dir,
                 currency_symbol=board_sym).items():
             print(f"dashboard payload written to {path}")
+        # the growth surface reads its own seeded book — same command,
+        # deterministic seed, checksum-stamped like the rest
+        from vhdashx import export_growth, seed_growth
+        print(f"dashboard payload written to "
+              f"{export_growth(seed_growth(), board_dir)}")
         with open(args.board_out, "w") as fh:
             json.dump(board, fh, indent=2, ensure_ascii=False)
         print(f"demo board written to {args.board_out}")

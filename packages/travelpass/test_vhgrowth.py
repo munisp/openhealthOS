@@ -49,7 +49,15 @@ class TestSponsor(unittest.TestCase):
             traveller_passport="NG-A12345", traveller_name="Ada O",
             days=14, age_years=30, day=0, key_id="k1")
         self.assertEqual(rec["premium_minor"], 1200000)
-        self.assertEqual(rec["sponsor_quote"]["from"], "USD")
+        # the sponsor pays in their own currency: the quote converts
+        # the NGN premium INTO USD, never the other way round
+        q = rec["sponsor_quote"]
+        self.assertEqual(q["from"], "NGN")
+        self.assertEqual(q["to"], "USD")
+        from vhtreasury import RATES
+        eur = 1200000 / 100 / RATES["NGN"]["per_eur"]
+        self.assertEqual(q["amount_minor"],
+                         int(round(eur * RATES["USD"]["per_eur"] * 100)))
         self.assertTrue(rec["ref"].startswith("SPN-"))
 
     def test_whatsapp_link_is_tls(self):

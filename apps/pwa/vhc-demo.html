@@ -19,6 +19,8 @@
   .scene { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
   .scene h2 { margin:0 0 4px; font-size:1.1rem; }
   .scene .num { color:#7be3a3; font-weight:800; margin-right:8px; }
+  .pace { font-size:.72rem; color:#ffce7a; font-weight:600; margin-left:10px;
+          font-family:ui-monospace,monospace; }
   .surface { font-size:.8rem; color:#8aa39d; margin-bottom:8px; }
   .surface a { color:#9ec7ff; text-decoration:none; font-weight:600; }
   .surface a:hover { text-decoration:underline; }
@@ -33,7 +35,9 @@
 <header>
   <h1>VHC DEMO BOARD — every scene wired to a real surface</h1>
   <span class="meta" id="meta">loading board…</span>
-  <a href="vhc-tour.html" style="margin-left:auto;color:#9ec7ff;font-size:.85rem;
+  <a href="vhc-growth.html" style="margin-left:auto;color:#7be3a3;font-size:.85rem;
+     font-weight:700;text-decoration:none">growth &amp; risk →</a>
+  <a href="vhc-tour.html" style="margin-left:14px;color:#9ec7ff;font-size:.85rem;
      font-weight:700;text-decoration:none">guided tour →</a>
 </header>
 <main>
@@ -84,7 +88,11 @@
       : '<span class="unwired">surface not yet built — ' +
         "a cable not plugged in is not an interface</span>";
     el.innerHTML =
-      '<h2><span class="num">' + (i + 1) + "</span>" + s.scene + "</h2>" +
+      '<h2><span class="num">' + (i + 1) + "</span>" + s.scene +
+      (typeof s.target_seconds === "number"
+        ? ' <span class="pace">⏱ ' + s.target_seconds + "s · opens " +
+          s.opens_at_seconds + "s</span>"
+        : "") + "</h2>" +
       '<div class="surface">' + surface + "</div>" +
       "<ul>" + s.talking_points.map(function (tp) {
         const li = document.createElement("li");

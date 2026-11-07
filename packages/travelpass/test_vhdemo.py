@@ -557,3 +557,64 @@ class TestTravelerPageParity(unittest.TestCase):
 
     def test_age_is_required(self):
         self.assertIn("absence is not a discount", self.page)
+
+
+class TestRehearsalMode(unittest.TestCase):
+    """The rehearsal clock is declared (SCENE_TIMING), stamped per scene,
+    cumulative, and rides the board — never invented mid-demo."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.narrative = seed_pilot(seed=42, days=14)["narrative"]
+
+    def test_off_by_default(self):
+        w = build_walkthrough(self.narrative)
+        self.assertNotIn("rehearsal", w)
+        self.assertNotIn("target_seconds", w["scenes"][0])
+
+    def test_pace_is_declared_and_cumulative(self):
+        from vhdemo import SCENE_TIMING
+        w = build_walkthrough(self.narrative, rehearse=True)
+        self.assertIn("rehearsal", w)
+        elapsed = 0
+        for s in w["scenes"]:
+            self.assertEqual(s["target_seconds"], SCENE_TIMING[s["scene"]])
+            self.assertEqual(s["opens_at_seconds"], elapsed)
+            elapsed += s["target_seconds"]
+        self.assertEqual(w["rehearsal"]["total_seconds"], elapsed)
+        self.assertEqual(len(w["rehearsal"]["pace"]), len(w["scenes"]))
+
+    def test_pace_follows_the_audience_arc(self):
+        # campus arc reorders/subsets scenes; the clock follows the arc
+        w = build_walkthrough(self.narrative, audience="campus",
+                              rehearse=True)
+        arc = AUDIENCE_ARCS["campus"]
+        self.assertEqual([p["scene"] for p in w["rehearsal"]["pace"]],
+                         list(arc))
+
+    def test_board_and_markdown_carry_the_pace(self):
+        from vhdemo import build_board
+        w = build_walkthrough(self.narrative, rehearse=True)
+        board = build_board(w, self.narrative)
+        self.assertIn("rehearsal", board)
+        self.assertEqual(board["scenes"][0]["target_seconds"],
+                         w["scenes"][0]["target_seconds"])
+        md = render_markdown(w)
+        self.assertIn("⏱", md)
+        self.assertIn("rehearsal pace", md)
+
+    def test_cli_rehearse_flag(self):
+        from vhdemo import main
+        with tempfile.TemporaryDirectory() as td:
+            board = os.path.join(td, "board.json")
+            # board-out resolves links against real surfaces; write to
+            # the real PWA dir name via a symlink-free copy instead
+            rc = main(["--seed", "42", "--days", "14", "--rehearse",
+                       "--out", os.path.join(td, "ros.md")])
+            self.assertEqual(rc, 0)
+            with open(os.path.join(td, "ros.md")) as fh:
+                self.assertIn("rehearsal pace", fh.read())
+
+
+if __name__ == "__main__":
+    unittest.main()

@@ -1,0 +1,203 @@
+{
+  "version": "vhc-growth@1.0.0",
+  "seed": 7,
+  "sponsors": {
+    "sponsorships": 12,
+    "by_currency": [
+      {
+        "currency": "GHS",
+        "minor": 52000,
+        "count": 3
+      },
+      {
+        "currency": "KES",
+        "minor": 216363,
+        "count": 3
+      },
+      {
+        "currency": "USD",
+        "minor": 2356,
+        "count": 3
+      },
+      {
+        "currency": "ZAR",
+        "minor": 44848,
+        "count": 3
+      }
+    ],
+    "destination_currency": "NGN"
+  },
+  "credit": {
+    "plans": 8,
+    "by_state": {
+      "settled": 5,
+      "paused": 3
+    },
+    "booked_minor": 3405000,
+    "paid_minor": 2405000,
+    "currency": "NGN"
+  },
+  "cohorts": {
+    "cohorts": 1,
+    "members": 40,
+    "invoice_total_minor": 10000000,
+    "currency": "NGN",
+    "invoice_sha256": "1e39dcb6b2546b9522d51f882ded1dc8994cfccfc9f97193cd7f8d2fb1126ee1"
+  },
+  "roam": {
+    "profile": "ecowas-roam@1.0.0",
+    "members": [
+      "ng",
+      "cv"
+    ],
+    "sample_segments": [
+      {
+        "country": "cv",
+        "profile": "cv-vhc@1.0.0",
+        "days": 5,
+        "minor": 2500,
+        "currency": "EUR"
+      },
+      {
+        "country": "ng",
+        "profile": "ng-vhc@1.0.0",
+        "days": 6,
+        "minor": 800000,
+        "currency": "NGN"
+      }
+    ],
+    "totals_by_currency": {
+      "EUR": 2500,
+      "NGN": 800000
+    },
+    "sample_verdict": "amber"
+  },
+  "fraud": {
+    "claims_scanned": 19,
+    "rings": 1,
+    "thresholds": {
+      "min_shared_payout_claims": 3,
+      "min_triangle_edges": 3,
+      "min_ring_members": 2
+    },
+    "ring_rows": [
+      {
+        "provider": "clinic-sim-7",
+        "account": "acct-sim-99",
+        "claimants": 3,
+        "claims": 4,
+        "evidence_sha256": "74c6e4ec0e5bbd3964654b9d323b34c453ef8fb1d4d6651a3a94d694c97c39d2"
+      }
+    ]
+  },
+  "treasury": {
+    "corridors": [
+      {
+        "corridor": "campus-ng",
+        "currency": "NGN",
+        "minor": 10000000,
+        "lines": 1,
+        "eur_minor": 6061,
+        "rate_kind": "indicative"
+      },
+      {
+        "corridor": "charter-gb",
+        "currency": "GBP",
+        "minor": 420000,
+        "lines": 1,
+        "eur_minor": null,
+        "rate_kind": "unpriced"
+      },
+      {
+        "corridor": "diaspora->ng",
+        "currency": "GHS",
+        "minor": 52000,
+        "lines": 3,
+        "eur_minor": 3152,
+        "rate_kind": "indicative"
+      },
+      {
+        "corridor": "diaspora->ng",
+        "currency": "KES",
+        "minor": 216363,
+        "lines": 3,
+        "eur_minor": 1545,
+        "rate_kind": "indicative"
+      },
+      {
+        "corridor": "diaspora->ng",
+        "currency": "USD",
+        "minor": 2356,
+        "lines": 3,
+        "eur_minor": 2181,
+        "rate_kind": "indicative"
+      },
+      {
+        "corridor": "diaspora->ng",
+        "currency": "ZAR",
+        "minor": 44848,
+        "lines": 3,
+        "eur_minor": 2242,
+        "rate_kind": "indicative"
+      },
+      {
+        "corridor": "roam-ecowas",
+        "currency": "EUR",
+        "minor": 2500,
+        "lines": 1,
+        "eur_minor": 2500,
+        "rate_kind": "native"
+      },
+      {
+        "corridor": "roam-ecowas",
+        "currency": "NGN",
+        "minor": 800000,
+        "lines": 1,
+        "eur_minor": 485,
+        "rate_kind": "indicative"
+      }
+    ],
+    "corridor_count": 4,
+    "currencies": [
+      "EUR",
+      "GBP",
+      "GHS",
+      "KES",
+      "NGN",
+      "USD",
+      "ZAR"
+    ],
+    "total_priced_eur_minor": 18166,
+    "unpriced": [
+      {
+        "corridor": "charter-gb",
+        "currency": "GBP",
+        "minor": 420000,
+        "lines": 1,
+        "eur_minor": null,
+        "rate_kind": "unpriced"
+      }
+    ]
+  },
+  "profiles": {
+    "ratified": [
+      "cv-vhc@1.0.0",
+      "ng-vhc@1.0.0"
+    ],
+    "templates": [
+      "ao-vhc@0.9.0",
+      "cm-vhc@0.9.0",
+      "eg-vhc@0.9.0",
+      "et-vhc@0.9.0",
+      "gh-vhc@0.9.0",
+      "ke-vhc@0.9.0",
+      "ma-vhc@0.9.0",
+      "mz-vhc@0.9.0",
+      "rw-vhc@0.9.0",
+      "sn-vhc@0.9.0",
+      "tz-vhc@0.9.0",
+      "za-vhc@0.9.0"
+    ]
+  },
+  "sha256": "2c465ec88d6a37296d3ca411e526f25edfd66cd55f93c36966a7fb38bc18217d"
+}

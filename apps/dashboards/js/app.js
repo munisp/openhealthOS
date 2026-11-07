@@ -5,6 +5,7 @@
 
 import { el } from "./dom.js";
 import { DataSource } from "./data.js";
+import { CURRENCIES, activeCurrency, setCurrency } from "./currency.js";
 import { FacilityView, StateView, PayerView, MapView, EconomicsView, MLHealthView, ReadinessView, ImmunizationView, MaternalView, renderTicker } from "./views.js";
 
 const REFRESH_MS = 30000;
@@ -99,8 +100,26 @@ async function refreshLoop() {
   render();
 }
 
+function bootCurrencyPicker() {
+  /* A currency is an entry, never an if-branch: the picker lists the
+   * registry, marks the active entry, and re-renders on change. */
+  const sel = $("#ccy");
+  sel.innerHTML = "";
+  for (const code of Object.keys(CURRENCIES)) {
+    const opt = document.createElement("option");
+    opt.value = code;
+    opt.textContent = code + " " + CURRENCIES[code].symbol;
+    sel.append(opt);
+  }
+  sel.value = activeCurrency().code;
+  sel.addEventListener("change", () => {
+    if (setCurrency(sel.value)) render();
+  });
+}
+
 function boot() {
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("sw.js").catch(() => {});
+  bootCurrencyPicker();
   window.addEventListener("hashchange", render);
   $("#theme").addEventListener("click", () => {
     const cur = document.documentElement.getAttribute("data-theme");
