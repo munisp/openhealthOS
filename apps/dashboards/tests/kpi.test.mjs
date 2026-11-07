@@ -15,28 +15,28 @@ const PLANE = {
       margins: {
         tariff_year: 2025, encounters: 2,
         lines: [
-          { code: "CS-EMG", name: "CS", count: 1, tariff_kobo: 7500000,
-            margin_kobo: -100000, margin_pct: -1.3, in_tariff_schedule: true },
-          { code: "CONS-GEN", name: "Consult", count: 1, tariff_kobo: 80000,
-            margin_kobo: 20000, margin_pct: 25.0, in_tariff_schedule: true },
+          { code: "CS-EMG", name: "CS", count: 1, tariff_minor: 7500000,
+            margin_minor: -100000, margin_pct: -1.3, in_tariff_schedule: true },
+          { code: "CONS-GEN", name: "Consult", count: 1, tariff_minor: 80000,
+            margin_minor: 20000, margin_pct: 25.0, in_tariff_schedule: true },
         ],
         unknown_codes: ["X-1"],
-        totals: { revenue_kobo: 7580000, cost_kobo: 7660000, margin_kobo: -80000 },
+        totals: { revenue_minor: 7580000, cost_minor: 7660000, margin_minor: -80000 },
       },
       panel: {
-        capitation_kobo: 145000, panel_size: 3, encounters: 2,
+        capitation_minor: 145000, panel_size: 3, encounters: 2,
         bands: [
-          { band: "adult", enrollees: 2, capitation_kobo: 290000,
-            care_cost_kobo: 100000, margin_kobo: 190000,
-            margin_per_enrollee_kobo: 95000, encounters: 1 },
-          { band: "walk-in", enrollees: 0, capitation_kobo: 0,
-            care_cost_kobo: 50000, margin_kobo: -50000,
-            margin_per_enrollee_kobo: null, encounters: 1 },
+          { band: "adult", enrollees: 2, capitation_minor: 290000,
+            care_cost_minor: 100000, margin_minor: 190000,
+            margin_per_enrollee_minor: 95000, encounters: 1 },
+          { band: "walk-in", enrollees: 0, capitation_minor: 0,
+            care_cost_minor: 50000, margin_minor: -50000,
+            margin_per_enrollee_minor: null, encounters: 1 },
         ],
-        total_margin_kobo: 140000, walk_in_cost_kobo: 50000,
+        total_margin_minor: 140000, walk_in_cost_minor: 50000,
       },
       denials: {
-        claims: 4, denied: 2, preventable_denied_kobo: 30000,
+        claims: 4, denied: 2, preventable_denied_minor: 30000,
         preventable_share_pct: 75.0,
         by_hmo: { NHIA: { submitted: 4, denied: 2, denial_rate_pct: 50.0 } },
       },
@@ -64,40 +64,40 @@ const PLANE = {
   },
 };
 
-test("marginRows shapes kobo to naira, worst first", () => {
+test("marginRows shapes minor to major units, worst first", () => {
   const rows = marginRows(PLANE);
   assert.equal(rows.length, 2);
   assert.equal(rows[0].code, "CS-EMG");
-  assert.equal(rows[0].marginNgn, -1000);
+  assert.equal(rows[0].marginMajor, -1000);
   assert.equal(rows[1].marginPct, 25.0);
 });
 
 test("marginTotals exposes unknown-code count and naira totals", () => {
   const t = marginTotals(PLANE);
   assert.equal(t.encounters, 2);
-  assert.equal(t.marginNgn, -800);
+  assert.equal(t.marginMajor, -800);
   assert.equal(t.unknownCodes, 1);
 });
 
 test("panelRows keeps walk-in null per-enrollee", () => {
   const rows = panelRows(PLANE);
   const walk = rows.find((r) => r.band === "walk-in");
-  assert.equal(walk.perEnrolleeNgn, null);
-  assert.equal(walk.marginNgn, -500);
+  assert.equal(walk.perEnrolleeMajor, null);
+  assert.equal(walk.marginMajor, -500);
 });
 
 test("panelSummary surfaces walk-in leakage", () => {
   const s = panelSummary(PLANE);
   assert.equal(s.panelSize, 3);
-  assert.equal(s.capitationNgn, 1450);
-  assert.equal(s.walkInLeakNgn, 500);
-  assert.equal(s.totalMarginNgn, 1400);
+  assert.equal(s.capitationMajor, 1450);
+  assert.equal(s.walkInLeakMajor, 500);
+  assert.equal(s.totalMarginMajor, 1400);
 });
 
 test("denialSummary sorts HMOs by denial rate", () => {
   const d = denialSummary(PLANE);
   assert.equal(d.preventableSharePct, 75.0);
-  assert.equal(d.preventableNgn, 300);
+  assert.equal(d.preventableMajor, 300);
   assert.equal(d.byHmo[0].hmo, "NHIA");
 });
 

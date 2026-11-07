@@ -518,3 +518,42 @@ class TestDemoBoard(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestTravelerPageParity(unittest.TestCase):
+    """apps/pwa/traveler.html mirrors VHC_PROFILES — the page is an
+    offline model of the same engine, so the profile constants are
+    pinned here. Currency display comes from registry entries; the
+    page must not hardcode a symbol or a minor-unit name outside them."""
+
+    @classmethod
+    def setUpClass(cls):
+        page = os.path.abspath(os.path.join(_HERE, "..", "..",
+                                            "apps", "pwa", "traveler.html"))
+        with open(page, encoding="utf-8") as fh:
+            cls.page = fh.read()
+
+    def test_both_profiles_present(self):
+        self.assertIn('"ng-vhc@1.0.0"', self.page)
+        self.assertIn('"cv-vhc@1.0.0"', self.page)
+
+    def test_pricing_constants_mirror_vhc_profiles(self):
+        from vhcover import VHC_PROFILES
+        ng, cv = VHC_PROFILES["ng-vhc@1.0.0"], VHC_PROFILES["cv-vhc@1.0.0"]
+        for const in (ng["flat_fee_minor"], ng["per_day_minor"],
+                      cv["block_price_minor"], cv["block_days"],
+                      ng["max_covered_days"]):
+            self.assertIn(str(const), self.page)
+        self.assertIn(str(cv["alt_currency"][1]), self.page)   # BCV peg
+
+    def test_no_country_hardcode_outside_registry_entries(self):
+        # kobo/₦/er.ng.gov may live only inside the CURRENCIES/PROFILES
+        # registry literals — never in labels, messages, or logic.
+        body = self.page.split("const PROFILES =", 1)[1]
+        body = body.split("};", 1)[1]          # past the registry block
+        for token in ("kobo", "₦", "er.ng.gov", "500000 +", "50000 *"):
+            self.assertNotIn(token, body,
+                             f"{token!r} hardcoded outside the registry")
+
+    def test_age_is_required(self):
+        self.assertIn("absence is not a discount", self.page)

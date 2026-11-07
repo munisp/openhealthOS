@@ -9,6 +9,7 @@ import { eventsByType, encountersToday, perFacilityCounts, pilotGates,
          marginRows, marginTotals, panelRows, panelSummary, denialSummary,
          catchmentRows, catchmentSummary, mlHealthRows, driftSummary } from "./data.js";
 import { nearest, navLink, renderMap, hitTest } from "./map.js";
+import { fmtMoney } from "./currency.js";
 
 /* ---------- shared bits ---------- */
 
@@ -417,9 +418,9 @@ export function MapView(data, selectedId) {
 
 /* ---------- payer board (NHIA + HMO view, ADR-0012) ---------- */
 
-function fmtNGN(n) {
-  return "₦" + (n || 0).toLocaleString("en-NG");
-}
+/* Money display is country-aware: fmtMoney reads the active currency
+ * from ./currency.js (?ccy= / localStorage / deployment default). No
+ * view hardcodes a symbol or a minor-unit name. */
 
 export function PayerView(data) {
   const rows = payerRows(data.payers);
@@ -427,7 +428,7 @@ export function PayerView(data) {
   const page = el("div", { class: "page" },
     el("div", { class: "kpis" },
       kpi(sum.totalClaims.toLocaleString(), "claims adjudicated", { sub: `${sum.payers} payers` }),
-      kpi(fmtNGN(sum.totalPayable), "payable volume", { kind: "ok" }),
+      kpi(fmtMoney(sum.totalPayable), "payable volume", { kind: "ok" }),
       kpi(sum.unmapped ? String(sum.unmapped) : "0", "unmapped schemes",
         { kind: sum.unmapped ? "warn" : "ok", sub: "claims with no payer route" })),
     el("h2", {}, "Payable by payer"));
@@ -436,7 +437,7 @@ export function PayerView(data) {
     bars.append(el("div", { class: "hbar-row" },
       el("span", {}, `${r.payer}`),
       hbar(r.payableShare / 100),
-      el("span", { class: "mono" }, fmtNGN(r.payable))));
+      el("span", { class: "mono" }, fmtMoney(r.payable))));
   }
   page.append(bars);
   const table = el("table", { class: "matrix" },
@@ -450,7 +451,7 @@ export function PayerView(data) {
       el("td", { class: "mono" }, String(r.claims)),
       el("td", { class: `mono ${r.approvalRate >= 85 ? "ok" : "warn"}` }, `${r.approvalRate}%`),
       el("td", { class: `mono ${r.pendRate > 10 ? "warn" : ""}` }, `${r.pendRate}%`),
-      el("td", { class: "mono" }, fmtNGN(r.payable)),
+      el("td", { class: "mono" }, fmtMoney(r.payable)),
       el("td", { class: "mono" }, `${r.payableShare}%`)));
   }
   page.append(el("h2", {}, "Decision mix"), table);
@@ -483,14 +484,14 @@ export function EconomicsView(data) {
   }
 
   page.append(el("div", { class: "kpi-strip" },
-    kpi(mt ? fmtNGN(mt.marginNgn) : "—", "margin this period",
-      { kind: mt && mt.marginNgn >= 0 ? "ok" : "crit", sub: mt ? `${mt.encounters} encounters · tariff ${data.kpi?.sections?.facility_economics?.margins?.tariff_year || "?"}` : "" }),
-    kpi(ps ? fmtNGN(ps.totalMarginNgn) : "—", "capitation panel P&L",
-      { kind: ps && ps.totalMarginNgn >= 0 ? "ok" : "warn", sub: ps ? `${ps.panelSize.toLocaleString()} enrolled @ ${fmtNGN(ps.capitationNgn)}/mo` : "" }),
+    kpi(mt ? fmtMoney(mt.marginMajor) : "—", "margin this period",
+      { kind: mt && mt.marginMajor >= 0 ? "ok" : "crit", sub: mt ? `${mt.encounters} encounters · tariff ${data.kpi?.sections?.facility_economics?.margins?.tariff_year || "?"}` : "" }),
+    kpi(ps ? fmtMoney(ps.totalMarginMajor) : "—", "capitation panel P&L",
+      { kind: ps && ps.totalMarginMajor >= 0 ? "ok" : "warn", sub: ps ? `${ps.panelSize.toLocaleString()} enrolled @ ${fmtMoney(ps.capitationMajor)}/mo` : "" }),
     kpi(ds ? `${ds.preventableSharePct}%` : "—", "preventable denials",
-      { kind: ds && ds.preventableSharePct > 40 ? "warn" : "ok", sub: ds ? `${fmtNGN(ds.preventableNgn)} recoverable` : "" }),
-    kpi(ps ? fmtNGN(ps.walkInLeakNgn) : "—", "walk-in leakage",
-      { kind: ps && ps.walkInLeakNgn > 0 ? "warn" : "ok", sub: "care with no capitation attribution" })));
+      { kind: ds && ds.preventableSharePct > 40 ? "warn" : "ok", sub: ds ? `${fmtMoney(ds.preventableMajor)} recoverable` : "" }),
+    kpi(ps ? fmtMoney(ps.walkInLeakMajor) : "—", "walk-in leakage",
+      { kind: ps && ps.walkInLeakMajor > 0 ? "warn" : "ok", sub: "care with no capitation attribution" })));
 
   // margin per service line, worst first — the pricing desk's table
   const mrows = marginRows(k);
@@ -500,12 +501,12 @@ export function EconomicsView(data) {
         el("th", {}, "Service"), el("th", {}, "Code"), el("th", {}, "Vol"),
         el("th", {}, "Tariff"), el("th", {}, "Margin"), el("th", {}, "Margin %")));
     for (const r of mrows) {
-      mt2.append(el("tr", { class: r.marginNgn < 0 ? "warn" : "" },
+      mt2.append(el("tr", { class: r.marginMajor < 0 ? "warn" : "" },
         el("td", {}, r.name + (r.inSchedule ? "" : " ⚠ not in tariff schedule")),
         el("td", { class: "mono" }, r.code),
         el("td", { class: "mono" }, String(r.count)),
-        el("td", { class: "mono" }, fmtNGN(r.tariffNgn)),
-        el("td", { class: `mono ${r.marginNgn < 0 ? "crit" : "ok"}` }, fmtNGN(r.marginNgn)),
+        el("td", { class: "mono" }, fmtMoney(r.tariffMajor)),
+        el("td", { class: `mono ${r.marginMajor < 0 ? "crit" : "ok"}` }, fmtMoney(r.marginMajor)),
         el("td", { class: "mono" }, r.marginPct == null ? "—" : `${r.marginPct}%`)));
     }
     page.append(el("h2", {}, "Margin per service line — worst first"), mt2);
@@ -519,12 +520,12 @@ export function EconomicsView(data) {
         el("th", {}, "Risk band"), el("th", {}, "Enrolled"), el("th", {}, "Enc"),
         el("th", {}, "Panel margin"), el("th", {}, "Per enrollee/mo")));
     for (const r of prows) {
-      pt.append(el("tr", { class: r.marginNgn < 0 ? "warn" : "" },
+      pt.append(el("tr", { class: r.marginMajor < 0 ? "warn" : "" },
         el("td", {}, r.band),
         el("td", { class: "mono" }, String(r.enrollees)),
         el("td", { class: "mono" }, String(r.encounters)),
-        el("td", { class: `mono ${r.marginNgn < 0 ? "crit" : "ok"}` }, fmtNGN(r.marginNgn)),
-        el("td", { class: "mono" }, r.perEnrolleeNgn == null ? "—" : fmtNGN(r.perEnrolleeNgn))));
+        el("td", { class: `mono ${r.marginMajor < 0 ? "crit" : "ok"}` }, fmtMoney(r.marginMajor)),
+        el("td", { class: "mono" }, r.perEnrolleeMajor == null ? "—" : fmtMoney(r.perEnrolleeMajor))));
     }
     page.append(el("h2", {}, "Capitation panel by risk band — who the flat rate starves"), pt);
   }

@@ -39,7 +39,8 @@
 <body>
 <header>
   <h1>Traveler medical pass</h1>
-  <span class="pill blue">policy travel-medical-policy@1.0.0</span>
+  <select id="profileSel" style="width:auto" title="country profile"></select>
+  <span class="pill blue" id="policyPill"></span>
 </header>
 <main>
   <section class="card">
@@ -48,6 +49,7 @@
       <div><label>Full name</label><input id="name"></div>
       <div><label>Passport reference</label><input id="passport"></div>
       <div><label>Nationality</label><input id="nat"></div>
+      <div><label>Age (years)</label><input id="age" type="number" min="0"></div>
       <div><label>Blood group (if known)</label>
         <select id="bg"><option value="">not recorded</option>
           <option>A+</option><option>A-</option><option>B+</option><option>B-</option>
@@ -68,7 +70,7 @@
     <strong>2 · Pay the insurance fee</strong>
     <div class="muted" id="premium">enroll first — the premium is assessed from the policy table</div>
     <div class="grid2">
-      <div><label>Amount (kobo)</label><input id="amount" type="number"></div>
+      <div><label id="amountLabel">Amount</label><input id="amount" type="number"></div>
       <div><label>Method</label>
         <select id="method"><option>card</option><option>transfer</option>
           <option>cash</option><option>wallet</option></select></div>
@@ -94,8 +96,117 @@
 <script src="https://cdn.jsdelivr.net/npm/qrcode-generator@1.4.4/qrcode.min.js"></script>
 <script>
 /* Demo/offline model: the same doctrine as the engine, in-page. A
-   deployment points these calls at the travelpass service. */
+   deployment points these calls at the travelpass service.
+   Country-agnostic: the active country profile is an ENTRY in
+   PROFILES — selected by ?profile=<id> or the header selector —
+   never an if-country branch. Mirrors VHC_PROFILES in
+   packages/travelpass/vhcover.py; the versions are the lockstep. */
 const $ = id => document.getElementById(id);
+
+const CURRENCIES = {
+  NGN: { symbol: "₦", minor: "kobo",     locale: "en-NG" },
+  EUR: { symbol: "€", minor: "cents",    locale: "en-IE" },
+  CVE: { symbol: "$", minor: "centavos", locale: "pt-CV" },
+};
+
+const MODELS = {
+  flat_per_day: (p, days) => p.flat_fee_minor + p.per_day_minor * days,
+  block:        (p, days) => Math.ceil(days / p.block_days) * p.block_price_minor,
+};
+
+const PROFILES = {
+  "ng-vhc@1.0.0": {
+    currency: "NGN", model: "flat_per_day",
+    flat_fee_minor: 500000, per_day_minor: 50000,      // ₦5,000 + ₦500/day
+    max_covered_days: 90,                              // beyond is residence
+    age_bands: [{ max_age: null, factor: 1.0 }],
+    alt_currency: null,
+    er_url: "https://er.ng.gov/er#t=",
+  },
+  "cv-vhc@1.0.0": {
+    currency: "EUR", model: "block",
+    block_days: 30, block_price_minor: 2500,           // €25.00 per 30 days
+    max_covered_days: null,
+    age_bands: [{ max_age: 2, factor: 0.0 },
+                { max_age: 12, factor: 0.5 },
+                { max_age: null, factor: 1.0 }],
+    alt_currency: { code: "CVE", peg: 110.265 },       // escudo, BCV peg
+    er_url: "https://er.gov.cv/er#t=",
+  },
+};
+
+/* price_cover() from vhcover.py, ported 1:1: model base from the MODELS
+   entry, age factor from the profile's bands, round half-even. */
+function ageFactor(p, age) {
+  for (const b of p.age_bands) if (b.max_age === null || age <= b.max_age) return b.factor;
+  return 1.0;
+}
+function priceCover(p, days, age) {
+  return roundHalfEven(MODELS[p.model](p, days) * ageFactor(p, age));
+}
+
+function initialProfileId() {
+  const q = new URLSearchParams(location.search).get("profile");
+  return PROFILES[q] ? q : "ng-vhc@1.0.0";
+}
+let PROFILE_ID = initialProfileId();
+const profile = () => PROFILES[PROFILE_ID];
+const ccy = () => CURRENCIES[profile().currency];
+
+function fmtMajor(minor) {
+  const c = ccy(), major = minor / 100;
+  return c.symbol + major.toLocaleString(c.locale, {
+    minimumFractionDigits: minor % 100 ? 2 : 0, maximumFractionDigits: 2 });
+}
+function fmtMinor(minor) {
+  const c = ccy();
+  return minor.toLocaleString(c.locale) + " " + c.minor;
+}
+/* Escudo display off the BCV peg read from the profile — same algorithm
+   as vhdemo._fmt_cve: truncate escudos, round centavos half-even,
+   carry on rounding, thousands '.', '$' before the two decimals. */
+function roundHalfEven(x) {
+  const f = Math.floor(x), d = x - f;
+  return d > 0.5 ? f + 1 : d < 0.5 ? f : (f % 2 === 0 ? f : f + 1);
+}
+function fmtCVE(eurMinor) {
+  const peg = profile().alt_currency.peg;
+  const cve = eurMinor / 100 * peg;
+  let esc = Math.trunc(cve);
+  let cent = roundHalfEven((cve - esc) * 100);
+  if (cent === 100) { esc += 1; cent = 0; }
+  return String(esc).replace(/\B(?=(\d{3})+(?!\d))/g, ".")
+       + "$" + String(cent).padStart(2, "0");
+}
+function fmtDue(minor) {
+  let s = fmtMajor(minor) + " (" + fmtMinor(minor) + ")";
+  if (profile().alt_currency) s += " ≈ " + fmtCVE(minor) + " CVE";
+  return s;
+}
+
+function applyProfile() {
+  const sel = $("profileSel");
+  sel.innerHTML = "";
+  for (const id of Object.keys(PROFILES)) {
+    const o = document.createElement("option");
+    o.value = id; o.textContent = id; sel.appendChild(o);
+  }
+  sel.value = PROFILE_ID;
+  $("policyPill").textContent = "policy travel-medical-policy@1.0.0 · " + PROFILE_ID;
+  $("amountLabel").textContent = "Amount (" + ccy().minor + ")";
+}
+$("profileSel") && applyProfile();
+$("profileSel").onchange = () => {
+  PROFILE_ID = $("profileSel").value;
+  applyProfile();
+  if (traveler) {   // re-quote the same stay under the new profile
+    const days = traveler.exit - traveler.entry + 1;
+    due = priceCover(profile(), days, traveler.age);
+    $("premium").textContent = days + " covered days → premium " + fmtDue(due);
+    $("amount").value = due;
+  }
+};
+
 let traveler = null, paid = 0, due = 0;
 function fail(el, msg){ $(el).style.display="block"; $(el).textContent=msg; }
 $("enroll").onclick = () => {
@@ -104,17 +215,20 @@ $("enroll").onclick = () => {
   if (!name || !pp) return fail("err1","name and passport reference are the record — a traveler without identity is a ticket number");
   const entry = +$("entry").value, exit = +$("exit").value;
   if (exit < entry) return fail("err1","exit before entry — time does not run backwards at the border");
-  const days = exit - entry + 1;
-  if (days > 90) return fail("err1", days + "-day stay exceeds the 90-day tourist cap — this traveler needs a resident policy, not a bigger tourist one");
-  due = 500000 + 50000 * days;
-  traveler = { name, passport: pp, nat: $("nat").value.trim(),
-               bg: $("bg").value, entry, exit,
+  const ageRaw = $("age").value.trim();
+  if (ageRaw === "" || +ageRaw < 0) return fail("err1","traveller age is required — absence is not a discount");
+  const age = +ageRaw;
+  const days = exit - entry + 1, cap = profile().max_covered_days;
+  if (cap !== null && days > cap) return fail("err1","window beyond the tourism cap is residence, not cover");
+  due = priceCover(profile(), days, age);
+  traveler = { name, passport: pp, nat: $("nat").value.trim(), age,
+               bg: $("bg").value, entry, exit, profile: PROFILE_ID,
                allergies: $("allergies").value.split(",").map(s=>s.trim()).filter(Boolean),
                conditions: $("conditions").value.split(",").map(s=>s.trim()).filter(Boolean),
                meds: $("meds").value.split(",").map(s=>s.trim()).filter(Boolean),
                contact: $("contact").value.trim() };
   localStorage.setItem("tp.traveler", JSON.stringify(traveler));
-  $("premium").textContent = days + " covered days → premium ₦" + (due/100).toLocaleString() + " (" + due + " kobo)";
+  $("premium").textContent = days + " covered days → premium " + fmtDue(due);
   $("amount").value = due;
 };
 $("pay").onclick = () => {
@@ -129,7 +243,7 @@ $("pay").onclick = () => {
     pill.textContent = "coverage active";
     issuePass();
   } else {
-    pill.textContent = "shortfall ₦" + ((due-paid)/100).toLocaleString() + " — a partial payment is a stated shortfall, not a silent discount";
+    pill.textContent = "shortfall " + fmtMajor(due-paid) + " — a partial payment is a stated shortfall, not a silent discount";
     pill.className = "pill orange";
   }
 };
@@ -137,7 +251,7 @@ function issuePass(){
   const bytes = new Uint8Array(24); crypto.getRandomValues(bytes);
   const token = "tp_" + btoa(String.fromCharCode(...bytes))
                   .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
-  const payload = "https://er.ng.gov/er#t=" + token;
+  const payload = profile().er_url + token;
   localStorage.setItem("tp.token", token);
   $("passCard").style.display = "block";
   $("payload").textContent = payload;
