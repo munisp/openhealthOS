@@ -124,5 +124,50 @@ class TestBoardFullyWired(unittest.TestCase):
                             f"{s['link']} must exist in apps/pwa")
 
 
+class TestGuidedTour(unittest.TestCase):
+    """The tour page walks the board in scene order. The page is
+    structural — a contract the board JSON must satisfy — so the tests
+    pin the contract, not the pixels."""
+
+    @classmethod
+    def setUpClass(cls):
+        pwa = os.path.abspath(os.path.join(_HERE, "..", "..", "apps", "pwa"))
+        cls.page = open(os.path.join(pwa, "vhc-tour.html")).read()
+        narrative = seed_pilot(seed=42)["narrative"]
+        from vhdemo import build_board, build_walkthrough
+        cls.board = build_board(build_walkthrough(narrative), narrative)
+
+    def test_tour_reads_the_board_json(self):
+        self.assertIn("vhc-demo-board.json", self.page)
+
+    def test_tour_walks_scenes_in_arc_order(self):
+        # the page renders board.scenes sequentially with prev/next —
+        # the board's scene order IS the tour order
+        self.assertIn("board.scenes", self.page)
+        self.assertIn("idx--", self.page)
+        self.assertIn("idx++", self.page)
+        order = [s["scene"] for s in self.board["scenes"]]
+        self.assertEqual(order[0], "arrival")
+        self.assertEqual(order[-1], "proof")
+
+    def test_tour_shows_terminal_for_proof_not_a_link(self):
+        # proof has no surface; the stage must render the command,
+        # not a broken iframe
+        self.assertIn("the proof is a command, not a slide", self.page)
+        self.assertIn("bash demo/vhc-walkthrough.sh", self.page)
+        proof = next(s for s in self.board["scenes"] if s["scene"] == "proof")
+        self.assertIsNone(proof["link"])
+
+    def test_tour_pins_red_findings(self):
+        self.assertIn("STOP THE DEMO", self.page)
+        self.assertIn("red_findings", self.page)
+
+    def test_tour_iframes_only_linked_surfaces(self):
+        # an iframe is created only when s.link is set — never for
+        # an unwired scene
+        self.assertIn('if (s.link)', self.page)
+        self.assertIn('createElement("iframe")', self.page)
+
+
 if __name__ == "__main__":
     unittest.main()

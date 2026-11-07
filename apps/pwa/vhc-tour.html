@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>VHC guided tour — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; height:100vh; display:flex; flex-direction:column; }
+  header { background:#12324a; padding:10px 18px; display:flex; align-items:center; gap:14px; }
+  header h1 { font-size:1rem; margin:0; }
+  .progress { font-size:.8rem; color:#8aa39d; margin-left:auto; font-family:ui-monospace,monospace; }
+  .red { background:#4a1512; color:#ff9d92; padding:8px 18px; font-weight:700;
+         font-size:.85rem; display:none; }
+  .wrap { flex:1; display:grid; grid-template-columns: 340px 1fr; min-height:0; }
+  .panel { padding:16px; overflow-y:auto; border-right:1px solid #2a3532; }
+  .panel h2 { margin:0 0 4px; font-size:1.15rem; }
+  .panel .surface { font-size:.78rem; color:#8aa39d; margin-bottom:10px; }
+  .panel ul { margin:0; padding-left:18px; }
+  .panel li { margin:8px 0; font-size:.9rem; line-height:1.5; }
+  .stage { min-height:0; display:flex; flex-direction:column; }
+  iframe { flex:1; border:0; background:#0d1312; }
+  .terminal { flex:1; display:flex; align-items:center; justify-content:center; }
+  .terminal pre { background:#161d1b; border:1px solid #2a3532; border-radius:12px;
+                  padding:24px 28px; font-size:.95rem; line-height:1.7; color:#7be3a3;
+                  font-family:ui-monospace,monospace; }
+  .terminal pre .c { color:#8aa39d; }
+  nav { display:flex; gap:10px; padding:12px 18px; border-top:1px solid #2a3532;
+        background:#11181780; }
+  nav button { background:#1d6fd1; color:#fff; border:none; border-radius:10px;
+               padding:10px 22px; font-weight:700; cursor:pointer; font-size:.95rem; }
+  nav button:disabled { background:#243130; color:#5a6b67; cursor:not-allowed; }
+  nav .where { align-self:center; font-size:.8rem; color:#8aa39d; margin-left:8px; }
+  .err { margin:16px; background:#4a1512; color:#ff9d92; padding:10px 14px;
+         border-radius:10px; font-size:.9rem; white-space:pre-wrap; }
+  .k { font-size:.72rem; color:#5a6b67; align-self:center; margin-left:auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>VHC GUIDED TOUR</h1>
+  <span class="progress" id="progress">—</span>
+</header>
+<div class="red" id="red"></div>
+<div class="wrap" id="wrap" style="display:none">
+  <div class="panel">
+    <h2 id="sceneName"></h2>
+    <div class="surface" id="sceneSurface"></div>
+    <ul id="points"></ul>
+  </div>
+  <div class="stage" id="stage"></div>
+</div>
+<div class="err" id="err" style="display:none"></div>
+<nav id="nav" style="display:none">
+  <button id="prev">← Prev</button>
+  <button id="next">Next →</button>
+  <span class="where" id="where"></span>
+  <span class="k">←/→ arrow keys work</span>
+</nav>
+<script>
+// The tour walks the board in scene order: talking points on the left,
+// the real surface in an iframe on the right. Proof has no surface —
+// the terminal is the proof, so the stage shows the command.
+// Red findings pin above the stage; the tour does not hide them.
+(async function () {
+  const err = document.getElementById("err");
+  let board;
+  try {
+    const resp = await fetch("vhc-demo-board.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error("board JSON HTTP " + resp.status +
+      " — generate it: bash demo/vhc-walkthrough.sh");
+    board = await resp.json();
+  } catch (e) { err.style.display = "block"; err.textContent = String(e.message || e); return; }
+
+  if (board.red_findings && board.red_findings.length) {
+    const red = document.getElementById("red");
+    red.textContent = "STOP THE DEMO — " + board.red_findings.join("; ");
+    red.style.display = "block";
+  }
+
+  document.getElementById("wrap").style.display = "grid";
+  document.getElementById("nav").style.display = "flex";
+
+  const scenes = board.scenes;
+  let idx = 0;
+
+  const stage = document.getElementById("stage");
+  function render() {
+    const s = scenes[idx];
+    document.getElementById("sceneName").textContent =
+      (idx + 1) + ". " + s.scene;
+    document.getElementById("sceneSurface").textContent = s.surface;
+    document.getElementById("points").innerHTML = s.talking_points
+      .map(function (tp) {
+        const li = document.createElement("li");
+        li.textContent = tp;
+        return li.outerHTML;
+      }).join("");
+    document.getElementById("progress").textContent =
+      "scene " + (idx + 1) + " of " + scenes.length + " · seed " + board.seed +
+      " · " + board.audience;
+    document.getElementById("where").textContent = s.link
+      ? "live surface: " + s.link
+      : "no surface — the terminal is the proof";
+    document.getElementById("prev").disabled = idx === 0;
+    document.getElementById("next").disabled = idx === scenes.length - 1;
+
+    stage.innerHTML = "";
+    if (s.link) {
+      const f = document.createElement("iframe");
+      f.src = s.link;
+      f.title = s.scene + " surface";
+      stage.appendChild(f);
+    } else {
+      const t = document.createElement("div");
+      t.className = "terminal";
+      t.innerHTML = "<pre><span class='c'># the proof is a command, not a slide</span>\n" +
+        "$ bash demo/vhc-walkthrough.sh\n\n" +
+        "<span class='c'># same seed, same fortnight, byte for byte</span>\n" +
+        "$ python3 -m pytest packages -q\n\n" +
+        "<span class='c'># what is still environment is proven in gates G0–G5,</span>\n" +
+        "<span class='c'># not on this stage</span></pre>";
+      stage.appendChild(t);
+    }
+  }
+
+  document.getElementById("prev").onclick = function () { if (idx > 0) { idx--; render(); } };
+  document.getElementById("next").onclick = function () { if (idx < scenes.length - 1) { idx++; render(); } };
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "ArrowLeft") document.getElementById("prev").click();
+    if (e.key === "ArrowRight") document.getElementById("next").click();
+  });
+
+  render();
+})();
+</script>
+</body>
+</html>
