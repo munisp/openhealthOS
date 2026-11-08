@@ -4,34 +4,8 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Offline sync — OpenHealth OS</title>
-<style>
-  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-         background:#0d1312; color:#e8ecea; }
-  header { background:#12324a; padding:12px 18px; }
-  header h1 { font-size:1.05rem; margin:0; }
-  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
-  main { max-width:960px; margin:0 auto; padding:14px; display:grid; gap:14px; }
-  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
-  .card h2 { font-size:.8rem; color:#9ec7ff; text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
-  .row { display:flex; justify-content:space-between; gap:10px; padding:7px 0;
-         border-bottom:1px solid #243130; font-size:.92rem; }
-  .row b { color:#9ec7ff; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
-  .mono { font-family:ui-monospace,monospace; font-size:.75rem; color:#8aa39d; word-break:break-all; }
-  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:.75rem; }
-  .ok { background:#14532d; color:#7be3a3; }
-  .bad { background:#4c1d1d; color:#ffb4ab; }
-  .warn { background:#4d3a00; color:#ffd77a; }
-  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
-  .kpi { background:#0d1312; border:1px solid #2a3532; border-radius:10px; padding:10px; text-align:center; }
-  .kpi-num { font-size:1.5rem; font-weight:700; color:#7be3a3; }
-  .kpi-label { font-size:.68rem; color:#8aa39d; text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
-  .locale-sel { background:#0d1312; color:#e8ecea; border:1px solid #2a3532; border-radius:8px;
-                padding:5px 10px; font-size:.85rem; }
-  .demo-banner { background:#3d2e00; border:1px solid #7a5c00; border-radius:8px;
-                 padding:8px 14px; font-size:.8rem; color:#ffd77a; text-align:center; }
-  .gate { background:#4c1d1d; border:1px solid #ffb4ab; border-radius:8px;
-          padding:10px 14px; font-size:.85rem; color:#ffb4ab; }
-</style>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
 </head>
 <body>
 <header>
@@ -39,17 +13,18 @@
   <div class="meta" id="hdr">loading…</div>
 </header>
 <main>
-  <div class="demo-banner">Synthetic demo data — deterministic seed. One ward morning: three queued mutations, one retry. The clean dose applies once; the wrong-barcode dose refuses with the engine's reason; the changed flowsheet row meets its conflict policy; the retry is answered from the stored verdict — never double-applied.</div>
+  <div class="demo-banner" data-i18n="demo_banner">Synthetic demo data — deterministic seed. One ward morning: three queued mutations, one retry. The clean dose applies once; the wrong-barcode dose refuses with the engine's reason; the changed flowsheet row meets its conflict policy; the retry is answered from the stored verdict — never double-applied.</div>
 
   <div class="card">
     <h2>Locale</h2>
     <div class="row">
-      <b>Country context</b>
+      <b data-i18n="country_context">Country context</b>
       <span>
         <select class="locale-sel" id="locale">
           <option value="cv">Cabo Verde (Esc CVE · Hospital Agostinho Neto)</option>
           <option value="ng">Nigeria (₦ NGN · LUTH)</option>
         </select>
+        <select class="locale-sel" id="langsel" title="Language"></select>
       </span>
     </div>
     <div class="row"><b>Facility</b><span id="facility"></span></div>
@@ -92,9 +67,9 @@
   </div>
 
   <div class="card">
-    <h2>Integrity</h2>
-    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
-    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+    <h2 data-i18n="integrity">Integrity</h2>
+    <div class="row"><b data-i18n="payload_sha256">Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b data-i18n="versions">Versions</b><span class="mono" id="versions"></span></div>
   </div>
 </main>
 <script>
@@ -162,6 +137,18 @@ async function load(locale) {
 
 $("locale").addEventListener("change", (e) => load(e.target.value));
 load("cv");
+</script>
+
+<script type="module">
+import { loadStrings, applyChrome, fillLanguageSelect } from "./js/depth-i18n.js";
+const pack = await loadStrings();
+const langsel = document.getElementById("langsel");
+fillLanguageSelect(langsel, pack, "en");
+applyChrome(pack, langsel.value);
+langsel.addEventListener("change", (e) => applyChrome(pack, e.target.value));
+document.getElementById("locale").addEventListener("change", (e) => {
+  document.getElementById("brandcss").href = `css/brand.${e.target.value}.css`;
+});
 </script>
 </body>
 </html>

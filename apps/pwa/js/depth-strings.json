@@ -1,0 +1,144 @@
+{
+  "surface": "depth-chrome",
+  "fallback": "en",
+  "languages": {
+    "ar": {
+      "name": "العربية",
+      "direction": "rtl",
+      "script": "Arabic",
+      "family": "working"
+    },
+    "en": {
+      "name": "English",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "working"
+    },
+    "fr": {
+      "name": "Français",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "working"
+    },
+    "ha": {
+      "name": "Hausa",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "west-africa"
+    },
+    "ig": {
+      "name": "Igbo",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "west-africa"
+    },
+    "pcm": {
+      "name": "Naija",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "west-africa"
+    },
+    "pt": {
+      "name": "Português",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "working"
+    },
+    "sw": {
+      "name": "Kiswahili",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "east-africa"
+    },
+    "yo": {
+      "name": "Yorùbá",
+      "direction": "ltr",
+      "script": "Latin",
+      "family": "west-africa"
+    }
+  },
+  "strings": {
+    "ar": {
+      "country_context": "سياق البلد",
+      "facility": "المرفق الصحي",
+      "language": "اللغة",
+      "demo_banner": "بيانات تجريبية تركيبية — بذرة ثابتة. كل رفض أدناه هو بوابة تعمل.",
+      "integrity": "النزاهة",
+      "payload_sha256": "بصمة sha256 للبيانات",
+      "versions": "الإصدارات"
+    },
+    "en": {
+      "country_context": "Country context",
+      "facility": "Facility",
+      "language": "Language",
+      "demo_banner": "Synthetic demo data — deterministic seed. Every refusal below is a gate working.",
+      "integrity": "Integrity",
+      "payload_sha256": "Payload sha256",
+      "versions": "Versions"
+    },
+    "fr": {
+      "country_context": "Contexte du pays",
+      "facility": "Établissement",
+      "language": "Langue",
+      "demo_banner": "Données de démonstration synthétiques — graine déterministe. Chaque refus ci-dessous est un contrôle qui fonctionne.",
+      "integrity": "Intégrité",
+      "payload_sha256": "sha256 de la charge",
+      "versions": "Versions"
+    },
+    "ha": {
+      "country_context": "Yanayin ƙasa",
+      "facility": "Asibiti",
+      "language": "Harshe",
+      "demo_banner": "Bayanan gwaji — tsaba iri ɗaya. Kowane ƙin a ƙasa ƙofar karewa ce tana aiki.",
+      "integrity": "Aminci",
+      "payload_sha256": "sha256 na bayanai",
+      "versions": "Sigogi"
+    },
+    "ig": {
+      "country_context": "Ọnọdụ obodo",
+      "facility": "Ụlọ ọgwụ",
+      "language": "Asụsụ",
+      "demo_banner": "Data ngosi — mkpụrụ otu. Mgbaghara ọ bụla dị n'okpuru bụ ọnụ ụzọ na-arụ ọrụ.",
+      "integrity": "Nkwenye",
+      "payload_sha256": "sha256 nke data",
+      "versions": "Ụdịdị"
+    },
+    "pcm": {
+      "country_context": "Country wey you dey",
+      "facility": "Hospital",
+      "language": "Language wey you want",
+      "demo_banner": "Demo data — di seed na di same everytime. Any refusal wey you see na gate wey dey work.",
+      "integrity": "Integrity",
+      "payload_sha256": "Payload sha256",
+      "versions": "Versions"
+    },
+    "pt": {
+      "country_context": "Contexto do país",
+      "facility": "Unidade de saúde",
+      "language": "Língua",
+      "demo_banner": "Dados de demonstração sintéticos — semente determinista. Cada recusa abaixo é um controlo a funcionar.",
+      "integrity": "Integridade",
+      "payload_sha256": "sha256 do pacote",
+      "versions": "Versões"
+    },
+    "sw": {
+      "country_context": "Muktadha wa nchi",
+      "facility": "Kituo cha afya",
+      "language": "Lugha",
+      "demo_banner": "Data ya onyesho — mbegu moja. Kila kukatazwa hapa chini ni lango linalofanya kazi.",
+      "integrity": "Uadilifu",
+      "payload_sha256": "sha256 ya data",
+      "versions": "Matoleo"
+    },
+    "yo": {
+      "country_context": "Àyíká orílẹ̀-èdè",
+      "facility": "Ilé ìwòsàn",
+      "language": "Èdè",
+      "demo_banner": "Dàtà àpẹẹrẹ — irúgbìn kan ṣoṣo. Gbogbo ìkọ̀sẹ̀dáyò lábẹ̀ yìí ni ẹ̀nù-ònà tó Ń ṣiṣẹ́.",
+      "integrity": "Ìdájọ́ tòótọ́",
+      "payload_sha256": "sha256 àkójọpọ̀",
+      "versions": "Àwọn ẹ̀yà"
+    }
+  },
+  "version": "langpack@1.0.0"
+}

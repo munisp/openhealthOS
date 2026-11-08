@@ -14,6 +14,8 @@ const SHELL_URLS = [
   "./clinical-depth.html", "./inpatient-depth.html",
   "./national-depth.html", "./national.ng.json", "./national.cv.json",
   "./sync-depth.html", "./sync.ng.json", "./sync.cv.json",
+  "./css/depth-theme.css", "./css/brand.ng.css", "./css/brand.cv.css",
+  "./js/depth-strings.json", "./js/depth-i18n.js",
   "./specialty-depth.html", "./design-tokens.css",
 ];
 

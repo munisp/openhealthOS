@@ -1,0 +1,68 @@
+/* depth-theme.css — the shared skin for the demo depth pages.
+ *
+ * Every colour is a custom property with the platform default as its
+ * value. A brand entry (packages/brandpack) re-skins every page at
+ * once by overriding --oh-* in a generated brand.{id}.css sheet —
+ * a build artifact of the ratified registry, never hand-edited.
+ *
+ * RTL: layout uses logical properties (inline-start, not left), so an
+ * rtl language entry flips the chrome without a second stylesheet.
+ */
+
+:root {
+  --oh-bg: #0d1312;
+  --oh-ink: #e8ecea;
+  --oh-header: #12324a;
+  --oh-card: #161d1b;
+  --oh-hairline: #2a3532;
+  --oh-accent: #9ec7ff;
+  --oh-accent-ink: #8aa39d;
+  --oh-ok: #7be3a3;
+  --oh-ok-bg: #14532d;
+  --oh-danger: #ffb4ab;
+  --oh-danger-bg: #4c1d1d;
+  --oh-warn: #ffd77a;
+  --oh-warn-bg: #4d3a00;
+  --oh-banner-bg: #3d2e00;
+  --oh-banner-border: #7a5c00;
+  --oh-banner-ink: #ffd77a;
+}
+
+body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+       background: var(--oh-bg); color: var(--oh-ink); }
+header { background: var(--oh-header); padding:12px 18px; }
+header h1 { font-size:1.05rem; margin:0; }
+header .meta { font-size:.75rem; color: var(--oh-accent-ink); margin-top:4px; font-family:ui-monospace,monospace; }
+main { max-width:960px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+.card { background: var(--oh-card); border:1px solid var(--oh-hairline); border-radius:12px; padding:16px; }
+.card h2 { font-size:.8rem; color: var(--oh-accent); text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
+.row { display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+       border-bottom:1px solid var(--oh-hairline); font-size:.92rem; }
+.row b { color: var(--oh-accent); font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+.mono { font-family:ui-monospace,monospace; font-size:.75rem; color: var(--oh-accent-ink); word-break:break-all; }
+.badge { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:.75rem; }
+.ok, .given { background: var(--oh-ok-bg); color: var(--oh-ok); }
+.bad, .refused { background: var(--oh-danger-bg); color: var(--oh-danger); }
+.warn, .overdue { background: var(--oh-warn-bg); color: var(--oh-warn); }
+.high-alert { background:#5b21b6; color:#d8b4fe; }
+.kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+.kpi { background: var(--oh-bg); border:1px solid var(--oh-hairline); border-radius:10px; padding:10px; text-align:center; }
+.kpi-num { font-size:1.5rem; font-weight:700; color: var(--oh-ok); }
+.kpi-label { font-size:.68rem; color: var(--oh-accent-ink); text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
+.locale-sel { background: var(--oh-bg); color: var(--oh-ink); border:1px solid var(--oh-hairline);
+              border-radius:8px; padding:5px 10px; font-size:.85rem; }
+.demo-banner { background: var(--oh-banner-bg); border:1px solid var(--oh-banner-border);
+               border-radius:8px; padding:8px 14px; font-size:.8rem; color: var(--oh-banner-ink); text-align:center; }
+.gate { background: var(--oh-danger-bg); border:1px solid var(--oh-danger); border-radius:8px;
+        padding:10px 14px; font-size:.85rem; color: var(--oh-danger); }
+.timeline { border-inline-start:2px solid var(--oh-hairline); padding-inline-start:14px; margin-inline-start:8px; }
+.tl-ev { position:relative; margin-bottom:8px; font-size:.88rem; }
+.tl-ev::before { content:""; position:absolute; inset-inline-start:-18px; top:6px; width:8px; height:8px;
+                 border-radius:50%; background: var(--oh-accent); }
+.odonto { display:grid; grid-template-columns:repeat(16,1fr); gap:3px; margin:8px 0; }
+.tooth { background: var(--oh-bg); border:1px solid var(--oh-hairline); border-radius:4px; text-align:center;
+         padding:4px 0; font-size:.65rem; font-family:ui-monospace,monospace; }
+.tooth.caries { border-color: var(--oh-danger); color: var(--oh-danger); }
+.tooth.filled { border-color: var(--oh-accent); color: var(--oh-accent); }
+.tooth.extracted { border-color:#666; color:#666; text-decoration:line-through; }
+.tooth.watch { border-color: var(--oh-warn); color: var(--oh-warn); }
