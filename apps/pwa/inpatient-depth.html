@@ -55,8 +55,8 @@
       <b>Country context</b>
       <span>
         <select class="locale-sel" id="locale">
-          <option value="ng">Nigeria (₦ NGN · NHIA)</option>
           <option value="cv">Cabo Verde (Esc CVE · INPS-CV)</option>
+          <option value="ng">Nigeria (₦ NGN · NHIA)</option>
         </select>
       </span>
     </div>
@@ -181,7 +181,7 @@ async function load(locale) {
 }
 
 $("locale").addEventListener("change", e => load(e.target.value));
-load("ng");
+load("cv");
 </script>
 </body>
 </html>
