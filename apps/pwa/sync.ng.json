@@ -1,0 +1,91 @@
+{
+  "locale": "ng",
+  "country": "Nigeria",
+  "currency": "NGN",
+  "facility": "Lagos University Teaching Hospital",
+  "nurse": "Adaeze Okafor",
+  "rules": [
+    {
+      "rule_id": "r-ward-emar",
+      "entity_class": "emar-administration",
+      "bucket": "ward_emar",
+      "retention": "episode"
+    },
+    {
+      "rule_id": "r-ward-flowsheet",
+      "entity_class": "flowsheet-row",
+      "bucket": "ward_flowsheets",
+      "retention": "rolling-30d"
+    }
+  ],
+  "verdicts": [
+    {
+      "key": "up-1",
+      "kind": "emar-administration",
+      "verdict": "applied",
+      "reason": null
+    },
+    {
+      "key": "up-2",
+      "kind": "emar-administration",
+      "verdict": "refused",
+      "reason": "medication barcode mismatch — wrong drug or strength"
+    },
+    {
+      "key": "up-3",
+      "kind": "flowsheet-row",
+      "policy": "amend-not-edit",
+      "verdict": "conflict",
+      "reason": "row changed under you — amend, never overwrite"
+    },
+    {
+      "key": "up-1",
+      "kind": "emar-administration",
+      "replayed": true,
+      "verdict": "applied",
+      "reason": null
+    }
+  ],
+  "conflict_report": {
+    "conflicts": 1,
+    "by_policy": {
+      "append-only": 0,
+      "amend-not-edit": 1,
+      "refuse-and-reissue": 0,
+      "latest-wins-with-audit": 0
+    },
+    "applied": 1,
+    "sha256": "604733e578af34c5c0aa4990087cd13b12832fa042615fe1cca9a8041fef58fd",
+    "version": "syncmesh@1.0.0"
+  },
+  "checkpoint": {
+    "head": "649213d20e6bd6c03a303562302c11f3c19cc3d36e0fa5c2e9efea020210f969",
+    "batches": 2,
+    "chain_ok": true
+  },
+  "retention": {
+    "kept": [
+      "mar-1-S1",
+      "careplan-p1"
+    ],
+    "evicted": [
+      {
+        "ref": "obs-77",
+        "reason": "untouched beyond rolling-30d"
+      },
+      {
+        "ref": "obs-12",
+        "reason": "untouched beyond rolling-30d"
+      }
+    ]
+  },
+  "mar_state": {
+    "mar-1-S1": "given",
+    "mar-1-S2": "scheduled",
+    "mar-1-S3": "scheduled"
+  },
+  "syncmesh": "syncmesh@1.0.0",
+  "version": "syncdemo@1.0.0",
+  "seed": 42,
+  "sha256": "1020bb2382d27d7911e9751cdce4d1b4830ed066fa205d9c784734a363160703"
+}

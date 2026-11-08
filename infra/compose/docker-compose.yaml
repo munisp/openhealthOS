@@ -18,6 +18,17 @@ services:
     environment:
       POSTGRES_PASSWORD: openhealth-dev
       POSTGRES_DB: openhealth
+    # Logical replication is on for the PowerSync sync substrate
+    # (infra/compose/powersync.yaml reads the WAL). Harmless for
+    # everything else; required for sync.
+    command:
+      - postgres
+      - -c
+      - wal_level=logical
+      - -c
+      - max_wal_senders=4
+      - -c
+      - max_replication_slots=4
     ports: ["5432:5432"]
     volumes: ["pgdata:/var/lib/postgresql/data"]
     healthcheck:

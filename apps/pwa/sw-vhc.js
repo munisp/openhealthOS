@@ -13,6 +13,7 @@ const SHELL_URLS = [
   "./vhc-demo.html", "./vhc-tour.html", "./vhc-growth.html",
   "./clinical-depth.html", "./inpatient-depth.html",
   "./national-depth.html", "./national.ng.json", "./national.cv.json",
+  "./sync-depth.html", "./sync.ng.json", "./sync.cv.json",
   "./specialty-depth.html", "./design-tokens.css",
 ];
 
