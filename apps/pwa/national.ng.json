@@ -1,0 +1,100 @@
+{
+  "locale": "ng",
+  "country": "Nigeria",
+  "currency": "NGN",
+  "payer": "NHIA",
+  "facilities": [
+    "Lagos University Teaching Hospital",
+    "University College Hospital Ibadan"
+  ],
+  "patient": "Adaeze Okafor",
+  "doctor": "Dr Fashola",
+  "eprescribe": {
+    "issued": 2,
+    "partially_dispensed": "partially-dispensed",
+    "token": "RX-04B45F37E9AD",
+    "dispensed_qty": 10,
+    "remaining_qty": 11,
+    "never_collected": [
+      {
+        "rx_id": "RX-D2",
+        "patient_ref": "p-2",
+        "state": "issued",
+        "issued_day": 1,
+        "days_open": 4
+      }
+    ],
+    "payer": "NHIA",
+    "audit_sha256": "35655ee8ee17bd64ee36011c706eea5e494c67b4d2b51276c488e44c25f4f3e8"
+  },
+  "sharedsum": {
+    "sections_read": [
+      "allergies",
+      "problems"
+    ],
+    "read_checksum": "fee3705782c036ec8d41449da32246db8573d04e3bc5f97e996ec52283f60ae3",
+    "break_glass_count": 1,
+    "restricted_refusal": "this citizen has restricted their summary; the restriction is all you may learn",
+    "coverage": {
+      "patients": 2,
+      "contributions": 3,
+      "restricted": 1,
+      "reads": 2,
+      "version": "sharedsum@1.0.0"
+    }
+  },
+  "triageline": {
+    "calls": 3,
+    "dispatch_met": true,
+    "callbacks_kept": 1,
+    "callbacks_breached": 1,
+    "report_sha256": "80d9f1202aa0a8d20446e13011e4c15f28086f2bb3d4ec46a32e6c5235828a77"
+  },
+  "panelcare": {
+    "panel_size": 2,
+    "cap": 1800,
+    "overdue_recalls": [
+      {
+        "patient_ref": "p-2",
+        "condition": "hiv-art",
+        "days_overdue": 10,
+        "never_reviewed": true
+      }
+    ],
+    "prevention_due_child": [
+      {
+        "programme": "childhood-immunization",
+        "status": "due"
+      }
+    ],
+    "kpis_sha256": "db9a81db7a10622ffe4d993c17c4f6a9a12dcefbe9574a78ebbca3f712d02e2e"
+  },
+  "observatory": {
+    "national_value": 90,
+    "national_checksum": "8b89449b5ea58d9e19dcef0d976b1dee6b741cad2c1a27f4c36e6665102e95d5",
+    "small_cell": {
+      "suppressed": true,
+      "suppression": "count below k-floor 5 — suppressed, not rounded"
+    }
+  },
+  "healthcred": {
+    "verified_serial": "S-0001",
+    "subject_checked": true,
+    "revoked_refusal": "tag revoked — key sheet leaked or asset decommissioned",
+    "audit": {
+      "verifications": 2,
+      "refused": 1,
+      "sha256": "9c28ef5807cf9e96722c33e6cf70a8d2ff50d861259d6cbcf70baf83deb21cbb",
+      "version": "healthcred@1.0.0"
+    }
+  },
+  "teleconsulta": {
+    "boat_medium": true,
+    "tc1_sla_met": true,
+    "tc2_escalated_to": "medevac",
+    "report_sha256": "e6848cfcb5ee40951c7f8546112713e9b1be752687e59f7ff2b34c277eca3edd"
+  },
+  "version": "natdemo@1.0.0",
+  "seed": 42,
+  "sha256": "cfeae0e6f2b55e2b44f73a85122e4be29cb2c4307a45659258ada8af1db85290"
+}

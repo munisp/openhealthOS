@@ -1,0 +1,100 @@
+{
+  "locale": "cv",
+  "country": "Cabo Verde",
+  "currency": "CVE",
+  "payer": "INPS-CV",
+  "facilities": [
+    "Hospital Agostinho Neto",
+    "Hospital Baptista de Sousa"
+  ],
+  "patient": "Aline Tavares",
+  "doctor": "Dr Soares",
+  "eprescribe": {
+    "issued": 2,
+    "partially_dispensed": "partially-dispensed",
+    "token": "RX-345B4C1BB325",
+    "dispensed_qty": 10,
+    "remaining_qty": 11,
+    "never_collected": [
+      {
+        "rx_id": "RX-D2",
+        "patient_ref": "p-2",
+        "state": "issued",
+        "issued_day": 1,
+        "days_open": 4
+      }
+    ],
+    "payer": "INPS-CV",
+    "audit_sha256": "e332d3252e1582f8c102282958a683bf04efd176ffbffd292f549d1c3528d95e"
+  },
+  "sharedsum": {
+    "sections_read": [
+      "allergies",
+      "problems"
+    ],
+    "read_checksum": "13426b127b2a269d11297aa82fe3aaae51bc9189f69294531b01de56a7f50236",
+    "break_glass_count": 1,
+    "restricted_refusal": "this citizen has restricted their summary; the restriction is all you may learn",
+    "coverage": {
+      "patients": 2,
+      "contributions": 3,
+      "restricted": 1,
+      "reads": 2,
+      "version": "sharedsum@1.0.0"
+    }
+  },
+  "triageline": {
+    "calls": 3,
+    "dispatch_met": true,
+    "callbacks_kept": 1,
+    "callbacks_breached": 1,
+    "report_sha256": "80d9f1202aa0a8d20446e13011e4c15f28086f2bb3d4ec46a32e6c5235828a77"
+  },
+  "panelcare": {
+    "panel_size": 2,
+    "cap": 1800,
+    "overdue_recalls": [
+      {
+        "patient_ref": "p-2",
+        "condition": "hiv-art",
+        "days_overdue": 10,
+        "never_reviewed": true
+      }
+    ],
+    "prevention_due_child": [
+      {
+        "programme": "childhood-immunization",
+        "status": "due"
+      }
+    ],
+    "kpis_sha256": "bd86cd7e8c3b8265877c77fdd4c0a2e20c62a7d7410d83273feced7470158286"
+  },
+  "observatory": {
+    "national_value": 90,
+    "national_checksum": "060646d9edb79feec480e0a71295deb80e86e07bccbeead4ad75031e39612006",
+    "small_cell": {
+      "suppressed": true,
+      "suppression": "count below k-floor 5 — suppressed, not rounded"
+    }
+  },
+  "healthcred": {
+    "verified_serial": "S-0001",
+    "subject_checked": true,
+    "revoked_refusal": "tag revoked — key sheet leaked or asset decommissioned",
+    "audit": {
+      "verifications": 2,
+      "refused": 1,
+      "sha256": "9c28ef5807cf9e96722c33e6cf70a8d2ff50d861259d6cbcf70baf83deb21cbb",
+      "version": "healthcred@1.0.0"
+    }
+  },
+  "teleconsulta": {
+    "boat_medium": true,
+    "tc1_sla_met": true,
+    "tc2_escalated_to": "medevac",
+    "report_sha256": "e6848cfcb5ee40951c7f8546112713e9b1be752687e59f7ff2b34c277eca3edd"
+  },
+  "version": "natdemo@1.0.0",
+  "seed": 42,
+  "sha256": "e68078fa6099c65a40c8dea7b1a41b7544317ee6b7c95e64dca6d8c628f45723"
+}

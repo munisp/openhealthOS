@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>National rails — OpenHealth OS</title>
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
+  main { max-width:960px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
+  .card h2 { font-size:.8rem; color:#9ec7ff; text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+         border-bottom:1px solid #243130; font-size:.92rem; }
+  .row b { color:#9ec7ff; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+  .mono { font-family:ui-monospace,monospace; font-size:.75rem; color:#8aa39d; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:.75rem; }
+  .ok { background:#14532d; color:#7be3a3; }
+  .bad { background:#4c1d1d; color:#ffb4ab; }
+  .warn { background:#4d3a00; color:#ffd77a; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+  .kpi { background:#0d1312; border:1px solid #2a3532; border-radius:10px; padding:10px; text-align:center; }
+  .kpi-num { font-size:1.5rem; font-weight:700; color:#7be3a3; }
+  .kpi-label { font-size:.68rem; color:#8aa39d; text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
+  .locale-sel { background:#0d1312; color:#e8ecea; border:1px solid #2a3532; border-radius:8px;
+                padding:5px 10px; font-size:.85rem; }
+  .demo-banner { background:#3d2e00; border:1px solid #7a5c00; border-radius:8px;
+                 padding:8px 14px; font-size:.8rem; color:#ffd77a; text-align:center; }
+  .gate { background:#4c1d1d; border:1px solid #ffb4ab; border-radius:8px;
+          padding:10px 14px; font-size:.85rem; color:#ffb4ab; }
+</style>
+</head>
+<body>
+<header>
+  <h1>National rails — e-prescribing · shared summary · triage line · panels · observatory · credentials · teleconsulta</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. Every refusal below is a national-platform gate working: an over-dispense, a restricted summary, a breached callback promise, a suppressed small cell, a revoked credential.</div>
+
+  <div class="card">
+    <h2>Locale</h2>
+    <div class="row">
+      <b>Country context</b>
+      <span>
+        <select class="locale-sel" id="locale">
+          <option value="ng">Nigeria (₦ NGN · NHIA)</option>
+          <option value="cv">Cabo Verde (Esc CVE · INPS-CV)</option>
+        </select>
+      </span>
+    </div>
+    <div class="row"><b>Facilities</b><span id="facilities"></span></div>
+    <div class="row"><b>Payer</b><span id="payer"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>e-Prescribing — national rail</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="rx-issued"></div><div class="kpi-label">issued</div></div>
+      <div class="kpi"><div class="kpi-num" id="rx-dispensed"></div><div class="kpi-label">units dispensed</div></div>
+      <div class="kpi"><div class="kpi-num" id="rx-remaining"></div><div class="kpi-label">remaining</div></div>
+      <div class="kpi"><div class="kpi-num" id="rx-nc"></div><div class="kpi-label">never collected</div></div>
+    </div>
+    <div class="row"><b>State</b><span class="badge warn" id="rx-state"></span></div>
+    <div class="row"><b>Token</b><span class="mono" id="rx-token"></span></div>
+    <div class="row"><b>Never collected</b><span class="mono" id="rx-nc-detail"></span></div>
+    <div class="mono" id="rx-sha" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Shared summary — national record layer</h2>
+    <div class="row"><b>Sections readable under consent</b><span id="ss-sections"></span></div>
+    <div class="row"><b>Break-glass events (all logged)</b><span class="badge warn" id="ss-bg"></span></div>
+    <div class="gate" id="ss-refusal" style="margin-top:8px"></div>
+    <div class="mono" id="ss-sha" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Triage line — citizen advice with clocks</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="tl-calls"></div><div class="kpi-label">calls</div></div>
+      <div class="kpi"><div class="kpi-num" id="tl-kept"></div><div class="kpi-label">promises kept</div></div>
+      <div class="kpi"><div class="kpi-num" id="tl-breached"></div><div class="kpi-label">promises breached</div></div>
+      <div class="kpi"><div class="kpi-num" id="tl-dispatch"></div><div class="kpi-label">dispatch ≤ 8 min</div></div>
+    </div>
+    <div class="mono" id="tl-sha" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Primary-care panel</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="pc-size"></div><div class="kpi-label">panel size</div></div>
+      <div class="kpi"><div class="kpi-num" id="pc-cap"></div><div class="kpi-label">cap</div></div>
+      <div class="kpi"><div class="kpi-num" id="pc-overdue"></div><div class="kpi-label">overdue recalls</div></div>
+    </div>
+    <div class="gate" id="pc-overdue-detail" style="margin-top:8px"></div>
+    <div class="row" style="margin-top:8px"><b>Prevention due (child)</b><span id="pc-prev"></span></div>
+  </div>
+
+  <div class="card">
+    <h2>Observatory — population health</h2>
+    <div class="row"><b>Malaria incidence (national rollup)</b><span class="badge ok" id="ob-national"></span></div>
+    <div class="gate" id="ob-suppressed" style="margin-top:8px"></div>
+    <div class="mono" id="ob-sha" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Health credentials — offline-verifiable</h2>
+    <div class="row"><b>Vaccination credential</b><span class="badge ok" id="hc-ok"></span></div>
+    <div class="row"><b>Subject checked (salted hash)</b><span id="hc-subject"></span></div>
+    <div class="gate" id="hc-revoked" style="margin-top:8px"></div>
+    <div class="mono" id="hc-audit" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Teleconsulta — island network</h2>
+    <div class="row"><b>Routine consult transport</b><span class="badge warn">boat — stated, not hidden</span></div>
+    <div class="row"><b>Routine SLA met</b><span id="tc-sla"></span></div>
+    <div class="row"><b>Emergency escalated to</b><span class="badge bad" id="tc-esc"></span></div>
+    <div class="mono" id="tc-sha" style="margin-top:6px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="payload-sha"></span></div>
+    <div class="row"><b>Version</b><span class="mono" id="payload-version"></span></div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+async function load(locale) {
+  const res = await fetch(`national.${locale}.json`);
+  const d = await res.json();
+  document.getElementById("hdr").textContent =
+    `${d.country} · ${d.currency} · ${d.facilities[0]}`;
+  document.getElementById("facilities").textContent = d.facilities.join(" · ");
+  document.getElementById("payer").textContent = d.payer;
+
+  const e = d.eprescribe;
+  document.getElementById("rx-issued").textContent = e.issued;
+  document.getElementById("rx-dispensed").textContent = e.dispensed_qty;
+  document.getElementById("rx-remaining").textContent = e.remaining_qty;
+  document.getElementById("rx-nc").textContent = e.never_collected.length;
+  document.getElementById("rx-state").textContent = e.partially_dispensed;
+  document.getElementById("rx-token").textContent = e.token;
+  document.getElementById("rx-nc-detail").textContent =
+    e.never_collected.map(n => `${n.rx_id} · ${n.days_open}d open · ${n.state}`).join("; ");
+  document.getElementById("rx-sha").textContent = "audit sha256 " + e.audit_sha256.slice(0, 24) + "…";
+
+  const s = d.sharedsum;
+  document.getElementById("ss-sections").textContent = s.sections_read.join(", ");
+  document.getElementById("ss-bg").textContent = s.break_glass_count;
+  document.getElementById("ss-refusal").textContent =
+    "Restricted-citizen read refused: " + s.restricted_refusal;
+  document.getElementById("ss-sha").textContent = "read sha256 " + s.read_checksum.slice(0, 24) + "…";
+
+  const t = d.triageline;
+  document.getElementById("tl-calls").textContent = t.calls;
+  document.getElementById("tl-kept").textContent = t.callbacks_kept;
+  document.getElementById("tl-breached").textContent = t.callbacks_breached;
+  document.getElementById("tl-dispatch").textContent = t.dispatch_met ? "yes" : "no";
+  document.getElementById("tl-sha").textContent = "report sha256 " + t.report_sha256.slice(0, 24) + "…";
+
+  const p = d.panelcare;
+  document.getElementById("pc-size").textContent = p.panel_size;
+  document.getElementById("pc-cap").textContent = p.cap;
+  document.getElementById("pc-overdue").textContent = p.overdue_recalls.length;
+  const od = p.overdue_recalls[0];
+  document.getElementById("pc-overdue-detail").textContent =
+    `Overdue: ${od.condition} — ${od.days_overdue} days late, never reviewed (stated, not zero)`;
+  document.getElementById("pc-prev").textContent =
+    p.prevention_due_child.map(x => x.programme).join(", ");
+
+  const o = d.observatory;
+  document.getElementById("ob-national").textContent = o.national_value + " cases";
+  document.getElementById("ob-suppressed").textContent =
+    "Small cell: " + o.small_cell.suppression;
+  document.getElementById("ob-sha").textContent = "events sha256 " + o.national_checksum.slice(0, 24) + "…";
+
+  const h = d.healthcred;
+  document.getElementById("hc-ok").textContent = "verified — " + h.verified_serial;
+  document.getElementById("hc-subject").textContent = h.subject_checked ? "yes" : "possession only";
+  document.getElementById("hc-revoked").textContent =
+    "Revoked credential refused: " + h.revoked_refusal;
+  document.getElementById("hc-audit").textContent =
+    `verifications ${h.audit.verifications} · refused ${h.audit.refused} · sha256 ${h.audit.sha256.slice(0, 16)}…`;
+
+  const tc = d.teleconsulta;
+  document.getElementById("tc-sla").textContent = tc.tc1_sla_met ? "met" : "breached";
+  document.getElementById("tc-esc").textContent = tc.tc2_escalated_to;
+  document.getElementById("tc-sha").textContent = "report sha256 " + tc.report_sha256.slice(0, 24) + "…";
+
+  document.getElementById("payload-sha").textContent = d.sha256;
+  document.getElementById("payload-version").textContent = d.version + " · seed " + d.seed;
+}
+$("locale").addEventListener("change", e => load(e.target.value));
+load("ng");
+</script>
+</body>
+</html>
