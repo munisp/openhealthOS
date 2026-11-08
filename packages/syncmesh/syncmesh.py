@@ -35,8 +35,9 @@ Doctrine:
 import hashlib
 import json
 import sqlite3
+import time
 
-VERSION = "syncmesh@1.1.0"
+VERSION = "syncmesh@1.2.0"
 
 # Scope axes a sync rule may declare. A rule is a conjunction of axes.
 SCOPE_AXES = ("facility", "role", "panel", "patient-consent")
@@ -275,6 +276,204 @@ class SqliteStore:
     def __len__(self):
         return self.db.execute("SELECT COUNT(*) FROM verdicts"
                                ).fetchone()[0]
+
+
+class DbapiStore:
+    """Postgres-ready verdict store on any DBAPI connection.
+
+    The same seam SqliteStore fills in the field, filled by the state
+    plane in production: pass a psycopg connection and the idempotency
+    contract lives where the rest of the platform's state lives —
+    replicated, backed up, and shared across every gate process behind
+    the load balancer. Paramstyle is declared ("qmark" for sqlite3 in
+    tests, "format" for psycopg in production) so the SQL is honest in
+    both worlds."""
+
+    durable = True
+
+    DDL = ("CREATE TABLE IF NOT EXISTS syncmesh_verdicts ("
+           "key TEXT PRIMARY KEY, day INTEGER, body TEXT NOT NULL)")
+
+    def __init__(self, conn, *, paramstyle="format"):
+        if paramstyle not in ("qmark", "format"):
+            raise Error(f"unknown paramstyle {paramstyle!r} — declared, "
+                        "not guessed")
+        self.conn = conn
+        self.ph = "?" if paramstyle == "qmark" else "%s"
+        self.conn.execute(self.DDL)
+        self.conn.commit()
+
+    def get(self, key):
+        row = self.conn.execute(
+            f"SELECT body FROM syncmesh_verdicts WHERE key={self.ph}",
+            (key,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def put(self, key, verdict, *, day):
+        # portable upsert: delete-then-insert inside one commit; the
+        # PRIMARY KEY makes a second insert of the same key a stated
+        # no-op, not a duplicate row
+        ph = self.ph
+        cur = self.conn.cursor()
+        cur.execute(f"DELETE FROM syncmesh_verdicts WHERE key={ph}",
+                    (key,))
+        cur.execute(f"INSERT INTO syncmesh_verdicts (key, day, body) "
+                    f"VALUES ({ph},{ph},{ph})",
+                    (key, day, json.dumps(verdict, sort_keys=True,
+                                          ensure_ascii=False)))
+        self.conn.commit()
+
+    def prune(self, *, before_day):
+        cur = self.conn.execute(
+            f"DELETE FROM syncmesh_verdicts WHERE day < {self.ph}",
+            (before_day,))
+        self.conn.commit()
+        return cur.rowcount
+
+    def __len__(self):
+        return self.conn.execute(
+            "SELECT COUNT(*) FROM syncmesh_verdicts").fetchone()[0]
+
+
+class WalCoalescer:
+    """Group-commit for the upload path.
+
+    Postgres pays one WAL flush per commit; at sync-storm volume the
+    fsync queue — not the SQL — is the ceiling. The coalescer buffers
+    mutations and flushes them as ONE transaction when a declared
+    threshold trips: count, buffered bytes, or the window closing.
+
+    The doctrine that keeps this honest: THE FLUSH IS THE ACK. A
+    mutation is acknowledged only after its buffer flushed — nothing in
+    the buffer is durable, and the client knows because its verdict has
+    not arrived. Window is measured on an injected clock; tests are
+    deterministic."""
+
+    def __init__(self, sink, *, max_count=500, max_bytes=1 << 20,
+                 window_seconds=0.005, clock=None):
+        """sink(buffered) persists one group commit and returns a list
+        of per-mutation results in buffer order."""
+        if max_count < 1 or max_bytes < 1 or window_seconds <= 0:
+            raise Error("coalescing thresholds are declared positive "
+                        "numbers")
+        self.sink = sink
+        self.max_count = max_count
+        self.max_bytes = max_bytes
+        self.window = window_seconds
+        self.clock = clock or time.monotonic
+        self.buffer = []
+        self.buffered_bytes = 0
+        self.opened_at = None
+        self.flushes = 0
+
+    def submit(self, mutation):
+        """Buffer one mutation. Returns the per-mutation results if
+        this submit tripped a flush, else None — the ack arrives with
+        the flush, never before."""
+        body = json.dumps(mutation, sort_keys=True).encode()
+        if not self.buffer:
+            self.opened_at = self.clock()
+        self.buffer.append(mutation)
+        self.buffered_bytes += len(body)
+        if len(self.buffer) >= self.max_count or \
+                self.buffered_bytes >= self.max_bytes:
+            return self.flush()
+        return None
+
+    def tick(self):
+        """The window check — call on a timer; closes a stale buffer
+        so a trickle of writes is not held hostage by a quiet ward."""
+        if self.buffer and \
+                self.clock() - self.opened_at >= self.window:
+            return self.flush()
+        return None
+
+    def flush(self):
+        if not self.buffer:
+            return []
+        batch, self.buffer = self.buffer, []
+        self.buffered_bytes = 0
+        self.opened_at = None
+        self.flushes += 1
+        return self.sink(batch)
+
+    def stats(self):
+        return {"flushes": self.flushes,
+                "buffered": len(self.buffer),
+                "avg_batch": None}
+
+
+class CheckpointCache:
+    """Read-side fan-out for checkpoints.
+
+    A checkpoint snapshot for a bucket changes only when that bucket
+    gains an applied batch — yet thousands of devices poll it between
+    writes. The cache memoizes per-bucket snapshots and invalidates on
+    append; hit ratio is reported, never assumed. This is what lets
+    read replicas carry the polling load while the primary carries
+    only the WAL."""
+
+    def __init__(self):
+        self.snapshots = {}   # bucket -> (fingerprint, snapshot)
+        self.hits = 0
+        self.misses = 0
+
+    def get(self, bucket, *, fingerprint):
+        """Return the cached snapshot if the fingerprint matches, else
+        None. The fingerprint is the caller's proof of freshness — the
+        checkpoint head."""
+        hit = self.snapshots.get(bucket)
+        if hit and hit[0] == fingerprint:
+            self.hits += 1
+            return hit[1]
+        self.misses += 1
+        return None
+
+    def put(self, bucket, *, fingerprint, snapshot):
+        self.snapshots[bucket] = (fingerprint, snapshot)
+
+    def invalidate(self, bucket):
+        self.snapshots.pop(bucket, None)
+
+    def stats(self):
+        total = self.hits + self.misses
+        return {"hits": self.hits, "misses": self.misses,
+                "hit_ratio": round(self.hits / total, 4)
+                if total else None}
+
+
+class ReplicationSlotGuard:
+    """Logical-replication slot discipline.
+
+    A replication slot pins WAL: an abandoned or lagging slot fills the
+    disk and takes the primary down — the classic PowerSync-on-Postgres
+    outage. The guard samples lag (bytes behind the WAL head) through
+    an injected reader and answers honestly: within budget, the slot
+    feeds; beyond it, stated backpressure — catch-up is declared, and
+    new sync sessions are refused until the slot drains."""
+
+    def __init__(self, lag_budget_bytes, *, reader):
+        """reader(slot) -> lag in bytes. Injected so tests are
+        deterministic and production reads pg_stat_replication."""
+        if lag_budget_bytes < 1:
+            raise Error("a lag budget is a declared positive number")
+        self.budget = lag_budget_bytes
+        self.reader = reader
+        self.refusals = []
+
+    def admit(self, slot, *, day=None):
+        """May a new sync session attach to this slot?"""
+        lag = self.reader(slot)
+        if lag > self.budget:
+            self.refusals.append({
+                "slot": slot, "lag_bytes": lag,
+                "budget_bytes": self.budget, "day": day,
+                "reason": "slot lag beyond budget — catch-up in "
+                          "progress; new sessions wait, stated not "
+                          "silent"})
+            return {"admitted": False, "lag_bytes": lag,
+                    "reason": self.refusals[-1]["reason"]}
+        return {"admitted": True, "lag_bytes": lag}
 
 
 class RateLimiter:

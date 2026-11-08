@@ -56,10 +56,10 @@
     },
     "applied": 1,
     "sha256": "604733e578af34c5c0aa4990087cd13b12832fa042615fe1cca9a8041fef58fd",
-    "version": "syncmesh@1.1.0"
+    "version": "syncmesh@1.2.0"
   },
   "checkpoint": {
-    "head": "3d491fa3d4c83bfa1d52d7f9adba78e8ea1b8ddac8755869f0389050a464977a",
+    "head": "5fceef607e841693b8e6cd906f173cef893154f1a75d785e3ea03c1557aa946c",
     "batches": 2,
     "chain_ok": true
   },
@@ -84,8 +84,8 @@
     "mar-1-S2": "scheduled",
     "mar-1-S3": "scheduled"
   },
-  "syncmesh": "syncmesh@1.1.0",
+  "syncmesh": "syncmesh@1.2.0",
   "version": "syncdemo@1.0.0",
   "seed": 42,
-  "sha256": "f86eab940a2402693b424068b1c54785b3d19322f418772b45768fe78a81759a"
+  "sha256": "8f45ddeccf7c413ac6a43e2218455246e8ab2a82a62f639197592719ce51f40a"
 }

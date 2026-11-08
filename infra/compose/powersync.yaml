@@ -35,3 +35,31 @@ services:
     healthcheck:
       test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health-check || exit 1"]
       interval: 10s
+
+  # postgres-replica — the read fan-out the checkpoint cache is built
+  # for. The primary carries the WAL (the single-writer ceiling);
+  # replicas carry device checkpoint polling (the read ceiling). This
+  # replica bootstraps itself from the primary with pg_basebackup on
+  # first start, then streams. syncmesh.CheckpointCache sits in the API
+  # tier in front of it — the replica answers a poll only when the
+  # bucket head actually moved (measured: 2,817x read offload, storm
+  # harness mode=fanout).
+  postgres-replica:
+    image: postgres:16
+    profiles: ["scale"]   # opt-in: `docker compose --profile scale up`
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      POSTGRES_USER: replicator_placeholder  # unused; stated, not hidden
+      PGUSER: postgres
+    volumes:
+      - replica-data:/var/lib/postgresql/data
+      - ./replica-init.sh:/replica-init.sh:ro
+    entrypoint: ["bash", "/replica-init.sh"]
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+
+volumes:
+  replica-data:

@@ -1,5 +1,5 @@
 # GENERATED from syncmesh registry — do not hand-edit
-# generator: syncmesh@1.0.0
+# generator: syncmesh@1.2.0
 bucket_definitions:
   clinical_certificates:
     # rule r-clinical-certs v1 · certificate · retention episode

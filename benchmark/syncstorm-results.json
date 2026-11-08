@@ -1,26 +1,60 @@
 {
-  "harness": "syncstorm@1.0.0",
-  "syncmesh": "syncmesh@1.1.0",
-  "seed": 42,
-  "mutations": 1000000,
-  "devices": 2000,
-  "batch": 100,
-  "wall_seconds": 6.61,
-  "ops_per_second": 151289,
-  "per_submit_ms": {
-    "p50": 0.00275,
-    "p99": 0.00487
+  "harness": "syncstorm@1.1.0",
+  "syncmesh": "syncmesh@1.2.0",
+  "storm": {
+    "harness": "syncstorm@1.0.0",
+    "syncmesh": "syncmesh@1.2.0",
+    "seed": 42,
+    "mutations": 1000000,
+    "devices": 2000,
+    "batch": 100,
+    "wall_seconds": 6.626,
+    "ops_per_second": 150928,
+    "per_submit_ms": {
+      "p50": 0.00274,
+      "p99": 0.00497
+    },
+    "outcomes": {
+      "applied": 904372,
+      "replayed": 47920,
+      "refused": 47708,
+      "verdicts": 1000000
+    },
+    "invariants": {
+      "no_lost_verdicts": true,
+      "exactly_once": true,
+      "chain_holds": true
+    },
+    "all_invariants_hold": true
   },
-  "outcomes": {
-    "applied": 904372,
-    "replayed": 47920,
-    "refused": 47708,
-    "verdicts": 1000000
+  "coalesce": {
+    "mode": "coalesce",
+    "mutations": 1000000,
+    "group_size": 500,
+    "wall_seconds": 5.926,
+    "ops_per_second": 168748,
+    "wal_flushes_uncoalesced": 1000000,
+    "wal_flushes_coalesced": 15625,
+    "flush_reduction": "64x",
+    "invariants": {
+      "every_mutation_acked": true,
+      "flush_is_the_ack": true
+    }
   },
-  "invariants": {
-    "no_lost_verdicts": true,
-    "exactly_once": true,
-    "chain_holds": true
-  },
-  "all_invariants_hold": true
+  "fanout": {
+    "mode": "fanout",
+    "polls": 1000000,
+    "buckets": 256,
+    "write_every": 10000,
+    "wall_seconds": 1.055,
+    "polls_per_second": 947744,
+    "primary_reads_uncached": 1000000,
+    "primary_reads_cached": 355,
+    "read_offload": "2817x",
+    "hit_ratio": 0.9996,
+    "invariants": {
+      "no_stale_reads": true,
+      "stats_reported": true
+    }
+  }
 }

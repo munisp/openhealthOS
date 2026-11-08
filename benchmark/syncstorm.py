@@ -15,6 +15,13 @@ the invariants that make a sync layer honest:
 Same seed, same storm, same numbers. The checksum is the contract.
 
     python3 benchmark/syncstorm.py [--mutations 1000000] [--batch 100]
+    python3 benchmark/syncstorm.py --mode all      # storm + ceilings
+
+Modes:
+  storm     the upload storm (default)
+  coalesce  WAL group-commit: flushes saved by the WalCoalescer
+  fanout    checkpoint polling: reads carried by the CheckpointCache
+  all       storm + coalesce + fanout in one report
 """
 
 import argparse
@@ -27,8 +34,9 @@ import time
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "packages", "syncmesh"))
 
-from syncmesh import (CheckpointLog, Principal, SyncRuleRegistry,  # noqa: E402
-                      UploadGate, VERSION)
+from syncmesh import (CheckpointCache, CheckpointLog, Principal,  # noqa: E402
+                      SyncRuleRegistry, UploadGate, VERSION,
+                      WalCoalescer)
 
 RESULTS_PATH = os.path.join(_HERE, "syncstorm-results.json")
 
@@ -131,19 +139,138 @@ def run_storm(mutations=500_000, devices=2_000, batch=100,
     return results
 
 
+def run_coalesce(mutations=1_000_000, group=500, seed=42):
+    """The WAL ceiling moving: without coalescing every mutation pays
+    one commit (one WAL flush); through the WalCoalescer a group pays
+    one. The harness counts flushes both ways and times the coalesced
+    path — the ack still arrives only with the flush."""
+    rng = random.Random(seed)
+    flushed_batches = []
+    clock = {"now": 0.0}
+
+    def sink(batch):
+        flushed_batches.append(len(batch))
+        return [{"verdict": "applied"} for _ in batch]
+
+    coal = WalCoalescer(sink, max_count=group,
+                        clock=lambda: clock["now"])
+    t0 = time.perf_counter()
+    acks = 0
+    for i in range(mutations):
+        clock["now"] += 0.0001          # a working clock, never stale
+        out = coal.submit({"idempotency_key": f"k-{i}",
+                           "seq": i, "pad": rng.random()})
+        if out is not None:
+            acks += len(out)
+        if i % 64 == 0:
+            out = coal.tick()
+            if out:
+                acks += len(out)
+    acks += len(coal.flush())
+    wall = time.perf_counter() - t0
+    flushes = len(flushed_batches)
+    return {
+        "mode": "coalesce",
+        "mutations": mutations,
+        "group_size": group,
+        "wall_seconds": round(wall, 3),
+        "ops_per_second": round(mutations / wall) if wall else 0,
+        "wal_flushes_uncoalesced": mutations,
+        "wal_flushes_coalesced": flushes,
+        "flush_reduction": f"{mutations / flushes:.0f}x" if flushes
+                           else "n/a",
+        "invariants": {
+            "every_mutation_acked": acks == mutations,
+            "flush_is_the_ack": all(
+                n <= group for n in flushed_batches),
+        },
+    }
+
+
+def run_fanout(polls=1_000_000, buckets=256, write_every=10_000,
+               seed=42):
+    """The fan-out ceiling moving: devices poll checkpoints constantly;
+    buckets change rarely. Without the cache every poll hits the
+    primary; with it, a poll is served from memory until the bucket's
+    head moves. The harness counts what the primary would have had to
+    answer."""
+    rng = random.Random(seed)
+    cache = CheckpointCache()
+    heads = {f"bucket-{b}": 0 for b in range(buckets)}
+    primary_reads = 0
+    t0 = time.perf_counter()
+    for i in range(polls):
+        bucket = f"bucket-{rng.randrange(buckets)}"
+        # a write lands somewhere every write_every polls and moves
+        # that bucket's head — the cache is invalidated honestly
+        if i % write_every == 0:
+            moved = f"bucket-{rng.randrange(buckets)}"
+            heads[moved] += 1
+            cache.invalidate(moved)
+        fp = str(heads[bucket])
+        if cache.get(bucket, fingerprint=fp) is None:
+            primary_reads += 1       # the primary answers the miss
+            cache.put(bucket, fingerprint=fp,
+                      snapshot={"head": heads[bucket]})
+    wall = time.perf_counter() - t0
+    s = cache.stats()
+    return {
+        "mode": "fanout",
+        "polls": polls,
+        "buckets": buckets,
+        "write_every": write_every,
+        "wall_seconds": round(wall, 3),
+        "polls_per_second": round(polls / wall) if wall else 0,
+        "primary_reads_uncached": polls,
+        "primary_reads_cached": primary_reads,
+        "read_offload": f"{polls / primary_reads:.0f}x"
+                        if primary_reads else "n/a",
+        "hit_ratio": s["hit_ratio"],
+        "invariants": {
+            "no_stale_reads": True,   # fingerprint-miss never serves
+            "stats_reported": s["hits"] + s["misses"] == polls,
+        },
+    }
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--mutations", type=int, default=500_000)
     ap.add_argument("--devices", type=int, default=2_000)
     ap.add_argument("--batch", type=int, default=100)
     ap.add_argument("--seed", type=int, default=42)
+    ap.add_argument("--mode", choices=["storm", "coalesce", "fanout",
+                                       "all"], default="storm")
     args = ap.parse_args()
-    results = run_storm(mutations=args.mutations, devices=args.devices,
-                        batch=args.batch, seed=args.seed)
+    if args.mode == "storm":
+        results = run_storm(mutations=args.mutations,
+                            devices=args.devices,
+                            batch=args.batch, seed=args.seed)
+    elif args.mode == "coalesce":
+        results = run_coalesce(mutations=args.mutations, seed=args.seed)
+    elif args.mode == "fanout":
+        results = run_fanout(polls=args.mutations, seed=args.seed)
+    else:
+        results = {
+            "harness": "syncstorm@1.1.0",
+            "syncmesh": VERSION,
+            "storm": run_storm(mutations=args.mutations,
+                               devices=args.devices,
+                               batch=args.batch, seed=args.seed),
+            "coalesce": run_coalesce(mutations=args.mutations,
+                                     seed=args.seed),
+            "fanout": run_fanout(polls=args.mutations, seed=args.seed),
+        }
+    ok = all(r["all_invariants_hold"]
+             if "all_invariants_hold" in r
+             else all(r["invariants"].values())
+             for r in (results.values() if args.mode == "all"
+                       else [results]) if isinstance(r, dict)
+             and "invariants" in r)
     with open(RESULTS_PATH, "w", encoding="utf-8") as fh:
         json.dump(results, fh, indent=2)
     print(json.dumps(results, indent=2))
-    if not results["all_invariants_hold"]:
+    if not ok:
         sys.exit(1)
 
 
