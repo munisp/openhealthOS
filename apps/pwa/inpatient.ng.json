@@ -1,0 +1,396 @@
+{
+ "kind": "inpatient-demo",
+ "locale": "ng",
+ "country": "Nigeria",
+ "currency": "NGN",
+ "facility": "Lagos University Teaching Hospital",
+ "patients": [
+  {
+   "ref": "Pax-NG-0001",
+   "name": "Seun Eze"
+  },
+  {
+   "ref": "Pax-NG-0002",
+   "name": "Kunle Abubakar"
+  },
+  {
+   "ref": "Pax-NG-0003",
+   "name": "Emeka Ogunleye"
+  }
+ ],
+ "mar": {
+  "mar_id": "MAR-DEMO",
+  "patient_ref": "Pax-NG-0001",
+  "day": 1,
+  "rows": [
+   {
+    "slot_id": "MAR-DEMO-S1",
+    "order_id": "ORD-D1",
+    "drug_code": "NG-AMOX500",
+    "dose": "500mg",
+    "route": "oral",
+    "scheduled_minute": 480,
+    "state": "given",
+    "high_alert": false,
+    "event": {
+     "state": "given",
+     "by": "nurse-ada",
+     "minute": 485,
+     "reason": null,
+     "witness": null,
+     "barcode_exception": null,
+     "day": 1
+    },
+    "overdue": false
+   },
+   {
+    "slot_id": "MAR-DEMO-S2",
+    "order_id": "ORD-D1",
+    "drug_code": "NG-AMOX500",
+    "dose": "500mg",
+    "route": "oral",
+    "scheduled_minute": 840,
+    "state": "refused",
+    "high_alert": false,
+    "event": {
+     "state": "refused",
+     "by": "nurse-ada",
+     "minute": 850,
+     "reason": "patient nauseated — refused oral dose",
+     "witness": null,
+     "barcode_exception": null,
+     "day": 1
+    },
+    "overdue": false
+   },
+   {
+    "slot_id": "MAR-DEMO-S3",
+    "order_id": "ORD-D1",
+    "drug_code": "NG-AMOX500",
+    "dose": "500mg",
+    "route": "oral",
+    "scheduled_minute": 1200,
+    "state": "scheduled",
+    "high_alert": false,
+    "event": null,
+    "overdue": true
+   }
+  ],
+  "version": "emar@1.0.0",
+  "sha256": "32794f2e91a2b71cb1f967245b3d6360cb32b2fad423b6d8b96351a056620fc0"
+ },
+ "mar_audit": {
+  "given": 1,
+  "refused": 1,
+  "held": 0,
+  "omitted": 0,
+  "scheduled": 1,
+  "high_alert_witnessed": 0,
+  "barcode_exceptions": 0,
+  "total": 3,
+  "version": "emar@1.0.0"
+ },
+ "flowsheet_rows": [
+  {
+   "row_id": "Pax-NG-0001-FS1",
+   "vital": "heart-rate",
+   "value": 82,
+   "unit": "/min",
+   "day": 1,
+   "minute": 480,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS2",
+   "vital": "spo2",
+   "value": 97,
+   "unit": "%",
+   "day": 1,
+   "minute": 480,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS3",
+   "vital": "heart-rate",
+   "value": 88,
+   "unit": "/min",
+   "day": 1,
+   "minute": 720,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS4",
+   "vital": "spo2",
+   "value": 96,
+   "unit": "%",
+   "day": 1,
+   "minute": 720,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS5",
+   "vital": "heart-rate",
+   "value": 91,
+   "unit": "/min",
+   "day": 1,
+   "minute": 960,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS6",
+   "vital": "spo2",
+   "value": 98,
+   "unit": "%",
+   "day": 1,
+   "minute": 960,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS7",
+   "vital": "temperature",
+   "value": 39.9,
+   "unit": "C",
+   "day": 1,
+   "minute": 480,
+   "by": "nurse-ada",
+   "amends": null
+  },
+  {
+   "row_id": "Pax-NG-0001-FS8",
+   "vital": "temperature",
+   "value": 37.9,
+   "unit": "C",
+   "day": 1,
+   "minute": 485,
+   "by": "nurse-ada",
+   "amends": "Pax-NG-0001-FS7"
+  }
+ ],
+ "fluid_balance": {
+  "day": 1,
+  "intake_ml": 1500,
+  "output_ml": 400,
+  "balance_ml": 1100,
+  "negative_balance": false
+ },
+ "handoff": {
+  "handoff_id": "HO-D1",
+  "patient_ref": "Pax-NG-0001",
+  "day": 1,
+  "shift": "morning",
+  "from": "nurse-ada",
+  "to": "nurse-bola",
+  "countersigned": true,
+  "sbar": {
+   "situation": "day 1 post-admission, malaria",
+   "background": "presented with fever, RDT positive",
+   "assessment": "stable, tolerating orals, febrile AM",
+   "recommendation": "continue obs q4h, repeat RDT day 3"
+  },
+  "version": "nursing@1.0.0"
+ },
+ "ward_report": {
+  "ward_id": "NG-LUTH",
+  "day": 1,
+  "overdue_vitals": [
+   {
+    "patient_ref": "Pax-NG-0001",
+    "gaps": {
+     "systolic-bp": "never-recorded",
+     "diastolic-bp": "never-recorded",
+     "temperature": 515,
+     "respiratory-rate": "never-recorded",
+     "blood-glucose": "never-recorded",
+     "weight": "never-recorded"
+    }
+   },
+   {
+    "patient_ref": "Pax-NG-0002",
+    "gaps": {
+     "systolic-bp": "never-recorded",
+     "diastolic-bp": "never-recorded",
+     "heart-rate": "never-recorded",
+     "spo2": "never-recorded",
+     "temperature": "never-recorded",
+     "respiratory-rate": "never-recorded",
+     "blood-glucose": "never-recorded",
+     "weight": "never-recorded"
+    }
+   }
+  ],
+  "fluid_flags": [],
+  "unsigned_handoffs": [],
+  "sha256": "3265d466ea0b8a653380b90d2299e6e0259e0fbebc5757171d73aa3d6dfd4d4f",
+  "version": "nursing@1.0.0"
+ },
+ "anaesthesia": {
+  "record_id": "ANA-D1",
+  "case_ref": "CASE-D1",
+  "patient_ref": "Pax-NG-0002",
+  "anaesthetist": "dr-anes",
+  "day": 1,
+  "preop": {
+   "asa": "II",
+   "mallampati": "II",
+   "fasting_hours": 3,
+   "elective": false,
+   "airway_plan": "RSI, direct laryngoscopy",
+   "by": "dr-anes"
+  },
+  "anaesthesia_type": "general",
+  "timeline": [
+   {
+    "minute": 0,
+    "kind": "induction",
+    "detail": "general"
+   },
+   {
+    "minute": 0,
+    "kind": "agent",
+    "agent": "propofol",
+    "class": "induction",
+    "dose": "150mg",
+    "by": "dr-anes",
+    "witness": "nurse-ola"
+   },
+   {
+    "minute": 1,
+    "kind": "agent",
+    "agent": "suxamethonium",
+    "class": "muscle-relaxant",
+    "dose": "100mg",
+    "by": "dr-anes",
+    "witness": "nurse-ola"
+   },
+   {
+    "minute": 3,
+    "kind": "milestone",
+    "note": "intubated, ETT 7.5"
+   },
+   {
+    "minute": 5,
+    "kind": "observation",
+    "obs": "heart-rate",
+    "value": 88
+   },
+   {
+    "minute": 5,
+    "kind": "observation",
+    "obs": "systolic-bp",
+    "value": 110
+   },
+   {
+    "minute": 5,
+    "kind": "observation",
+    "obs": "spo2",
+    "value": 99
+   },
+   {
+    "minute": 30,
+    "kind": "observation",
+    "obs": "heart-rate",
+    "value": 84
+   },
+   {
+    "minute": 30,
+    "kind": "observation",
+    "obs": "systolic-bp",
+    "value": 118
+   },
+   {
+    "minute": 30,
+    "kind": "observation",
+    "obs": "spo2",
+    "value": 98
+   },
+   {
+    "minute": 60,
+    "kind": "observation",
+    "obs": "heart-rate",
+    "value": 80
+   },
+   {
+    "minute": 60,
+    "kind": "observation",
+    "obs": "systolic-bp",
+    "value": 115
+   },
+   {
+    "minute": 60,
+    "kind": "observation",
+    "obs": "spo2",
+    "value": 99
+   },
+   {
+    "minute": 15,
+    "kind": "milestone",
+    "note": "knife to skin"
+   },
+   {
+    "minute": 55,
+    "kind": "milestone",
+    "note": "appendix removed, peritoneal lavage"
+   },
+   {
+    "minute": 90,
+    "kind": "emergence",
+    "detail": "pacu"
+   }
+  ],
+  "closed": {
+   "minute": 90,
+   "disposition": "pacu",
+   "handed_over_to": "nurse-pacu",
+   "by": "dr-anes"
+  },
+  "version": "anaesthesia@1.0.0",
+  "sha256": "8da52d44bd77e67c4074cd9a43dec199f33e298a7541c223cdcc4ceaef682b69"
+ },
+ "growth": {
+  "sex": "male",
+  "age_months": 18.0,
+  "table_status": "starter-subset",
+  "version": "who2006@1.0.0",
+  "wfa": {
+   "measure": "wfa",
+   "sex": "male",
+   "x": 18.0,
+   "value": 8.6,
+   "z": -2.59,
+   "band": "moderate",
+   "table_status": "starter-subset",
+   "version": "who2006@1.0.0"
+  },
+  "hfa": {
+   "measure": "hfa",
+   "sex": "male",
+   "x": 18.0,
+   "value": 76.0,
+   "z": -2.17,
+   "band": "moderate",
+   "table_status": "starter-subset",
+   "version": "who2006@1.0.0"
+  },
+  "wfh": {
+   "measure": "wfh",
+   "sex": "male",
+   "x": 76.0,
+   "value": 8.6,
+   "z": -1.38,
+   "band": "normal",
+   "table_status": "starter-subset",
+   "version": "who2006@1.0.0"
+  },
+  "sha256": "efedf09944fe90a16dd2cc553b555b08b5ee24bed70cdccb255de49acac5b87a",
+  "child_ref": "Pax-NG-0003",
+  "child_name": "Emeka Ogunleye"
+ },
+ "version": "emr-demo@1.0.0",
+ "sha256": "0febda7a52472391072cc0eb3a8491c6a0f5d050e34e9391cba5a906c69171a5"
+}

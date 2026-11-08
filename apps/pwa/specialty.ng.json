@@ -1,0 +1,213 @@
+{
+ "kind": "specialty-demo",
+ "locale": "ng",
+ "country": "Nigeria",
+ "currency": "NGN",
+ "facility": "Lagos University Teaching Hospital",
+ "dental": {
+  "patient_ref": "Pax-NG-0001",
+  "day": 2,
+  "teeth": {
+   "11": {
+    "condition": "watch",
+    "entries": 1
+   },
+   "36": {
+    "condition": "filled",
+    "entries": 2
+   },
+   "46": {
+    "condition": "extracted",
+    "entries": 2
+   }
+  },
+  "counts": {
+   "watch": 1,
+   "filled": 1,
+   "extracted": 1
+  },
+  "version": "dental@1.0.0",
+  "sha256": "a48730b4df9043fc5f8b3a273adf9eba4c4c9531da98e7825aeb49ec73abc6b1",
+  "patient_name": "Seun Eze"
+ },
+ "oncology": {
+  "course_id": "OC-D1",
+  "patient_ref": "Pax-NG-0002",
+  "regimen": "CHOP",
+  "cycles_planned": 1,
+  "cycles_given": 1,
+  "last_toxicity": {
+   "grade": 1,
+   "by": "dr-onc",
+   "day": 10
+  },
+  "version": "oncology@1.0.0",
+  "sha256": "46a33f2e0a47645ff6f57505e621bdb97c6def987fde782899e581e827a3738c",
+  "cycle_1_doses": [
+   {
+    "drug": "cyclophosphamide",
+    "mg_per_m2": 750,
+    "computed_mg": 1363.6,
+    "administered_mg": 1363.6,
+    "capped": false
+   },
+   {
+    "drug": "doxorubicin",
+    "mg_per_m2": 50,
+    "computed_mg": 90.9,
+    "administered_mg": 90.9,
+    "capped": false
+   },
+   {
+    "drug": "vincristine",
+    "mg_per_m2": 1.4,
+    "computed_mg": 2.5,
+    "administered_mg": 2.0,
+    "capped": true
+   }
+  ],
+  "cycle_1_bsa": 1.818,
+  "gate_refusal": "neutrophils 0.6 < 1.0 — cycle refused, not delayed-silently",
+  "patient_name": "Kunle Abubakar"
+ },
+ "cssd": {
+  "facility_id": "NG-LUTH",
+  "day": 1,
+  "total_packs": 2,
+  "usable": 1,
+  "quarantined": 1,
+  "expired": 0,
+  "cycles": 2,
+  "version": "cssd@1.0.0",
+  "sha256": "c98a95a03b016ac22bcda21f9cb213008f87ef0bcd4e15f1f5c4f88b976e45a3"
+ },
+ "dietetics": {
+  "screen": {
+   "bmi": 15.5,
+   "weight_loss_pct": 12.0,
+   "intake_reduced_days": 7,
+   "score": 6,
+   "category": "severe-acute-malnutrition",
+   "recommended_diet": "f-75"
+  },
+  "ticket": {
+   "order_id": "DI-D1",
+   "ward": "NG-LUTH",
+   "diet_code": "f-75",
+   "portions": 6,
+   "day": 1,
+   "description": "therapeutic milk, starter phase (SAM)"
+  },
+  "manifest": {
+   "ward": "NG-LUTH",
+   "day": 1,
+   "orders": [
+    {
+     "order_id": "DI-D1",
+     "ward": "NG-LUTH",
+     "diet_code": "f-75",
+     "portions": 6,
+     "day": 1,
+     "description": "therapeutic milk, starter phase (SAM)"
+    }
+   ],
+   "portions_by_diet": {
+    "f-75": 6
+   },
+   "version": "dietetics@1.0.0",
+   "sha256": "09b12a91d64755695493913ddffb5034841dc8f199f143c5f3028a7324161152"
+  },
+  "patient_name": "Emeka Ogunleye"
+ },
+ "certificates": {
+  "sick_note": {
+   "cert_id": "NG-LUTH-CERT-1",
+   "cert_type": "sick-note",
+   "patient_ref": "Pax-NG-0001",
+   "issued_by": "dr-eze",
+   "day": 1,
+   "body": {
+    "days_off": 7,
+    "diagnosis": "malaria",
+    "statement": "unfit for work for 7 days"
+   },
+   "encounter_ref": null,
+   "version": "certificates@1.0.0",
+   "sha256": "bba7755c3fb638029ee129a800542ec837118803e745557fa3df3b5197f3d4bd"
+  },
+  "referral": {
+   "cert_id": "NG-LUTH-CERT-2",
+   "cert_type": "referral-letter",
+   "patient_ref": "Pax-NG-0002",
+   "issued_by": "dr-eze",
+   "day": 1,
+   "body": {
+    "to_specialty": "oncology",
+    "to_facility": "Lagos University Teaching Hospital",
+    "clinical_question": "? DLBCL staging",
+    "summary": "cervical lymphadenopathy, B symptoms, LDH raised"
+   },
+   "encounter_ref": null,
+   "version": "certificates@1.0.0",
+   "sha256": "e2e7955ae914b9c8f40270c53b08a63143ad257572ac0d826e4d8fe671296b19"
+  },
+  "verify_sick_note": [
+   true,
+   "verified"
+  ],
+  "register": {
+   "facility_id": "NG-LUTH",
+   "total": 2,
+   "by_type": {
+    "sick-note": 1,
+    "referral-letter": 1
+   },
+   "sha256": "ff63365c7fd195af9a314b6a6b6e573232ca67000ffa51fc4b9554be77035047",
+   "version": "certificates@1.0.0"
+  }
+ },
+ "problem_list": {
+  "patient_ref": "Pax-NG-0002",
+  "day": 1,
+  "problems": [
+   {
+    "problem_id": "Pax-NG-0002-P1",
+    "title": "Diffuse large B-cell lymphoma",
+    "icd10": "C83.3",
+    "uncoded": false,
+    "state": "active",
+    "onset_day": 1,
+    "chronic": false
+   },
+   {
+    "problem_id": "Pax-NG-0002-P2",
+    "title": "Hypertension",
+    "icd10": "I10",
+    "uncoded": false,
+    "state": "active",
+    "onset_day": 1,
+    "chronic": false
+   },
+   {
+    "problem_id": "Pax-NG-0002-P3",
+    "title": "Recurrent malaria",
+    "icd10": null,
+    "uncoded": true,
+    "state": "active",
+    "onset_day": 1,
+    "chronic": false
+   }
+  ],
+  "version": "problemlist@1.0.0",
+  "counts": {
+   "total": 3,
+   "active": 3,
+   "chronic": 0,
+   "uncoded": 1
+  },
+  "sha256": "1ba7bffb6cd1b26a0e5935cc33242d2d64672df7b1a55f2cf78676b9bb49cc84",
+  "patient_name": "Kunle Abubakar"
+ },
+ "version": "emr-demo@1.0.0",
+ "sha256": "93001efa54af0f6260635b221eb003e13aa415e71efbf45ff0f62ad3d702bc7b"
+}

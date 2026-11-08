@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Specialty depth — OpenHealth OS</title>
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
+  main { max-width:960px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
+  .card h2 { font-size:.8rem; color:#9ec7ff; text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+         border-bottom:1px solid #243130; font-size:.92rem; }
+  .row b { color:#9ec7ff; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+  .mono { font-family:ui-monospace,monospace; font-size:.75rem; color:#8aa39d; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:.75rem; }
+  .ok { background:#14532d; color:#7be3a3; }
+  .bad { background:#4c1d1d; color:#ffb4ab; }
+  .warn { background:#4d3a00; color:#ffd77a; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+  .kpi { background:#0d1312; border:1px solid #2a3532; border-radius:10px; padding:10px; text-align:center; }
+  .kpi-num { font-size:1.5rem; font-weight:700; color:#7be3a3; }
+  .kpi-label { font-size:.68rem; color:#8aa39d; text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
+  .locale-sel { background:#0d1312; color:#e8ecea; border:1px solid #2a3532; border-radius:8px;
+                padding:5px 10px; font-size:.85rem; }
+  .demo-banner { background:#3d2e00; border:1px solid #7a5c00; border-radius:8px;
+                 padding:8px 14px; font-size:.8rem; color:#ffd77a; text-align:center; }
+  .odonto { display:grid; grid-template-columns:repeat(16,1fr); gap:3px; margin:8px 0; }
+  .tooth { background:#0d1312; border:1px solid #2a3532; border-radius:4px; text-align:center;
+           padding:4px 0; font-size:.65rem; font-family:ui-monospace,monospace; }
+  .tooth.caries { border-color:#ffb4ab; color:#ffb4ab; }
+  .tooth.filled { border-color:#9ec7ff; color:#9ec7ff; }
+  .tooth.extracted { border-color:#666; color:#666; text-decoration:line-through; }
+  .tooth.watch { border-color:#ffd77a; color:#ffd77a; }
+  .gate { background:#4c1d1d; border:1px solid #ffb4ab; border-radius:8px;
+          padding:10px 14px; font-size:.85rem; color:#ffb4ab; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Specialty depth — dental · oncology · CSSD · dietetics · certificates · problem list</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. The refused cycle, the quarantined pack, and the capped dose are the gates working.</div>
+  <div class="card">
+    <h2>Locale</h2>
+    <div class="row">
+      <b>Country context</b>
+      <span>
+        <select class="locale-sel" id="locale">
+          <option value="ng">Nigeria (₦ NGN · NHIA)</option>
+          <option value="cv">Cabo Verde (Esc CVE · INPS-CV)</option>
+        </select>
+      </span>
+    </div>
+    <div class="row"><b>Facility</b><span id="facility"></span></div>
+  </div>
+  <div class="card">
+    <h2>Dental odontogram</h2>
+    <div class="odonto" id="odonto"></div>
+    <div id="dental-meta" class="mono"></div>
+  </div>
+  <div class="card">
+    <h2>Oncology — CHOP cycle gate</h2>
+    <div id="oncology"></div>
+  </div>
+  <div class="card">
+    <h2>CSSD — sterile supply</h2>
+    <div class="kpis" id="cssd"></div>
+  </div>
+  <div class="card">
+    <h2>Dietetics — therapeutic feeding</h2>
+    <div id="dietetics"></div>
+  </div>
+  <div class="card">
+    <h2>Certificates</h2>
+    <div id="certs"></div>
+  </div>
+  <div class="card">
+    <h2>Problem list</h2>
+    <div id="problems"></div>
+  </div>
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="fp"></span></div>
+    <div class="row"><b>Version</b><span class="mono" id="ver"></span></div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+
+async function load(locale) {
+  const res = await fetch(`specialty.${locale}.json`);
+  const d = await res.json();
+  $("hdr").textContent = `${d.country} · ${d.currency} · ${d.facility}`;
+  $("facility").textContent = d.facility;
+  $("fp").textContent = d.sha256;
+  $("ver").textContent = d.version;
+
+  // dental odontogram — FDI quadrants
+  const dnt = d.dental;
+  const quad = [18,17,16,15,14,13,12,11,21,22,23,24,25,26,27,28,
+                48,47,46,45,44,43,42,41,31,32,33,34,35,36,37,38];
+  $("odonto").innerHTML = quad.map(fdi => {
+    const t = dnt.teeth[fdi];
+    const cls = t ? t.condition : "";
+    return `<div class="tooth ${cls}" title="${t ? t.condition : 'sound'}">${fdi}</div>`;
+  }).join("");
+  $("dental-meta").textContent =
+    `${dnt.patient_name} · ${JSON.stringify(dnt.counts)} · sha256 ${dnt.sha256.slice(0,12)}…`;
+
+  // oncology
+  const o = d.oncology;
+  let oncHtml = `<div class="row"><b>Patient</b><span>${o.patient_name}</span></div>` +
+    `<div class="row"><b>Regimen</b><span>${o.regimen} · BSA ${o.cycle_1_bsa} m²</span></div>` +
+    `<div class="row"><b>Cycle 1</b><span class="badge ok">given</span></div>`;
+  o.cycle_1_doses.forEach(dd => {
+    oncHtml += `<div class="row"><span>${dd.drug}</span><span>${dd.administered_mg} mg${dd.capped ? ' <span class="badge warn">capped</span>' : ""}</span></div>`;
+  });
+  if (o.gate_refusal) {
+    oncHtml += `<div class="gate" style="margin-top:10px"><b>Cycle 2 refused:</b> ${o.gate_refusal}</div>`;
+  }
+  $("oncology").innerHTML = oncHtml;
+
+  // CSSD
+  const c = d.cssd;
+  $("cssd").innerHTML = [
+    ["total", c.total_packs], ["usable", c.usable],
+    ["quarantined", c.quarantined], ["expired", c.expired],
+  ].map(([k, v]) => `<div class="kpi"><div class="kpi-num">${v}</div><div class="kpi-label">${k}</div></div>`).join("");
+
+  // dietetics
+  const dt = d.dietetics;
+  $("dietetics").innerHTML =
+    `<div class="row"><b>Screen</b><span>${dt.screen.category} (score ${dt.screen.score}) → ${dt.screen.recommended_diet}</span></div>` +
+    `<div class="row"><b>Kitchen ticket</b><span>${dt.ticket.diet_code} × ${dt.ticket.portions} portions</span></div>` +
+    `<div class="row"><b>Ward manifest</b><span class="mono">${JSON.stringify(dt.manifest.portions_by_diet)}</span></div>`;
+
+  // certificates
+  const ct = d.certificates;
+  const verified = ct.verify_sick_note[0];
+  $("certs").innerHTML =
+    `<div class="row"><b>Sick note</b><span>${ct.sick_note.body.days_off} days — ${ct.sick_note.body.diagnosis} <span class="badge ${verified ? "ok" : "bad"}">${verified ? "verified" : "FAILED"}</span></span></div>` +
+    `<div class="row"><b>Referral</b><span>${ct.referral.body.to_specialty} — ${ct.referral.body.clinical_question}</span></div>` +
+    `<div class="row"><b>Register</b><span class="mono">${JSON.stringify(ct.register.by_type)}</span></div>`;
+
+  // problem list
+  const pl = d.problem_list;
+  $("problems").innerHTML = pl.problems.map(p =>
+    `<div class="row"><span>${p.title}${p.uncoded ? ' <span class="badge warn">uncoded</span>' : ` <span class="mono">${p.icd10}</span>`}</span><span class="badge ${p.state === "active" ? "ok" : "warn"}">${p.state}</span></div>`
+  ).join("");
+}
+
+$("locale").addEventListener("change", e => load(e.target.value));
+load("ng");
+</script>
+</body>
+</html>

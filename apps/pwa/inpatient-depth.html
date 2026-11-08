@@ -1,0 +1,187 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inpatient depth — OpenHealth OS</title>
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
+  main { max-width:960px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
+  .card h2 { font-size:.8rem; color:#9ec7ff; text-transform:uppercase; letter-spacing:.06em; margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+         border-bottom:1px solid #243130; font-size:.92rem; }
+  .row b { color:#9ec7ff; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+  .mono { font-family:ui-monospace,monospace; font-size:.75rem; color:#8aa39d; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px; font-weight:700; font-size:.75rem; }
+  .given { background:#14532d; color:#7be3a3; }
+  .refused { background:#4c1d1d; color:#ffb4ab; }
+  .overdue { background:#4d3a00; color:#ffd77a; }
+  .high-alert { background:#5b21b6; color:#d8b4fe; }
+  .kpis { display:grid; grid-template-columns:repeat(auto-fit,minmax(110px,1fr)); gap:8px; }
+  .kpi { background:#0d1312; border:1px solid #2a3532; border-radius:10px; padding:10px; text-align:center; }
+  .kpi-num { font-size:1.5rem; font-weight:700; color:#7be3a3; }
+  .kpi-label { font-size:.68rem; color:#8aa39d; text-transform:uppercase; letter-spacing:.05em; margin-top:4px; }
+  .locale-sel { background:#0d1312; color:#e8ecea; border:1px solid #2a3532; border-radius:8px;
+                padding:5px 10px; font-size:.85rem; }
+  .demo-banner { background:#3d2e00; border:1px solid #7a5c00; border-radius:8px;
+                 padding:8px 14px; font-size:.8rem; color:#ffd77a; text-align:center; }
+  .timeline { border-left:2px solid #2a3532; padding-left:14px; margin-left:8px; }
+  .tl-ev { position:relative; margin-bottom:8px; font-size:.88rem; }
+  .tl-ev::before { content:""; position:absolute; left:-18px; top:6px; width:8px; height:8px;
+                   border-radius:50%; background:#9ec7ff; }
+  .tl-ev.agent::before { background:#ffb4ab; }
+  .tl-ev.milestone::before { background:#ffd77a; }
+  .tl-min { color:#8aa39d; font-family:ui-monospace,monospace; font-size:.75rem; margin-right:8px; }
+  .sbar { display:grid; gap:6px; }
+  .sbar div { background:#0d1312; border-radius:8px; padding:8px 12px; font-size:.88rem; }
+  .sbar b { color:#9ec7ff; font-size:.72rem; text-transform:uppercase; display:block; margin-bottom:2px; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Inpatient depth — eMAR · flowsheets · anaesthesia · growth</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. The gates below fire on purpose: refusals are the doctrine made visible.</div>
+  <div class="card">
+    <h2>Locale</h2>
+    <div class="row">
+      <b>Country context</b>
+      <span>
+        <select class="locale-sel" id="locale">
+          <option value="ng">Nigeria (₦ NGN · NHIA)</option>
+          <option value="cv">Cabo Verde (Esc CVE · INPS-CV)</option>
+        </select>
+      </span>
+    </div>
+    <div class="row"><b>Facility</b><span id="facility"></span></div>
+  </div>
+  <div class="card">
+    <h2>eMAR — medication administration record</h2>
+    <div class="kpis" id="mar-kpis"></div>
+    <div id="mar-rows" style="margin-top:12px"></div>
+  </div>
+  <div class="card">
+    <h2>Nursing flowsheet</h2>
+    <div id="flowsheet"></div>
+  </div>
+  <div class="card">
+    <h2>Fluid balance</h2>
+    <div class="kpis" id="fluid-kpis"></div>
+  </div>
+  <div class="card">
+    <h2>SBAR handoff</h2>
+    <div class="sbar" id="handoff"></div>
+  </div>
+  <div class="card">
+    <h2>Ward report — attention where it is needed</h2>
+    <div id="ward"></div>
+  </div>
+  <div class="card">
+    <h2>Anaesthesia record — emergency laparotomy</h2>
+    <div class="timeline" id="anaesthesia"></div>
+    <div class="mono" id="ana-fp" style="margin-top:10px"></div>
+  </div>
+  <div class="card">
+    <h2>WHO 2006 growth grading</h2>
+    <div id="growth"></div>
+  </div>
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="fp"></span></div>
+    <div class="row"><b>Version</b><span class="mono" id="ver"></span></div>
+  </div>
+</main>
+<script>
+const $ = id => document.getElementById(id);
+const fmtMin = m => m == null ? "—" :
+  `${String(Math.floor(m/60)).padStart(2,"0")}:${String(m%60).padStart(2,"0")}`;
+
+async function load(locale) {
+  const res = await fetch(`inpatient.${locale}.json`);
+  const d = await res.json();
+  $("hdr").textContent = `${d.country} · ${d.currency} · ${d.facility}`;
+  $("facility").textContent = d.facility;
+  $("fp").textContent = d.sha256;
+  $("ver").textContent = d.version;
+
+  // eMAR
+  const a = d.mar_audit;
+  $("mar-kpis").innerHTML = ["given","refused","scheduled"].map(k =>
+    `<div class="kpi"><div class="kpi-num">${a[k]}</div><div class="kpi-label">${k}</div></div>`).join("");
+  $("mar-rows").innerHTML = d.mar.rows.map(r => {
+    const badge = r.state === "given" ? "given" :
+                  r.state === "refused" ? "refused" : "overdue";
+    const label = r.state === "scheduled" ? "overdue" : r.state;
+    const ev = r.event;
+    const detail = ev ? ` · ${ev.by}${ev.reason ? " — " + ev.reason : ""}` : "";
+    const ha = r.high_alert ? ' <span class="badge high-alert">HIGH-ALERT</span>' : "";
+    return `<div class="row"><span>${fmtMin(r.scheduled_minute)} · ${r.drug_code} ${r.dose}${ha}<br><span class="mono">${detail}</span></span><span class="badge ${badge}">${label}</span></div>`;
+  }).join("");
+
+  // flowsheet
+  const vitals = {};
+  d.flowsheet_rows.forEach(r => { (vitals[r.vital] = vitals[r.vital] || []).push(r); });
+  $("flowsheet").innerHTML = Object.entries(vitals).map(([v, rows]) =>
+    `<div class="row"><b>${v}</b><span>${rows.map(r =>
+      `${fmtMin(r.minute)} → ${r.value}${r.unit}${r.amends ? " <span class='mono'>(corrects "+r.amends+")</span>" : ""}`
+    ).join(" · ")}</span></div>`).join("");
+
+  // fluid
+  const fb = d.fluid_balance;
+  $("fluid-kpis").innerHTML = [
+    ["intake", fb.intake_ml + " ml"], ["output", fb.output_ml + " ml"],
+    ["balance", (fb.balance_ml >= 0 ? "+" : "") + fb.balance_ml + " ml"],
+  ].map(([k, v]) => `<div class="kpi"><div class="kpi-num">${v}</div><div class="kpi-label">${k}</div></div>`).join("");
+
+  // handoff
+  const ho = d.handoff;
+  $("handoff").innerHTML = Object.entries(ho.sbar).map(([k, v]) =>
+    `<div><b>${k}</b>${v}</div>`).join("") +
+    `<div class="mono" style="margin-top:6px">${ho.from} → ${ho.to} · countersigned ✓</div>`;
+
+  // ward report
+  const wr = d.ward_report;
+  let wardHtml = "";
+  wr.overdue_vitals.forEach(o => {
+    const gaps = Object.entries(o.gaps).map(([v, g]) =>
+      `${v}: ${g === "never-recorded" ? "never recorded" : g + " min"}`).join(", ");
+    wardHtml += `<div class="row"><span>${o.patient_ref}</span><span class="mono">${gaps}</span></div>`;
+  });
+  if (!wr.unsigned_handoffs.length) wardHtml += `<div class="row"><span>Handoffs</span><span class="badge given">all countersigned</span></div>`;
+  $("ward").innerHTML = wardHtml;
+
+  // anaesthesia
+  const ana = d.anaesthesia;
+  $("anaesthesia").innerHTML = ana.timeline.map(e => {
+    let text;
+    if (e.kind === "induction") text = `Induction — ${e.detail}`;
+    else if (e.kind === "agent") text = `${e.agent} ${e.dose}${e.witness ? " (witness: " + e.witness + ")" : ""}`;
+    else if (e.kind === "observation") text = `${e.obs} = ${e.value}`;
+    else if (e.kind === "milestone") text = e.note;
+    else text = `Emergence → ${e.detail}`;
+    return `<div class="tl-ev ${e.kind}"><span class="tl-min">+${e.minute}min</span>${text}</div>`;
+  }).join("");
+  $("ana-fp").textContent = `record sha256: ${ana.sha256.slice(0, 16)}… · preop ASA ${ana.preop.asa} · Mallampati ${ana.preop.mallampati}`;
+
+  // growth
+  const g = d.growth;
+  const bandBadge = b => b === "severe" ? "refused" : b === "moderate" ? "overdue" : "given";
+  $("growth").innerHTML = ["wfa", "hfa", "wfh"].map(m => {
+    const r = g[m];
+    if (!r) return `<div class="row"><b>${m.toUpperCase()}</b><span class="mono">not measured — stated, not skipped</span></div>`;
+    return `<div class="row"><b>${m.toUpperCase()}</b><span>z = ${r.z} <span class="badge ${bandBadge(r.band)}">${r.band}</span></span></div>`;
+  }).join("") + `<div class="mono" style="margin-top:8px">${g.child_name} · table: ${g.table_status}</div>`;
+}
+
+$("locale").addEventListener("change", e => load(e.target.value));
+load("ng");
+</script>
+</body>
+</html>
