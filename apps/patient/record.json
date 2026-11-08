@@ -1,0 +1,87 @@
+{
+  "version": "chart-portal@1.0.0",
+  "patient": {
+    "id": "Pax-SIM-0001",
+    "name": "Adaeze O (Sim)",
+    "birthDate": "1990-03-14",
+    "gender": "female"
+  },
+  "sections": [
+    {
+      "key": "medications",
+      "title": "Your medications",
+      "state": "recorded",
+      "display_state": null,
+      "items": [
+        "artemether-lumefantrine 80/480 bd x 3 days",
+        "ferrous sulfate 200mg daily"
+      ]
+    },
+    {
+      "key": "allergies",
+      "title": "Your allergies",
+      "state": "recorded",
+      "display_state": null,
+      "items": [
+        "sulfonamides — rash"
+      ]
+    },
+    {
+      "key": "problems",
+      "title": "Your health conditions",
+      "state": "recorded",
+      "display_state": null,
+      "items": [
+        "malaria, uncomplicated (resolved)",
+        "iron-deficiency anaemia (on treatment)"
+      ]
+    },
+    {
+      "key": "immunizations",
+      "title": "Your vaccinations",
+      "state": "recorded",
+      "display_state": null,
+      "items": [
+        "COVID-19 (2 doses)",
+        "tetanus toxoid (antenatal schedule)"
+      ]
+    },
+    {
+      "key": "results",
+      "title": "Your test results",
+      "state": "recorded",
+      "display_state": null,
+      "items": [
+        "RDT malaria Pf — positive (treated)",
+        "Hb 10.4 g/dL"
+      ]
+    },
+    {
+      "key": "vitals",
+      "title": "Your latest measurements",
+      "state": "recorded",
+      "display_state": null,
+      "items": [
+        "BP 122/78 · Temp 37.1C · Wt 62kg"
+      ]
+    },
+    {
+      "key": "pregnancy",
+      "title": "Pregnancy history",
+      "state": "withheld-by-consent",
+      "display_state": "Withheld — ask your clinician",
+      "items": []
+    }
+  ],
+  "visits": [
+    {
+      "day": 1,
+      "facility": "Sim Clinic Ikeja",
+      "summary": "Malaria treated; iron started",
+      "note_sha256": "011ac170209feb2d7a4f7fbdd186af05b07112594a58be88dce4ca8a0b12624f"
+    }
+  ],
+  "share_link": null,
+  "ips_fingerprint": "sha256:8c170d6c5db3a3c0962da83116b4bdf9a3d8b9b8c7721853e4d38e543586601c",
+  "sha256": "7b175dfe6bccf27d10eed149129ca5f3c20635d24da92906fd6d829f8dca1af3"
+}

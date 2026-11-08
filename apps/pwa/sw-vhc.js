@@ -11,7 +11,7 @@ const SHELL_URLS = [
   "./vhc-verify.html", "./traveler.html", "./dispatch.html",
   "./vhc-fund.html", "./vhc-br10.html", "./vhc-helpdesk.html",
   "./vhc-demo.html", "./vhc-tour.html", "./vhc-growth.html",
-  "./design-tokens.css",
+  "./clinical-depth.html", "./design-tokens.css",
 ];
 
 self.addEventListener("install", (e) => {

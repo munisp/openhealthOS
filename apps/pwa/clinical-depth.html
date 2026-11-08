@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Clinical depth — OpenHealth OS</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#0d1312; color:#e8ecea; }
+  header { background:#12324a; padding:12px 18px; }
+  header h1 { font-size:1.05rem; margin:0; }
+  header .meta { font-size:.75rem; color:#8aa39d; margin-top:4px; font-family:ui-monospace,monospace; }
+  main { max-width:960px; margin:0 auto; padding:14px; display:grid; gap:14px; }
+  .card { background:#161d1b; border:1px solid #2a3532; border-radius:12px; padding:16px; }
+  .card h2 { font-size:.8rem; color:#9ec7ff; text-transform:uppercase;
+             letter-spacing:.06em; margin:0 0 10px; }
+  .row { display:flex; justify-content:space-between; gap:10px; padding:7px 0;
+         border-bottom:1px solid #243130; font-size:.92rem; }
+  .row b { color:#9ec7ff; font-size:.78rem; text-transform:uppercase; letter-spacing:.04em; }
+  .mono { font-family:ui-monospace,monospace; font-size:.75rem; color:#8aa39d; }
+  .note { background:#0d1312; border:1px solid #2a3532; border-radius:10px;
+          padding:12px; margin-bottom:10px; }
+  .note .head { display:flex; justify-content:space-between; font-size:.85rem; }
+  .note .sec { margin:8px 0; font-size:.88rem; }
+  .note .sec b { color:#9ec7ff; font-size:.72rem; text-transform:uppercase; }
+  .addendum { border-left:3px solid #ffce7a; padding:6px 10px; margin-top:8px;
+              font-size:.85rem; color:#d8cfc0; }
+  .badge { display:inline-block; padding:2px 10px; border-radius:999px;
+           font-weight:700; font-size:.75rem; }
+  .signed { background:#0f3d22; color:#7be3a3; }
+  .sens { background:#4a3512; color:#ffce7a; }
+  .refused { background:#4a1512; color:#ff9d92; border-radius:8px;
+             padding:6px 10px; margin:4px 0; font-size:.85rem; }
+  .applied { background:#0f3d22; color:#7be3a3; border-radius:8px;
+             padding:6px 10px; margin:4px 0; font-size:.85rem; }
+  .revoked { color:#ff9d92; font-weight:700; }
+  .active { color:#7be3a3; font-weight:700; }
+  table { width:100%; border-collapse:collapse; font-size:.88rem; }
+  th { text-align:left; color:#9ec7ff; font-size:.72rem; text-transform:uppercase;
+       letter-spacing:.05em; padding:6px 8px; border-bottom:1px solid #2a3532; }
+  td { padding:6px; border-bottom:1px solid #243130; }
+  .err { background:#4a1512; color:#ff9d92; padding:10px 14px; border-radius:10px;
+         font-size:.9rem; display:none; white-space:pre-wrap; }
+  .tag { font-size:.72rem; color:#8aa39d; }
+</style>
+</head>
+<body>
+<header>
+  <h1>CLINICAL DEPTH — charting, order sets &amp; the app marketplace</h1>
+  <div class="meta" id="meta">loading…</div>
+</header>
+<main>
+  <div class="err" id="err"></div>
+  <div class="card"><h2>Note templates — a specialty is an entry</h2><div id="templates"></div></div>
+  <div class="card"><h2>Signed notes — frozen, corrections cite</h2><div id="notes"></div></div>
+  <div class="card"><h2>Order sets — the gates are the feature</h2><div id="ordersets"></div></div>
+  <div class="card"><h2>App marketplace — declared scopes, four-eyes installs, instant revocation</h2><div id="market"></div></div>
+</main>
+<script>
+function esc(s) { return String(s).replace(/[&<>"]/g,
+  c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+function val(v) {
+  if (Array.isArray(v)) return "<ul style='margin:4px 0;padding-left:18px'>" +
+    v.map(function (x) { return "<li>" + esc(x) + "</li>"; }).join("") + "</ul>";
+  if (v && typeof v === "object") return Object.keys(v).map(function (k) {
+    return esc(k) + ": " + esc(v[k]); }).join(" · ");
+  return esc(v);
+}
+
+(async function () {
+  const err = document.getElementById("err");
+  let c, m;
+  try {
+    const [rc, rm] = await Promise.all([
+      fetch("charting.json", { cache: "no-store" }),
+      fetch("appmarket.json", { cache: "no-store" })]);
+    if (!rc.ok) throw new Error("charting.json HTTP " + rc.status +
+      " — generate: python3 -c \"from demo_charting import seed_charting, export_charting; " +
+      "export_charting(seed_charting(), 'apps/pwa/charting.json')\" (PYTHONPATH=packages/charting)");
+    if (!rm.ok) throw new Error("appmarket.json HTTP " + rm.status +
+      " — generate via packages/appmarket/demo_appmarket.py");
+    c = await rc.json(); m = await rm.json();
+  } catch (e) { err.style.display = "block"; err.textContent = String(e.message || e); return; }
+
+  document.getElementById("meta").textContent =
+    c.version + " · sha256 " + c.sha256.slice(0, 16) + "… · market " +
+    m.version + " · sha256 " + m.sha256.slice(0, 16) + "…";
+
+  document.getElementById("templates").innerHTML = c.templates.map(function (t) {
+    return '<div class="row"><b>' + esc(t.specialty) + "</b><span>" +
+      esc(t.label) + " · " + t.sections + " sections" +
+      (t.sensitive ? ' <span class="badge sens">sensitive</span>' : "") +
+      '</span></div><div class="tag">' + esc(t.template_id) + "</div>";
+  }).join("");
+
+  document.getElementById("notes").innerHTML = c.notes.map(function (n) {
+    var secs = Object.keys(n.sections).map(function (k) {
+      return '<div class="sec"><b>' + esc(k) + "</b><br>" + val(n.sections[k]) + "</div>";
+    }).join("");
+    var adds = n.addenda.map(function (a) {
+      return '<div class="addendum">Addendum by ' + esc(a.by) + ", day " + a.day +
+        ": " + esc(a.text) + "</div>";
+    }).join("");
+    return '<div class="note"><div class="head"><span>' + esc(n.template_label) +
+      " — " + esc(n.patient_ref) + '</span><span class="badge signed">signed · ' +
+      esc(n.signed_by) + "</span></div>" + secs + adds +
+      '<div class="mono">sha256 ' + esc(n.sha256.slice(0, 24)) + "…</div></div>";
+  }).join("");
+
+  var osHtml = c.order_sets.map(function (s) {
+    return '<div class="row"><b>' + esc(s.label) + "</b><span>" + esc(s.status) +
+      " · proposed " + esc(s.proposed_by) + " · ratified " + esc(s.ratified_by) +
+      "</span></div>";
+  }).join("");
+  osHtml += c.applications.map(function (a, i) {
+    var applied = a.applied.map(function (it) {
+      return '<div class="applied">✓ ' + esc(it.label) + "</div>";
+    }).join("");
+    var refused = a.refused.map(function (it) {
+      return '<div class="refused">✗ ' + esc(it.label) + " — " + esc(it.reason) + "</div>";
+    }).join("");
+    return '<div class="note"><b style="color:#9ec7ff;font-size:.78rem">APPLICATION ' +
+      (i + 1) + "</b>" + applied + refused + "</div>";
+  }).join("");
+  document.getElementById("ordersets").innerHTML = osHtml;
+
+  var apps = "<table><thead><tr><th>app</th><th>publisher</th><th>scopes</th></tr></thead><tbody>" +
+    m.apps.map(function (a) {
+      return "<tr><td>" + esc(a.app_id) + " v" + esc(a.version) + "</td><td>" +
+        esc(a.publisher) + "</td><td class='mono'>" +
+        a.scopes.map(esc).join("<br>") + "</td></tr>";
+    }).join("") + "</tbody></table>";
+  var installs = m.installs.map(function (i) {
+    return '<div class="row"><b>' + esc(i.app_id) + " @ " + esc(i.facility) + "</b><span class='" +
+      (i.state === "active" ? "active" : "revoked") + "'>" + esc(i.state) +
+      (i.state === "revoked" ? " — " + esc(i.revoke_reason) : "") + "</span></div>";
+  }).join("");
+  var tokens = m.tokens.map(function (t) {
+    return '<div class="row"><b>' + esc(t.token_id) + "</b><span class='" +
+      (t.state === "active" ? "active" : "revoked") + "'>" + esc(t.state) +
+      "</span></div>";
+  }).join("");
+  document.getElementById("market").innerHTML = apps +
+    "<h2 style='margin-top:14px'>Installs</h2>" + installs +
+    "<h2 style='margin-top:14px'>Launch tokens — revocation kills them instantly</h2>" + tokens;
+})();
+</script>
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw-vhc.js").catch(()=>{});}</script>
+</body>
+</html>

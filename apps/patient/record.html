@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>My Record — OpenHealth OS (demo)</title>
+<link rel="stylesheet" href="../design-tokens.css">
+<style>
+  body { margin:0; font-family: system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+         background:#f6f7f5; color:#182420; }
+  header { background:#458b64; color:#fff; padding:16px 18px; }
+  header h1 { font-size:1.15rem; margin:0; }
+  header .who { font-size:.85rem; opacity:.9; margin-top:4px; }
+  main { max-width:640px; margin:0 auto; padding:14px; display:grid; gap:12px; }
+  .card { background:#fff; border:1px solid #dfe6e2; border-radius:14px; padding:16px;
+          box-shadow:0 1px 2px rgba(20,40,30,.06); }
+  .card h2 { font-size:.85rem; color:#2c5f45; margin:0 0 8px; text-transform:uppercase;
+             letter-spacing:.04em; }
+  .item { padding:8px 0; border-bottom:1px solid #eef1ee; font-size:.95rem; }
+  .item:last-child { border-bottom:0; }
+  .empty { color:#7a8a82; font-style:italic; font-size:.92rem; }
+  .withheld { color:#a4680f; font-weight:600; }
+  .visit { padding:10px 0; border-bottom:1px solid #eef1ee; font-size:.95rem; }
+  .visit .fac { color:#2c5f45; font-weight:700; font-size:.85rem; }
+  .mono { font-family:ui-monospace,monospace; font-size:.7rem; color:#8aa39d;
+          word-break:break-all; }
+  .demo { background:#fff3d6; border:1px solid #e8d194; color:#6d5410;
+          border-radius:10px; padding:10px 14px; font-size:.85rem; }
+  .err { background:#fbe4e0; color:#8c2f22; padding:10px 14px; border-radius:10px;
+         font-size:.9rem; display:none; white-space:pre-wrap; }
+</style>
+</head>
+<body>
+<header>
+  <h1>My Record</h1>
+  <div class="who" id="who">loading…</div>
+</header>
+<main>
+  <div class="demo">Demonstration record — synthetic patient (Pax-SIM).
+    The live My Health app fetches this same payload through the step-up
+    privacy gate at /portal/record.</div>
+  <div class="err" id="err"></div>
+  <div id="sections"></div>
+  <div class="card" id="visits-card" style="display:none">
+    <h2>Recent visits</h2><div id="visits"></div>
+  </div>
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="mono" id="fps"></div>
+  </div>
+</main>
+<script>
+function esc(s) { return String(s).replace(/[&<>"]/g,
+  c => ({ "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;" }[c])); }
+
+(async function () {
+  const err = document.getElementById("err");
+  let d;
+  try {
+    const resp = await fetch("record.json", { cache: "no-store" });
+    if (!resp.ok) throw new Error("record.json HTTP " + resp.status +
+      " — generate: python3 -c \"import demo_portal; " +
+      "demo_portal.export_record('record.json')\" (PYTHONPATH=packages/ips)");
+    d = await resp.json();
+  } catch (e) { err.style.display = "block"; err.textContent = String(e.message || e); return; }
+
+  document.getElementById("who").textContent =
+    d.patient.name + (d.patient.gender ? " · " + d.patient.gender : "") +
+    (d.patient.birthDate ? " · born " + d.patient.birthDate : "");
+
+  document.getElementById("sections").innerHTML = d.sections.map(function (s) {
+    var body;
+    if (s.state === "recorded") {
+      body = s.items.map(function (it) {
+        return '<div class="item">' + esc(it) + "</div>";
+      }).join("");
+    } else if (s.state === "withheld-by-consent") {
+      body = '<div class="item withheld">' + esc(s.display_state) + "</div>";
+    } else {
+      body = '<div class="item empty">' + esc(s.display_state) + "</div>";
+    }
+    return '<div class="card"><h2>' + esc(s.title) + "</h2>" + body + "</div>";
+  }).join("");
+
+  if (d.visits && d.visits.length) {
+    document.getElementById("visits-card").style.display = "block";
+    document.getElementById("visits").innerHTML = d.visits.map(function (v) {
+      return '<div class="visit"><span class="fac">' + esc(v.facility) +
+        " · day " + v.day + "</span><br>" + esc(v.summary) +
+        (v.note_sha256 ? '<div class="mono">note sha256 ' +
+         esc(v.note_sha256.slice(0, 24)) + "…</div>" : "") + "</div>";
+    }).join("");
+  }
+
+  document.getElementById("fps").textContent =
+    "payload " + d.version + " · sha256 " + d.sha256.slice(0, 24) + "… · " +
+    (d.ips_fingerprint ? "IPS " + d.ips_fingerprint.slice(0, 30) + "…" : "") +
+    (d.share_link ? "" : " · no live share link in demo — stated, not faked");
+})();
+</script>
+</body>
+</html>

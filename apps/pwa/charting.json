@@ -1,0 +1,205 @@
+{
+  "version": "charting-demo@1.0.0",
+  "templates": [
+    {
+      "template_id": "anc-visit@1.0.0",
+      "label": "Antenatal visit",
+      "specialty": "obstetrics",
+      "sensitive": false,
+      "sections": 6
+    },
+    {
+      "template_id": "cardiology-review@1.0.0",
+      "label": "Cardiology review",
+      "specialty": "cardiology",
+      "sensitive": false,
+      "sections": 6
+    },
+    {
+      "template_id": "mental-health@1.0.0",
+      "label": "Mental health consultation",
+      "specialty": "psychiatry",
+      "sensitive": true,
+      "sections": 5
+    },
+    {
+      "template_id": "pediatric-triage@1.0.0",
+      "label": "Paediatric triage",
+      "specialty": "paediatrics",
+      "sensitive": false,
+      "sections": 6
+    },
+    {
+      "template_id": "soap-general@1.0.0",
+      "label": "SOAP — general consultation",
+      "specialty": "general",
+      "sensitive": false,
+      "sections": 4
+    },
+    {
+      "template_id": "surgical-note@1.0.0",
+      "label": "Operative note",
+      "specialty": "surgery",
+      "sensitive": false,
+      "sections": 7
+    }
+  ],
+  "notes": [
+    {
+      "note_id": "NOTE-SIM-001",
+      "patient_ref": "Pax-SIM-0001",
+      "author": "dr-sim-ayo",
+      "template_id": "soap-general@1.0.0",
+      "template_label": "SOAP — general consultation",
+      "sensitive": false,
+      "sections": {
+        "subjective": "Fever and chills for 3 days, headache, no vomiting.",
+        "objective": "Temp 38.9C, RR 22, BP 118/76. RDT positive Pf.",
+        "assessment": "Uncomplicated malaria (lab-confirmed).",
+        "plan": [
+          "artemether-lumefantrine 80/480 bd x 3 days",
+          "paracetamol 1g tds prn",
+          "review in 48h if fever persists"
+        ]
+      },
+      "signed_by": "dr-sim-ayo",
+      "signed_day": 0,
+      "addenda": [
+        {
+          "by": "dr-sim-bola",
+          "text": "Reviewed: added weight-based dosing check — 62kg, dose appropriate. No change to plan.",
+          "day": 1,
+          "amends": "NOTE-SIM-001"
+        }
+      ],
+      "sha256": "03cb012ec5f0626072331a8e03af46f7cd125e4c0e7d031d36fdc988a400ac62"
+    },
+    {
+      "note_id": "NOTE-SIM-002",
+      "patient_ref": "Pax-SIM-0002",
+      "author": "mw-sim-funke",
+      "template_id": "anc-visit@1.0.0",
+      "template_label": "Antenatal visit",
+      "sensitive": false,
+      "sections": {
+        "gestational-age-weeks": "28",
+        "blood-pressure": {
+          "systolic": 122,
+          "diastolic": 78
+        },
+        "fundal-height": "28 cm — corresponds to dates",
+        "fetal-heart": "present, 144 bpm",
+        "danger-signs-reviewed": [
+          "no vaginal bleeding",
+          "no severe headache",
+          "no facial swelling",
+          "no reduced fetal movement"
+        ],
+        "plan": [
+          "continue ferrous + folate",
+          "IPTp-SP dose 2 given today",
+          "next visit in 4 weeks"
+        ]
+      },
+      "signed_by": "mw-sim-funke",
+      "signed_day": 0,
+      "addenda": [],
+      "sha256": "6b804f32ae03b2741eac70d80ec934f52f696a54a33bbc395fd76b3b07eb8ac0"
+    }
+  ],
+  "order_sets": [
+    {
+      "set_id": "malaria-adult@1.0.0",
+      "label": "Uncomplicated malaria — adult",
+      "status": "ratified",
+      "items": 5,
+      "proposed_by": "dr-sim-ayo",
+      "ratified_by": "dr-sim-bola"
+    }
+  ],
+  "applications": [
+    {
+      "set_id": "malaria-adult@1.0.0",
+      "version": "1.0.0",
+      "day": 0,
+      "applied": [
+        {
+          "kind": "medication",
+          "label": "artemether-lumefantrine 80/480 bd x 3d",
+          "allergy_class": "artemisinins"
+        },
+        {
+          "kind": "medication",
+          "label": "paracetamol 1g tds prn",
+          "allergy_class": "paracetamol"
+        },
+        {
+          "kind": "investigation",
+          "label": "RDT (malaria Pf)",
+          "age_min_years": 0
+        },
+        {
+          "kind": "medication",
+          "label": "artesunate IV (if severe)",
+          "age_min_years": 18,
+          "allergy_class": "artemisinins"
+        },
+        {
+          "kind": "medication",
+          "label": "doxycycline 100mg bd x 7d (alternative)",
+          "age_min_years": 12,
+          "allergy_class": "tetracyclines"
+        }
+      ],
+      "refused": [],
+      "stated": "refusals carry reasons — nothing drops silently"
+    },
+    {
+      "set_id": "malaria-adult@1.0.0",
+      "version": "1.0.0",
+      "day": 0,
+      "applied": [
+        {
+          "kind": "medication",
+          "label": "paracetamol 1g tds prn",
+          "allergy_class": "paracetamol"
+        },
+        {
+          "kind": "investigation",
+          "label": "RDT (malaria Pf)",
+          "age_min_years": 0
+        }
+      ],
+      "refused": [
+        {
+          "kind": "medication",
+          "label": "artemether-lumefantrine 80/480 bd x 3d",
+          "allergy_class": "artemisinins",
+          "reason": "allergy conflict: artemisinins"
+        },
+        {
+          "kind": "medication",
+          "label": "artesunate IV (if severe)",
+          "age_min_years": 18,
+          "allergy_class": "artemisinins",
+          "reason": "allergy conflict: artemisinins"
+        },
+        {
+          "kind": "medication",
+          "label": "doxycycline 100mg bd x 7d (alternative)",
+          "age_min_years": 12,
+          "allergy_class": "tetracyclines",
+          "reason": "below age floor 12"
+        }
+      ],
+      "stated": "refusals carry reasons — nothing drops silently"
+    }
+  ],
+  "report": {
+    "version": "charting@1.0.0",
+    "sets": 1,
+    "ratified": 1,
+    "audit_events": 4
+  },
+  "sha256": "0bb6a6d7a8bb6c55696caeed9fd27892f5a90c2c97514a125e128bc86a97592d"
+}

@@ -1,0 +1,144 @@
+{
+  "version": "appmarket-demo@1.0.0",
+  "scope_catalogue": [
+    "bulk/export.aggregate",
+    "patient/IPS.read",
+    "system/Claim.read",
+    "system/Claim.write",
+    "system/Coverage.read",
+    "system/DiagnosticReport.write",
+    "system/DocumentReference.read",
+    "system/MedicationDispense.write",
+    "system/MedicationRequest.read",
+    "system/ServiceRequest.read"
+  ],
+  "apps": [
+    {
+      "app_id": "labco-sim",
+      "publisher": "LabCo Sim",
+      "version": "2.1.0",
+      "scopes": [
+        "system/DiagnosticReport.write",
+        "system/ServiceRequest.read"
+      ],
+      "redirect_uris": [
+        "https://labco.example/cb"
+      ],
+      "description": "Lab orders in, results back.",
+      "registered_day": 0
+    },
+    {
+      "app_id": "payer-analytics-sim",
+      "publisher": "PayerSim",
+      "version": "1.4.0",
+      "scopes": [
+        "bulk/export.aggregate"
+      ],
+      "redirect_uris": [
+        "https://payersim.example/cb"
+      ],
+      "description": "Cohort-level actuarial extracts.",
+      "registered_day": 0
+    },
+    {
+      "app_id": "patient-viewer-sim",
+      "publisher": "ViewSim",
+      "version": "0.9.2",
+      "scopes": [
+        "patient/IPS.read"
+      ],
+      "redirect_uris": [
+        "https://viewsim.example/cb"
+      ],
+      "description": "Patient-consented record viewer.",
+      "registered_day": 1
+    }
+  ],
+  "installs": [
+    {
+      "app_id": "labco-sim",
+      "facility": "phc-sim-ikeja",
+      "state": "active",
+      "proposed_by": "admin-sim-a",
+      "approved_by": "admin-sim-b",
+      "day": 1
+    },
+    {
+      "app_id": "labco-sim",
+      "facility": "phc-sim-yaba",
+      "state": "active",
+      "proposed_by": "admin-sim-a",
+      "approved_by": "admin-sim-b",
+      "day": 1
+    },
+    {
+      "app_id": "payer-analytics-sim",
+      "facility": "state-sim-lagos",
+      "state": "active",
+      "proposed_by": "admin-sim-c",
+      "approved_by": "admin-sim-a",
+      "day": 2
+    },
+    {
+      "app_id": "patient-viewer-sim",
+      "facility": "phc-sim-ikeja",
+      "state": "revoked",
+      "proposed_by": "admin-sim-a",
+      "approved_by": "admin-sim-c",
+      "day": 2,
+      "revoked_by": "admin-sim-c",
+      "revoked_day": 5,
+      "revoke_reason": "publisher failed annual security attestation"
+    }
+  ],
+  "tokens": [
+    {
+      "token_id": "tok_053446b0d8a1a4b9",
+      "app_id": "labco-sim",
+      "facility": "phc-sim-ikeja",
+      "scopes": [
+        "system/DiagnosticReport.write",
+        "system/ServiceRequest.read"
+      ],
+      "issued_day": 3,
+      "expires_day": 33,
+      "consent_ref": null,
+      "state": "active",
+      "expired_by_now": false
+    },
+    {
+      "token_id": "tok_adde63aaa505cd87",
+      "app_id": "payer-analytics-sim",
+      "facility": "state-sim-lagos",
+      "scopes": [
+        "bulk/export.aggregate"
+      ],
+      "issued_day": 3,
+      "expires_day": 10,
+      "consent_ref": null,
+      "state": "active",
+      "expired_by_now": false
+    },
+    {
+      "token_id": "tok_8f204cd213afb563",
+      "app_id": "patient-viewer-sim",
+      "facility": "phc-sim-ikeja",
+      "scopes": [
+        "patient/IPS.read"
+      ],
+      "issued_day": 3,
+      "expires_day": 33,
+      "consent_ref": "consent-sim-001",
+      "state": "revoked",
+      "expired_by_now": false
+    }
+  ],
+  "report": {
+    "version": "appmarket@1.0.0",
+    "apps": 3,
+    "installs_active": 3,
+    "tokens_active": 2,
+    "audit_events": 11
+  },
+  "sha256": "1f6376ad09973c333441660cc0d4e7892345a393013aaa3fd5c24fcd46765f5a"
+}
