@@ -123,6 +123,59 @@ export class GateUploader {
     return { applied, refused, conflicts, remaining: events.length - done };
   }
 
+  /* Batch drain: the queue goes up in one request per chunk —
+   * one round trip, one verdict per mutation, in order. Verdict
+   * handling is identical to drain(): applied clears, refused
+   * dead-letters with its reason, conflict stays pending. */
+  async drainBatch() {
+    const events = await this.db.outbox();
+    if (!events.length) {
+      return { applied: 0, refused: 0, conflicts: 0, remaining: 0 };
+    }
+    const mutations = [];
+    for (const event of events) {
+      mutations.push(await buildMutation(event, { sha: this.sha }));
+    }
+    let verdicts;
+    try {
+      const resp = await this.fetchImpl(`${this.baseUrl}/sync/upload-batch`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ mutations }),
+      });
+      if (!resp.ok) throw new Error(`gate ${resp.status}`);
+      verdicts = (await resp.json()).verdicts;
+    } catch (e) {
+      return { applied: 0, refused: 0, conflicts: 0,
+               remaining: events.length, error: String(e) };
+    }
+    if (!Array.isArray(verdicts) || verdicts.length !== events.length) {
+      /* a short or malformed batch answer is a contract breach — stop,
+       * keep the queue, say so */
+      return { applied: 0, refused: 0, conflicts: 0,
+               remaining: events.length,
+               error: "batch verdict count mismatch — queue held" };
+    }
+    let applied = 0, refused = 0, conflicts = 0;
+    for (let i = 0; i < events.length; i++) {
+      const verdict = verdicts[i];
+      if (verdict.verdict === "applied") {
+        await this.db.clearOutbox([events[i].id]);
+        applied++;
+      } else if (verdict.verdict === "refused") {
+        await this.db.clearOutbox([events[i].id]);
+        await this.db.setMeta(`dead:${events[i].id}`, {
+          id: events[i].id, entityClass: events[i].entityClass,
+          reason: verdict.reason || "refused — no reason stated",
+        });
+        refused++;
+      } else if (verdict.verdict === "conflict") {
+        conflicts++;
+      }
+    }
+    return { applied, refused, conflicts, remaining: 0 };
+  }
+
   async deadLetters() {
     const all = await this.db.allMeta();
     return Object.entries(all)

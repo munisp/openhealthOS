@@ -1,0 +1,26 @@
+{
+  "harness": "syncstorm@1.0.0",
+  "syncmesh": "syncmesh@1.1.0",
+  "seed": 42,
+  "mutations": 1000000,
+  "devices": 2000,
+  "batch": 100,
+  "wall_seconds": 6.61,
+  "ops_per_second": 151289,
+  "per_submit_ms": {
+    "p50": 0.00275,
+    "p99": 0.00487
+  },
+  "outcomes": {
+    "applied": 904372,
+    "replayed": 47920,
+    "refused": 47708,
+    "verdicts": 1000000
+  },
+  "invariants": {
+    "no_lost_verdicts": true,
+    "exactly_once": true,
+    "chain_holds": true
+  },
+  "all_invariants_hold": true
+}

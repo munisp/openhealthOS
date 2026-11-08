@@ -34,8 +34,9 @@ Doctrine:
 
 import hashlib
 import json
+import sqlite3
 
-VERSION = "syncmesh@1.0.0"
+VERSION = "syncmesh@1.1.0"
 
 # Scope axes a sync rule may declare. A rule is a conjunction of axes.
 SCOPE_AXES = ("facility", "role", "panel", "patient-consent")
@@ -87,6 +88,7 @@ class SyncRuleRegistry:
 
     def __init__(self):
         self.rules = {}
+        self._live_cache = None  # invalidated on every transition
 
     def propose(self, rule_id, definition, *, by, day):
         if rule_id in self.rules:
@@ -114,6 +116,7 @@ class SyncRuleRegistry:
                         f"{RETENTION_CLASSES}")
         self.rules[rule_id] = {**definition, "status": "proposed",
                                "proposed_by": by, "proposed_day": day}
+        self._live_cache = None
 
     def ratify(self, rule_id, *, by, day):
         r = self.rules.get(rule_id)
@@ -124,6 +127,7 @@ class SyncRuleRegistry:
         r["status"] = "live"
         r["ratified_by"] = by
         r["ratified_day"] = day
+        self._live_cache = None
 
     def retire(self, rule_id, *, by, day, reason):
         r = self.rules.get(rule_id)
@@ -134,10 +138,13 @@ class SyncRuleRegistry:
                         "holding this bucket must be told why it ends")
         r["status"] = "retired"
         r["retired"] = {"by": by, "day": day, "reason": reason}
+        self._live_cache = None
 
     def live(self, rule_id=None):
-        live = {k: v for k, v in self.rules.items()
-                if v["status"] == "live"}
+        if self._live_cache is None:
+            self._live_cache = {k: v for k, v in self.rules.items()
+                                if v["status"] == "live"}
+        live = self._live_cache
         if rule_id is None:
             return live
         if rule_id not in live:
@@ -203,18 +210,164 @@ class BucketEvaluator:
         return principal.satisfies(rule["scopes"], record=record)
 
 
+class MemoryStore:
+    """Default verdict store — fast, volatile. Honest about it: a
+    restart forgets every verdict. Deployments that promise
+    exactly-once across restarts must inject SqliteStore."""
+
+    durable = False
+
+    def __init__(self):
+        self.verdicts = {}  # key -> (verdict dict, day)
+
+    def get(self, key):
+        hit = self.verdicts.get(key)
+        return dict(hit[0]) if hit else None
+
+    def put(self, key, verdict, *, day):
+        self.verdicts[key] = (dict(verdict), day)
+
+    def prune(self, *, before_day):
+        drop = [k for k, (_, d) in self.verdicts.items()
+                if d < before_day]
+        for k in drop:
+            del self.verdicts[k]
+        return len(drop)
+
+    def __len__(self):
+        return len(self.verdicts)
+
+
+class SqliteStore:
+    """Durable verdict store on stdlib sqlite3 — the idempotency
+    contract survives restarts and deploys. One table, one row per
+    judged key; WAL mode so readers never block the writer."""
+
+    durable = True
+
+    def __init__(self, path):
+        self.db = sqlite3.connect(path)
+        self.db.execute("PRAGMA journal_mode=WAL")
+        self.db.execute("CREATE TABLE IF NOT EXISTS verdicts ("
+                        "key TEXT PRIMARY KEY, day INTEGER, "
+                        "body TEXT NOT NULL)")
+        self.db.commit()
+
+    def get(self, key):
+        row = self.db.execute("SELECT body FROM verdicts WHERE key=?",
+                              (key,)).fetchone()
+        return json.loads(row[0]) if row else None
+
+    def put(self, key, verdict, *, day):
+        self.db.execute(
+            "INSERT OR REPLACE INTO verdicts (key, day, body) "
+            "VALUES (?,?,?)",
+            (key, day, json.dumps(verdict, sort_keys=True,
+                                  ensure_ascii=False)))
+        self.db.commit()
+
+    def prune(self, *, before_day):
+        cur = self.db.execute("DELETE FROM verdicts WHERE day < ?",
+                              (before_day,))
+        self.db.commit()
+        return cur.rowcount
+
+    def __len__(self):
+        return self.db.execute("SELECT COUNT(*) FROM verdicts"
+                               ).fetchone()[0]
+
+
+class RateLimiter:
+    """Per-principal token bucket. A syncing device has a declared
+    budget; draining it is refused with a stated reason, never throttled
+    silently into looking offline."""
+
+    def __init__(self, capacity, refill_per_day):
+        if capacity < 1 or refill_per_day <= 0:
+            raise Error("rate budget is positive — capacity and refill "
+                        "are stated numbers")
+        self.capacity = capacity
+        self.refill = refill_per_day
+        self.buckets = {}  # subject -> [tokens, last_seen_day]
+
+    def consume(self, subject, *, at):
+        """at is a float day. Refill accrues linearly, capped at
+        capacity. Returns remaining tokens."""
+        tokens, last = self.buckets.get(subject,
+                                        [float(self.capacity), at])
+        tokens = min(float(self.capacity),
+                     tokens + max(0.0, at - last) * self.refill)
+        if tokens < 1.0:
+            raise Error(f"rate limit — {subject!r} has drained its "
+                        "sync budget; stated, not silent")
+        self.buckets[subject] = [tokens - 1.0, at]
+        return tokens - 1.0
+
+
+class ShardRouter:
+    """Deterministic facility -> shard assignment. Shard membership is
+    epoch-bound: re-sharding is a stated event with a reason, never a
+    silent rebalance that strands checkpoints mid-flight."""
+
+    def __init__(self, shard_count, *, epoch=1):
+        if shard_count < 1:
+            raise Error("a shard map has at least one shard")
+        self.shard_count = shard_count
+        self.epoch = epoch
+        self.epochs = [{"epoch": epoch, "shard_count": shard_count,
+                        "reason": "initial map"}]
+
+    def route(self, facility):
+        digest = hashlib.sha256(facility.encode()).hexdigest()
+        return int(digest[:16], 16) % self.shard_count
+
+    def reshard(self, shard_count, *, by, day, reason):
+        if shard_count < 1:
+            raise Error("a shard map has at least one shard")
+        if not (reason and reason.strip()):
+            raise Error("re-sharding states its reason — every "
+                        "in-flight checkpoint moves epoch")
+        if not by:
+            raise Error("re-sharding names its hand")
+        self.epoch += 1
+        self.shard_count = shard_count
+        self.epochs.append({"epoch": self.epoch,
+                            "shard_count": shard_count, "by": by,
+                            "day": day, "reason": reason.strip()})
+        return self.epoch
+
+
 class UploadGate:
     """The write path. Every offline mutation arrives with an
     idempotency key, the base checksum it was written against, and the
     mutation itself. The gate routes it through the owning engine's
-    validator — the same code that would have judged it online."""
+    validator — the same code that would have judged it online.
 
-    def __init__(self, registry):
+    Scale doctrine:
+    - VERDICTS PERSIST: the store is injectable; SqliteStore keeps the
+      idempotency contract across restarts.
+    - SATURATION IS STATED: max_inflight backpressure refuses loudly
+      and is NEVER stored as a verdict — a saturated retry must not
+      poison the idempotency record.
+    - REPORTS ARE MEMOIZED: conflict_report recomputes only after a
+      state change, not on every read."""
+
+    def __init__(self, registry, *, store=None, verdict_ttl_days=None,
+                 max_inflight=None, limiter=None):
         self.registry = registry
         self.validators = {}   # entity_class -> callable(mutation) -> verdict dict
-        self.seen = {}         # idempotency_key -> stored verdict
+        # NB: never write `store or MemoryStore()` — stores define
+        # __len__, and an empty store is falsy.
+        self.store = store if store is not None else MemoryStore()
+        self.seen = getattr(self.store, "verdicts", {})  # compat view
+        self.verdict_ttl_days = verdict_ttl_days
+        self.max_inflight = max_inflight
+        self.inflight = 0
+        self.limiter = limiter
         self.applied = []      # append-only applied log
         self.conflicts = []    # append-only conflict log
+        self.store_evictions = []  # stated TTL evictions
+        self._report_cache = None
 
     def register_validator(self, entity_class, fn):
         if entity_class not in DEFAULT_ENTITY_CLASSES:
@@ -228,12 +381,21 @@ class UploadGate:
         """One uploaded mutation. Required keys: idempotency_key,
         entity_class, rule_id, base_sha256, op, payload. The verdict is
         stored against the key — a retry gets the same answer."""
+        if self.max_inflight is not None and \
+                self.inflight >= self.max_inflight:
+            # stated backpressure — and deliberately NOT stored: a
+            # saturated retry must not poison the idempotency record
+            raise Error("gate saturated — stated backpressure; the "
+                        "client retries with its key intact")
+        if self.limiter is not None:
+            self.limiter.consume(principal.subject, at=float(day))
         key = mutation.get("idempotency_key")
         if not key:
             raise Error("an upload carries an idempotency key — a "
                         "retried write must be recognisable")
-        if key in self.seen:
-            verdict = dict(self.seen[key])
+        hit = self.store.get(key)
+        if hit is not None:
+            verdict = hit
             verdict["replayed"] = True
             return verdict
         entity_class = mutation.get("entity_class")
@@ -251,13 +413,17 @@ class UploadGate:
                                  "your bucket; an upload cannot reach "
                                  "data the server never granted",
                        "idempotency_key": key}
-            self.seen[key] = verdict
+            self.store.put(key, verdict, day=day)
             return verdict
         validator = self.validators.get(entity_class)
         if validator is None:
             raise Error(f"no validator registered for {entity_class} "
                         "— refusing to judge what we cannot judge")
-        verdict = validator(mutation, day=day)
+        self.inflight += 1
+        try:
+            verdict = validator(mutation, day=day)
+        finally:
+            self.inflight -= 1
         verdict = {"idempotency_key": key, **verdict}
         if verdict.get("verdict") == "conflict":
             verdict.setdefault("policy",
@@ -267,12 +433,40 @@ class UploadGate:
         elif verdict.get("verdict") == "applied":
             self.applied.append({**verdict, "day": day,
                                  "entity_class": entity_class})
-        self.seen[key] = {k: v for k, v in verdict.items()
-                          if k != "replayed"}
+        self.store.put(key, {k: v for k, v in verdict.items()
+                             if k != "replayed"}, day=day)
+        self._report_cache = None
         return verdict
 
+    def submit_batch(self, mutations, *, principal, day):
+        """A device's queued mutations in one call — one round trip,
+        one verdict per mutation, in order. Contract violations (missing
+        keys, dead rules) still raise; judgement outcomes come back as
+        verdicts."""
+        if not mutations:
+            return []
+        return [self.submit(m, principal=principal, day=day)
+                for m in mutations]
+
+    def prune_verdicts(self, *, day):
+        """TTL pruning of the verdict store. Eviction is stated: an
+        idempotency key older than the window may be re-judged, and the
+        log says exactly how many verdicts aged out."""
+        if self.verdict_ttl_days is None:
+            raise Error("no verdict TTL declared — pruning is a "
+                        "policy, declare it first")
+        dropped = self.store.prune(before_day=day - self.verdict_ttl_days)
+        self.store_evictions.append(
+            {"day": day, "dropped": dropped,
+             "reason": f"verdicts older than {self.verdict_ttl_days}d "
+                       "aged out — a retried upload this old is "
+                       "re-judged, and that is the policy"})
+        return dropped
+
     def conflict_report(self):
-        return {"conflicts": len(self.conflicts),
+        if self._report_cache is None:
+            self._report_cache = {
+                "conflicts": len(self.conflicts),
                 "by_policy": {p: sum(1 for c in self.conflicts
                                      if c.get("policy") == p)
                               for p in CONFLICT_POLICIES},
@@ -280,6 +474,7 @@ class UploadGate:
                 "sha256": _sha({"conflicts": self.conflicts,
                                 "applied": self.applied}),
                 "version": VERSION}
+        return dict(self._report_cache)
 
 
 class ConflictResolver:

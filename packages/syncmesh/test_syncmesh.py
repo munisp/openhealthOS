@@ -305,7 +305,7 @@ class TestGenerator:
         assert "draft_bucket" not in emit_powersync_yaml(reg)
 
     def test_version_stamp(self):
-        assert VERSION == "syncmesh@1.0.0"
+        assert VERSION == "syncmesh@1.1.0"
 
 
 class TestExporter:

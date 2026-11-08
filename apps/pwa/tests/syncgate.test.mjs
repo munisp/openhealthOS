@@ -174,3 +174,45 @@ test("local retention: unknown class refuses", () => {
 test("version stamp", () => {
   assert.equal(SYNC_GATE_VERSION, "syncgate@1.0.0");
 });
+
+test("batch drain: one request, per-mutation verdicts applied", async () => {
+  const db = memDb([event("a"), event("b"), event("c")]);
+  const seen = [];
+  const up = new GateUploader(db, "http://node/", {
+    fetchImpl: async (_u, init) => {
+      const body = JSON.parse(init.body);
+      seen.push(body.mutations.length);
+      return { ok: true, json: async () => ({ verdicts:
+        body.mutations.map((m) => m.idempotency_key === "b"
+          ? { verdict: "refused", reason: "engine says no" }
+          : { verdict: "applied" }) }) };
+    },
+  });
+  const out = await up.drainBatch();
+  assert.deepEqual(seen, [3]);            // one round trip
+  assert.deepEqual(out, { applied: 2, refused: 1, conflicts: 0, remaining: 0 });
+  const dead = await up.deadLetters();
+  assert.equal(dead[0].reason, "engine says no");
+});
+
+test("batch drain: verdict count mismatch holds the queue", async () => {
+  const db = memDb([event("a"), event("b")]);
+  const up = new GateUploader(db, "http://node/", {
+    fetchImpl: async () => ({ ok: true, json: async () => ({
+      verdicts: [{ verdict: "applied" }] }) }),  // one short — breach
+  });
+  const out = await up.drainBatch();
+  assert.equal(out.remaining, 2);
+  assert.match(out.error, /count mismatch/);
+  assert.equal(db.__outbox.length, 2);
+});
+
+test("batch drain: transport failure loses nothing", async () => {
+  const db = memDb([event("a"), event("b")]);
+  const up = new GateUploader(db, "http://node/", {
+    fetchImpl: async () => { throw new Error("tower down"); },
+  });
+  const out = await up.drainBatch();
+  assert.equal(out.remaining, 2);
+  assert.match(out.error, /tower down/);
+});
