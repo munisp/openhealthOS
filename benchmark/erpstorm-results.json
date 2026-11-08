@@ -1,0 +1,28 @@
+{
+  "version": "erpstorm@1.0.0",
+  "events": 10000,
+  "seed": 42,
+  "erpnext": {
+    "events": 10000,
+    "valid": 9918,
+    "malformed": 82,
+    "sent": 9918,
+    "skipped_duplicates": 1983,
+    "failed": 82,
+    "wall_s": 21.83,
+    "events_per_s": 454,
+    "failures": []
+  },
+  "odoo": {
+    "events": 10000,
+    "valid": 9918,
+    "malformed": 82,
+    "sent": 9918,
+    "skipped_duplicates": 1983,
+    "failed": 82,
+    "wall_s": 20.53,
+    "events_per_s": 483,
+    "failures": []
+  },
+  "result": "PASS"
+}
