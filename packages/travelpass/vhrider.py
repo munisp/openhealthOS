@@ -11,8 +11,9 @@ WHETHER and HOW MUCH, never where the money sits.
 """
 
 import hashlib
+import json
 
-RIDER_VERSION = "vhrider@1.0.0"
+RIDER_VERSION = "vhrider@1.1.0"
 
 # Attested disruption oracles — an entry per feed. signature_key_id is
 # the KeyRing id the feed's attestations verify against.
@@ -114,3 +115,107 @@ class RiderEngine:
     def report(self):
         return {"version": RIDER_VERSION, "oracles": len(ORACLES),
                 "events": len(self.events), "payouts": len(self.payouts)}
+
+
+# ── Partner-scale parametrics (vhrider@1.1.0) ─────────────────────
+# One trigger, one cover pays a traveler. At national scale the same
+# attested event pays EVERY covered booking on the partner's manifest —
+# the cruise line, the hotel group, the airline — with one attestation
+# and one statement. Partner products are four-eyes entries; a partner
+# payout table is the partner's own ratified table, never the default
+# table smuggled in.
+
+PARTNER_KINDS = ("airline", "cruise", "hotel", "ota")
+
+
+class PartnerRiderRegistry:
+    """Ratified partner parametric products."""
+
+    def __init__(self):
+        self.partners = {}
+        self.audit = []
+
+    def propose(self, partner_id, definition, *, by, day):
+        if partner_id in self.partners:
+            _refuse(f"partner {partner_id} exists; amend as a new "
+                    "version, never edit in place")
+        if definition.get("kind") not in PARTNER_KINDS:
+            _refuse(f"unknown partner kind {definition.get('kind')!r};"
+                    f" kinds are {PARTNER_KINDS}")
+        table = definition.get("payout_table")
+        if not table or not all(
+                "min_delay_minutes" in r and "factor" in r
+                for r in table):
+            _refuse("a partner product declares its own payout table "
+                    "— the default table is never smuggled in")
+        self.partners[partner_id] = {**definition,
+                                     "status": "proposed",
+                                     "proposed_by": by}
+        self.audit.append({"op": "propose", "partner": partner_id,
+                           "by": by, "day": day})
+
+    def ratify(self, partner_id, *, by, day):
+        p = self.partners.get(partner_id)
+        if not p or p["status"] != "proposed":
+            _refuse(f"no proposed partner {partner_id}")
+        if by == p["proposed_by"]:
+            _refuse("the hand that proposes never ratifies")
+        p["status"] = "ratified"
+        p["ratified_by"] = by
+        self.audit.append({"op": "ratify", "partner": partner_id,
+                           "by": by, "day": day})
+        return p
+
+    def live(self, partner_id):
+        p = self.partners.get(partner_id)
+        if not p or p["status"] != "ratified":
+            _refuse(f"partner {partner_id} is not ratified — an "
+                    "unratified product pays nobody")
+        return p
+
+
+class ManifestRider:
+    """One attested event -> every covered booking on the manifest,
+    paid against the partner's own ratified table."""
+
+    def __init__(self, engine, partners):
+        self.engine = engine          # RiderEngine (attestations)
+        self.partners = partners
+        self.statements = []
+
+    def mass_trigger(self, partner_id, manifest, *, event_sha256, day):
+        """manifest: [{booking_ref, unit_price_minor, cover_ref}]."""
+        partner = self.partners.live(partner_id)
+        ev = next((e for e in self.engine.events
+                   if e["event_sha256"] == event_sha256), None)
+        if ev is None:
+            _refuse("no attested event — at any scale, parametric "
+                    "means attested, not asserted")
+        if not manifest:
+            _refuse("an empty manifest pays nobody — stated")
+        table = sorted(partner["payout_table"],
+                       key=lambda r: -r["min_delay_minutes"])
+        lines = []
+        for booking in manifest:
+            payout = 0
+            for row in table:
+                if ev["delay_minutes"] >= row["min_delay_minutes"]:
+                    payout = int(round(
+                        booking["unit_price_minor"] * row["factor"]))
+                    break
+            lines.append({"booking_ref": booking["booking_ref"],
+                          "cover_ref": booking["cover_ref"],
+                          "payout_minor": payout,
+                          "evidence_sha256": event_sha256})
+        total = sum(l["payout_minor"] for l in lines)
+        statement = {"partner": partner_id, "kind": partner["kind"],
+                     "event_sha256": event_sha256, "day": day,
+                     "bookings": len(lines), "paid": total,
+                     "below_floor": sum(1 for l in lines
+                                        if l["payout_minor"] == 0),
+                     "lines": lines}
+        canon = json.dumps({k: v for k, v in statement.items()
+                            if k != "sha256"}, sort_keys=True).encode()
+        statement["sha256"] = hashlib.sha256(canon).hexdigest()
+        self.statements.append(statement)
+        return statement
