@@ -9,7 +9,7 @@ without a stated rate is reported as unpriced exposure, not zero.
 
 from vhmarkets import currency as _currency
 
-TREASURY_VERSION = "vhtreasury@1.0.0"
+TREASURY_VERSION = "vhtreasury@1.1.0"
 
 # Peg/mid-rate entries — versioned data. rate = units of currency per
 # 1 EUR (the scheme's reporting currency). A rate is a claim with a
@@ -98,3 +98,64 @@ def report(settlement_lines):
             "currencies": sorted({r["currency"] for r in rows}),
             "total_eur_minor": sum(r["eur_minor"] for r in priced),
             "unpriced": [r for r in rows if r["eur_minor"] is None]}
+
+
+# ── Rate feeds (vhtreasury@1.1.0) ─────────────────────────────────
+# The static registry above prices a corridor forever; a live treasury
+# reads FEEDS. A feed is an injected, named rate source with a declared
+# freshness budget: a rate older than its budget is stale, and a stale
+# rate REFUSES to price — it reports, it never silently converts.
+# Pegged rates (CVE/EUR is statutory) are exempt by declared kind,
+# stated in the report, not assumed.
+
+class RateFeed:
+    """An injected rate source with a declared staleness budget."""
+
+    def __init__(self, source, *, max_age_days):
+        if not source:
+            _refuse("a feed names its source — anonymous rates refuse")
+        if max_age_days < 1:
+            _refuse("a freshness budget is a declared positive number "
+                    "of days")
+        self.source = source
+        self.max_age_days = max_age_days
+        self.rates = {}          # code -> {per_eur, feed_day}
+
+    def update(self, code, *, per_eur, feed_day):
+        _currency(code)
+        if per_eur <= 0:
+            _refuse("a feed rate is a positive number")
+        self.rates[code] = {"per_eur": per_eur, "feed_day": feed_day}
+        return dict(self.rates[code])
+
+    def age_days(self, code, *, today):
+        r = self.rates.get(code)
+        if r is None:
+            _refuse(f"feed {self.source} has no rate for {code} — "
+                    "unpriced is stated, never zeroed")
+        return today - r["feed_day"]
+
+    def is_stale(self, code, *, today):
+        return self.age_days(code, today=today) > self.max_age_days
+
+    def eur_value_minor(self, code, amount_minor, *, today):
+        """Revalue through the feed. Stale refuses; a peg in the
+        static registry is the declared fallback, stated as such."""
+        _currency(code)
+        if code == "EUR":
+            return amount_minor
+        if code in self.rates:
+            if self.is_stale(code, today=today):
+                _refuse(f"{code} rate from {self.source} is "
+                        f"{self.age_days(code, today=today)}d old "
+                        f"against a {self.max_age_days}d budget — "
+                        "stale rates report, they do not convert")
+            scale = _currency(code)["scale"]
+            eur_major = (amount_minor / scale) / \
+                self.rates[code]["per_eur"]
+            return int(round(eur_major * 100))
+        static = RATES.get(code)
+        if static and static["kind"] == "peg":
+            return eur_value_minor(code, amount_minor)   # peg: stated
+        _refuse(f"no live rate for {code} and no statutory peg — "
+                "unpriced exposure is stated, never zeroed")

@@ -1,0 +1,25 @@
+{
+  "harness": "wardstorm@1.0.0",
+  "seed": 42,
+  "beds": 500,
+  "wall_seconds": 0.021,
+  "admissions": 500,
+  "orders": 1000,
+  "doses_verdicted": 3000,
+  "dose_ops_per_second": 143871,
+  "per_dose_us": {
+    "p50": 1.36,
+    "p99": 5.1
+  },
+  "outcomes": {
+    "given": 2870,
+    "refused_stated": 130
+  },
+  "invariants": {
+    "no_double_admit": true,
+    "every_dose_verdicted": true,
+    "mar_never_overwrites": true,
+    "fingerprints_verify": true
+  },
+  "all_invariants_hold": true
+}
