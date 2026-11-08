@@ -1,0 +1,37 @@
+# PowerSync Open Edition — offline sync substrate.
+#
+# PowerSync service relicensed FSL -> Apache 2.0 (2026-11-03); the SDKs
+# were always Apache 2.0. The Open Edition is self-hosted and free —
+# no BSL/SSPL/Elastic component anywhere on this path (LICENSING.md).
+#
+# What runs here:
+#   powersync  — the sync service: reads Postgres logical replication,
+#                evaluates sync rules server-side, serves checkpoints
+#   (reuses the postgres service from docker-compose.yaml — it must be
+#    configured with wal_level=logical; see infra/postgres/)
+#
+# The sync rules it loads are GENERATED — packages/syncmesh/registry
+# is the source of truth (four-eyes ratified entries); the YAML is a
+# build artifact produced by:
+#
+#   python3 packages/syncmesh/export_powersync.py
+#
+# Uploads never reach PowerSync directly — clients POST mutations to
+# our own API, which passes them through syncmesh.UploadGate
+# (idempotency keys, live-rule enforcement, scope checks, per-class
+# validators that replay through the real clinical engines).
+
+services:
+  powersync:
+    image: journeyapps/powersync-service:latest
+    depends_on:
+      postgres:
+        condition: service_healthy
+    ports: ["8080:8080"]
+    volumes:
+      - ../powersync/powersync.yaml:/config/powersync.yaml:ro
+      - ../powersync/sync-rules.yaml:/config/sync-rules.yaml:ro
+    command: ["start", "-c", "/config/powersync.yaml"]
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:8080/health-check || exit 1"]
+      interval: 10s

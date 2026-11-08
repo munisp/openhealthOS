@@ -1,0 +1,24 @@
+# PowerSync Open Edition service configuration.
+# Connects to the platform Postgres (logical replication) and loads
+# the GENERATED sync rules from sync-rules.yaml.
+
+replication:
+  connections:
+    - type: postgresql
+      uri: postgresql://postgres:openhealth-dev@postgres:5432/openhealth
+      sslmode: disable
+
+storage:
+  type: postgresql
+  uri: postgresql://postgres:openhealth-dev@postgres:5432/openhealth
+
+sync_rules:
+  path: /config/sync-rules.yaml
+
+api:
+  tokens:
+    # Dev-plane only. Real deployments issue short-lived JWTs from the
+    # platform identity service (Keycloak) — never static tokens.
+    static_tokens: []
+
+port: 8080

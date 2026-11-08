@@ -1,0 +1,63 @@
+# GENERATED from syncmesh registry — do not hand-edit
+# generator: syncmesh@1.0.0
+bucket_definitions:
+  clinical_certificates:
+    # rule r-clinical-certs v1 · certificate · retention episode
+    parameters: |
+      SELECT facility, role FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM certificate WHERE facility = :principal_facility AND role = :principal_role
+  panel_recalls:
+    # rule r-panel-recalls v1 · panel-recall · retention rolling-90d
+    parameters: |
+      SELECT facility, panel FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM panel_recall WHERE facility = :principal_facility AND panel = :principal_panel
+  pharmacy_orders:
+    # rule r-pharmacy-orders v1 · medication-order · retention rolling-90d
+    parameters: |
+      SELECT facility, role FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM medication_order WHERE facility = :principal_facility AND role = :principal_role
+  pharmacy_rx:
+    # rule r-pharmacy-rx v1 · prescription · retention rolling-90d
+    parameters: |
+      SELECT facility, role FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM prescription WHERE facility = :principal_facility AND role = :principal_role
+  referral_status:
+    # rule r-referral-status v1 · referral-status · retention rolling-90d
+    parameters: |
+      SELECT facility FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM referral_status WHERE facility = :principal_facility
+  teleconsulta_status:
+    # rule r-teleconsulta-status v1 · teleconsulta-status · retention rolling-90d
+    parameters: |
+      SELECT facility FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM teleconsulta_status WHERE facility = :principal_facility
+  triage_calls:
+    # rule r-triage-calls v1 · triage-call · retention rolling-30d
+    parameters: |
+      SELECT facility, role FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM triage_call WHERE facility = :principal_facility AND role = :principal_role
+  ward_emar:
+    # rule r-ward-emar v1 · emar-administration · retention episode
+    parameters: |
+      SELECT facility, role FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM emar_administration WHERE facility = :principal_facility AND role = :principal_role
+  ward_flowsheets:
+    # rule r-ward-flowsheets v1 · flowsheet-row · retention rolling-30d
+    parameters: |
+      SELECT facility FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM flowsheet_row WHERE facility = :principal_facility
+  ward_observations:
+    # rule r-ward-observations v1 · observation · retention rolling-90d
+    parameters: |
+      SELECT facility, role FROM principals WHERE subject = request.user_id()
+    data:
+      - SELECT * FROM observation WHERE facility = :principal_facility AND role = :principal_role
