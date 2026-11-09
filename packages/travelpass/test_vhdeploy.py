@@ -7,6 +7,7 @@ Three seams that were "deployment-side only" get their closable halves:
      fixture (mock_pkcs11.c) — the same path a vendor .so takes
 """
 
+import json
 import os
 import shutil
 import subprocess
@@ -253,6 +254,72 @@ class TestPkcs11Abi(unittest.TestCase):
         with self.assertRaises(VHCError):
             kr.snapshot()  # the private half never leaves the device
         mod.close()
+
+
+class TestDemoDeploy(unittest.TestCase):
+    """The deployment-proof board reads a deterministic export — a demo
+    you cannot reproduce is a story you cannot audit."""
+
+    def test_deterministic_byte_for_byte(self):
+        import demo_deploy
+        first = demo_deploy.run_demo()
+        second = demo_deploy.run_demo()
+        self.assertEqual(first, second)
+        self.assertEqual(first["sha256"], second["sha256"])
+
+    def test_sha256_stamp_is_the_contract(self):
+        import demo_deploy
+        import hashlib
+        payload = demo_deploy.run_demo()
+        body = {k: v for k, v in payload.items() if k != "sha256"}
+        digest = hashlib.sha256(json.dumps(body, sort_keys=True,
+                                           separators=(",", ":"))
+                                .encode()).hexdigest()
+        self.assertEqual(payload["sha256"], digest)
+
+    def test_payload_shape_and_evidence(self):
+        import demo_deploy
+        p = demo_deploy.run_demo()
+        self.assertEqual(p["version"], "deployproof-demo@1.0.0")
+
+        kinds = [e["kind"] for e in p["psp"]["events"]]
+        self.assertEqual(kinds, ["template-refusal", "four-eyes",
+                                 "parsed", "parsed",
+                                 "register-refusals"])
+        reg = p["psp"]["events"][-1]
+        self.assertTrue(all(a["refused"] for a in reg["attempts"]))
+        parsed = [e for e in p["psp"]["events"] if e["kind"] == "parsed"]
+        self.assertEqual(len(parsed[0]["rows"]), 2)  # failed never settles
+        self.assertEqual(parsed[1]["rows"][0]["amount_minor"], 150000)
+        # the registry is read back as data, not narrated
+        self.assertEqual(p["psp"]["registry"]["version"], "vhpsp@1.1.0")
+
+        self.assertIn("VOLATILE", p["ease"]["volatile_report"]
+                      ["durability"])
+        self.assertTrue(p["ease"]["restart"]["same_idem_key"])
+        self.assertEqual(p["ease"]["restart"]["replay"],
+                         {"replayed": 1, "dead": 0})
+        self.assertEqual(p["ease"]["dead_letter"]["attempts"], 8)
+        self.assertTrue(p["ease"]["dead_letter"]["last_error"])
+
+        # the HSM card either proves the ABI here or states why not
+        if shutil.which("cc"):
+            self.assertEqual(p["hsm"]["environment"],
+                             "compiled-abi-fixture")
+            self.assertTrue(p["hsm"]["verify_good_payload"])
+            self.assertFalse(p["hsm"]["verify_tampered_payload"])
+            self.assertIn("custody lives in an HSM",
+                          p["hsm"]["snapshot"])
+        else:
+            self.assertIn("NOT RUN", p["hsm"]["environment"])
+
+    def test_main_writes_payload_file(self):
+        import demo_deploy
+        self.assertEqual(demo_deploy.main(), 0)
+        out = os.path.normpath(demo_deploy.OUT)
+        with open(out) as fh:
+            payload = json.load(fh)
+        self.assertEqual(payload["version"], "deployproof-demo@1.0.0")
 
 
 if __name__ == "__main__":

@@ -1,0 +1,198 @@
+{
+ "version": "deployproof-demo@1.0.0",
+ "generated_at": "2026-11-10T08:00:00Z",
+ "psp": {
+  "events": [
+   {
+    "kind": "template-refusal",
+    "format_id": "paystack-settlement-csv-v1",
+    "reason": "paystack-settlement-csv-v1 is a template \u2014 pinned to Paystack dashboard settlement/transaction export shape but not yet ratified against a real provider export. Ratify with two named approvers first."
+   },
+   {
+    "kind": "four-eyes",
+    "format_ids": [
+     "paystack-settlement-csv-v1",
+     "mpesa-statement-csv-v1"
+    ],
+    "approver": "ada",
+    "second": "bola",
+    "note": "ratified against a real provider export \u2014 the hand that proposes never approves"
+   },
+   {
+    "kind": "parsed",
+    "format_id": "paystack-settlement-csv-v1",
+    "rows": [
+     {
+      "payer": "pax1@example.com",
+      "amount_minor": 1200000,
+      "currency": "NGN",
+      "ref": "PSP-900"
+     },
+     {
+      "payer": "pax3@example.com",
+      "amount_minor": 75000,
+      "currency": "NGN",
+      "ref": "PSP-902"
+     }
+    ],
+    "skipped": [
+     {
+      "ref": "PSP-901",
+      "why": "status=failed \u2014 only successful transactions settle"
+     }
+    ]
+   },
+   {
+    "kind": "parsed",
+    "format_id": "mpesa-statement-csv-v1",
+    "rows": [
+     {
+      "payer": "Customer 2547xxx",
+      "amount_minor": 150000,
+      "currency": "KES",
+      "ref": "QK12345"
+     }
+    ],
+    "skipped": [
+     {
+      "ref": "QK12346",
+      "why": "withdrawal row \u2014 not a settlement line"
+     }
+    ],
+    "note": "1,500.00 KES major \u2192 150000 minor via the ISO-4217 scale table, never a guessed exponent"
+   },
+   {
+    "kind": "register-refusals",
+    "attempts": [
+     {
+      "attempt": "enter pre-ratified",
+      "refused": true,
+      "reason": "adapters enter as templates \u2014 ratification is a separate, four-eyes act"
+     },
+     {
+      "attempt": "overwrite csv-v1",
+      "refused": true,
+      "reason": "csv-v1 is already registered \u2014 a format is never edited under a settlement desk's feet; add a new versioned entry"
+     },
+     {
+      "attempt": "no named source",
+      "refused": true,
+      "reason": "an adapter without a named source is a rumor, not a format"
+     }
+    ]
+   }
+  ],
+  "registry": {
+   "version": "vhpsp@1.1.0",
+   "adapters": {
+    "csv-v1": {
+     "status": "ratified",
+     "source": "platform reference contract (amounts already minor)",
+     "ratified_by": []
+    },
+    "flutterwave-settlement-csv-v1": {
+     "status": "template",
+     "source": "Flutterwave dashboard settlement export shape",
+     "ratified_by": []
+    },
+    "json-v1": {
+     "status": "ratified",
+     "source": "platform reference contract",
+     "ratified_by": []
+    },
+    "mpesa-statement-csv-v1": {
+     "status": "ratified",
+     "source": "Safaricom M-Pesa statement export shape",
+     "ratified_by": [
+      "ada",
+      "bola"
+     ]
+    },
+    "paystack-settlement-csv-v1": {
+     "status": "ratified",
+     "source": "Paystack dashboard settlement/transaction export shape",
+     "ratified_by": [
+      "ada",
+      "bola"
+     ]
+    },
+    "stripe-balance-csv-v1": {
+     "status": "template",
+     "source": "Stripe balance-transaction report export shape",
+     "ratified_by": []
+    }
+   }
+  }
+ },
+ "ease": {
+  "volatile_report": {
+   "rail_version": "ease@1.0",
+   "version": "vhc-ease@1.1.0",
+   "messages_sent": 0,
+   "durability": "VOLATILE \u2014 restart loses unacked envelopes; stated, not hidden",
+   "by_type": {
+    "cover-issued": 0,
+    "cover-revoked": 0,
+    "exemption-issued": 0,
+    "verification-event": 0,
+    "manifest-batch": 0
+   }
+  },
+  "journal": {
+   "refusal": "rail failure on cover-issued: rail down \u2014 envelope journaled (pending), replay will carry the same idempotency key",
+   "idem_key": "f7ac85183ce347b429a504f01fd2d7a17ece9dcbf3f1240d2fd9a1e472548df2",
+   "note": "persisted BEFORE the wire \u2014 a traveller who exists only on our side is a finding, not a cover"
+  },
+  "restart": {
+   "replay": {
+    "replayed": 1,
+    "dead": 0
+   },
+   "same_idem_key": true,
+   "received_keys": [
+    "f7ac85183ce347b429a504f01fd2d7a17ece9dcbf3f1240d2fd9a1e472548df2"
+   ]
+  },
+  "dead_letter": {
+   "idem_key": "f782cf6476db63e6e94c8ef1db871971cf3da71dc54a613c579d111cf86a306f",
+   "last_error": "rail down",
+   "attempts": 8,
+   "note": "8 failures and the envelope leaves the retry path \u2014 silence is how settlements go missing"
+  },
+  "durable_report": {
+   "rail_version": "ease@1.0",
+   "version": "vhc-ease@1.1.0",
+   "messages_sent": 1,
+   "durability": "sqlite-outbox",
+   "by_type": {
+    "cover-issued": 1,
+    "cover-revoked": 0,
+    "exemption-issued": 0,
+    "verification-event": 0,
+    "manifest-batch": 0
+   },
+   "pending": 0,
+   "dead": []
+  }
+ },
+ "hsm": {
+  "environment": "compiled-abi-fixture",
+  "fixture": "packages/travelpass/mock_pkcs11.c \u2014 a declared test fixture speaking the real Cryptoki ABI; the same ctypes path loads YubiHSM libyubihsm_pkcs11.so / SoftHSM libsofthsm2.so at deployment. The library path is configuration, never a code branch.",
+  "cryptoki_version": "2.40",
+  "slots": [
+   0
+  ],
+  "key_label": "cover-key",
+  "payload": "the checksum is the contract",
+  "signature_hex": "d1ccc286c2c8c6c1c6dfdac389c1d88ac1dcd296d2dfddc6cfdddccacdd0de9a",
+  "verify_good_payload": true,
+  "verify_tampered_payload": false,
+  "snapshot": "offline cache cannot carry key 'hsm-cover' \u2014 custody lives in an HSM; escrow a verification copy or verify online"
+ },
+ "versions": {
+  "vhpsp": "vhpsp@1.1.0",
+  "vhease": "vhc-ease@1.1.0",
+  "vhpkcs11": "vhpkcs11@1.0.0"
+ },
+ "sha256": "840facbc79abd67224a21ff36ed09e4a619d1f356cd78afa5671b32ec4d2ed93"
+}

@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Deployment proof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Deployment proof — the seams that were "deployment-side only"</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. One settlement morning: template PSP formats refuse until two named approvers ratify them against a real export; the EASE border rail survives a restart because the envelope was journaled BEFORE the wire; and an HSM signs through the real Cryptoki ABI while its key refuses to ride in an offline cache. Refusals are the feature.</div>
+
+  <div class="card">
+    <h2>Settlement desk — a template is a placeholder, not a settlement</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-adapters"></div><div class="kpi-label">adapters</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-ratified"></div><div class="kpi-label">ratified</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-template"></div><div class="kpi-label">templates</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-refused"></div><div class="kpi-label">rogue refused</div></div>
+    </div>
+    <div id="psp-events" style="margin-top:8px"></div>
+    <div id="psp-registry" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>EASE rail — persist before send, replay after restart</h2>
+    <div class="row"><b>Volatile adapter</b><span class="badge warn">stated</span> <span class="mono" id="ease-volatile"></span></div>
+    <div class="gate" style="margin:6px 0" id="ease-journal"></div>
+    <div class="row"><b>Restart replay</b><span id="ease-replay"></span></div>
+    <div class="gate" style="margin:6px 0" id="ease-dead"></div>
+  </div>
+
+  <div class="card">
+    <h2>HSM custody — the private half never leaves the device</h2>
+    <div id="hsm"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function rowLine(r) {
+  return `<span class="mono">${esc(r.ref)} · ${esc(r.payer)} ·
+    ${r.amount_minor} ${esc(r.currency)} (minor)</span>`;
+}
+
+function pspEvent(ev) {
+  if (ev.kind === "template-refusal") {
+    return `<div class="gate" style="margin:6px 0"><b>${esc(ev.format_id)}</b>
+      — refused to parse: ${esc(ev.reason)}</div>`;
+  }
+  if (ev.kind === "four-eyes") {
+    return `<div class="row"><b>Ratified</b>
+      <span><span class="badge ok">four-eyes</span>
+      <span class="mono"> ${ev.format_ids.map(esc).join(", ")}
+      — ${esc(ev.approver)} + ${esc(ev.second)}</span></span></div>
+      <div class="mono" style="margin:2px 0 8px">${esc(ev.note)}</div>`;
+  }
+  if (ev.kind === "parsed") {
+    return `<div class="row"><b>${esc(ev.format_id)}</b>
+      <span><span class="badge ok">${ev.rows.length} settled</span></span></div>
+      ${ev.rows.map(rowLine).join("<br>")}
+      <div class="mono" style="margin:2px 0 8px">skipped:
+      ${ev.skipped.map((s) => esc(s.ref) + " (" + esc(s.why) + ")").join("; ")}
+      ${ev.note ? " · " + esc(ev.note) : ""}</div>`;
+  }
+  if (ev.kind === "register-refusals") {
+    return `<div class="gate" style="margin:6px 0"><b>register_adapter</b>
+      refused ${ev.attempts.length} rogue attempts:<br>${ev.attempts.map(
+        (a) => `<span class="mono">· ${esc(a.attempt)} — ${esc(a.reason)}</span>`
+      ).join("<br>")}</div>`;
+  }
+  return "";
+}
+
+fetch("./deployproof.json", {cache: "no-store"}).then((r) => r.json())
+  .then((p) => {
+    $("hdr").textContent = p.version + " · generated " + p.generated_at;
+
+    // settlement desk
+    const adapters = Object.entries(p.psp.registry.adapters);
+    const ratified = adapters.filter(([, a]) => a.status === "ratified");
+    const templates = adapters.filter(([, a]) => a.status === "template");
+    $("k-adapters").textContent = adapters.length;
+    $("k-ratified").textContent = ratified.length;
+    $("k-template").textContent = templates.length;
+    $("k-refused").textContent = p.psp.events
+      .filter((e) => e.kind === "register-refusals")
+      .reduce((n, e) => n + e.attempts.filter((a) => a.refused).length, 0);
+    $("psp-events").innerHTML = p.psp.events.map(pspEvent).join("");
+    $("psp-registry").innerHTML =
+      "<b>The registry, read back as data:</b><br>" + adapters.map(
+        ([fid, a]) => `<span class="mono">· ${esc(fid)} —
+          <span class="badge ${a.status === "ratified" ? "ok" : "warn"}">
+          ${esc(a.status)}</span> source: ${esc(a.source)}${a.ratified_by.length
+          ? " · by " + a.ratified_by.map(esc).join(" + ") : ""}</span>`
+      ).join("<br>");
+
+    // EASE rail
+    $("ease-volatile").textContent = p.ease.volatile_report.durability;
+    $("ease-journal").innerHTML = `<b>Rail down mid-send</b> —
+      ${esc(p.ease.journal.refusal)}<br><span class="mono">
+      ${esc(p.ease.journal.note)} · idem_key ${esc(p.ease.journal.idem_key.slice(0, 16))}…</span>`;
+    $("ease-replay").innerHTML =
+      `<span class="badge ok">${p.ease.restart.replay.replayed} replayed</span>
+       <span class="mono">same idempotency key:
+       ${p.ease.restart.same_idem_key ? "YES — the rail dedupes" : "NO"}</span>`;
+    $("ease-dead").innerHTML = `<b>Dead letter</b> —
+      ${p.ease.dead_letter.attempts} attempts, then out of the retry path.
+      <span class="mono">last error: ${esc(p.ease.dead_letter.last_error)} ·
+      ${esc(p.ease.dead_letter.note)}</span>`;
+
+    // HSM custody
+    const h = p.hsm;
+    if (h.environment === "compiled-abi-fixture") {
+      $("hsm").innerHTML = `
+        <div class="row"><b>Environment</b><span class="badge warn">fixture</span>
+          <span class="mono"> ${esc(h.environment)} · Cryptoki ${esc(h.cryptoki_version)}</span></div>
+        <div class="mono" style="margin:4px 0 8px">${esc(h.fixture)}</div>
+        <div class="row"><b>Key custody</b><span class="mono">label
+          ${esc(h.key_label)} · slots [${h.slots.join(", ")}]</span></div>
+        <div class="row"><b>Sign / verify</b><span>
+          <span class="badge ok">good payload ${h.verify_good_payload ? "verified" : "FAILED"}</span>
+          <span class="badge ${h.verify_tampered_payload === false ? "ok" : "warn"}">
+          tampered ${h.verify_tampered_payload === false ? "refused" : "ACCEPTED?!"}</span></span></div>
+        <div class="mono" style="margin:2px 0 8px">“${esc(h.payload)}” →
+          ${esc(h.signature_hex.slice(0, 32))}…</div>
+        <div class="gate"><b>Offline cache</b> — snapshot refused:
+          <span class="mono">${esc(h.snapshot)}</span></div>`;
+    } else {
+      $("hsm").innerHTML = `<div class="gate"><b>Not run here</b> —
+        <span class="mono">${esc(h.environment)}</span></div>`;
+    }
+
+    // integrity
+    $("sha").textContent = p.sha256;
+    $("versions").textContent = Object.entries(p.versions)
+      .map(([k, v]) => k + "=" + v).join(" · ") + " · " + p.version;
+  }).catch((e) => { $("hdr").textContent = "payload unavailable: " + e; });
+</script>
+</body>
+</html>
