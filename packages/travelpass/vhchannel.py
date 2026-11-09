@@ -12,7 +12,7 @@ verdict path as the QR — one verdict pipeline, two front doors.
 
 from vhmarkets import market as _market
 
-CHANNEL_VERSION = "vhchannel@1.0.0"
+CHANNEL_VERSION = "vhchannel@1.1.0"
 
 # session states — the vocabulary is versioned
 STATES = ("idle", "menu", "buy_days", "buy_age", "buy_confirm",
@@ -102,6 +102,40 @@ class LaneSession:
             self._go("done")
             return "verified"       # the caller renders the verdict
         _refuse("session done — dial again")
+
+    # -- resumption: the telco drops sessions at 30–60s; the menu state
+    # must survive the redial. A snapshot is HMAC-signed and single-use
+    # through the wire package's ResumeTokenIssuer — the lane signs the
+    # state, the wire guards the replay.
+
+    def snapshot(self):
+        """Export the exact resumable state. Done-state sessions do not
+        resume — a finished transaction is finished."""
+        if self.state == "done":
+            _refuse("a finished session does not resume — stated")
+        return {"session_id": self.session_id, "telco": self.telco,
+                "country": self.country, "day": self.day,
+                "state": self.state, "draft": dict(self.draft),
+                "transcript": list(self.transcript)}
+
+    @classmethod
+    def restore(cls, snap):
+        """Restore from a snapshot produced by snapshot(). The wire layer
+        has already verified the token; here we validate shape, never
+        trust."""
+        for key in ("session_id", "telco", "country", "day", "state", "draft"):
+            if key not in snap:
+                _refuse(f"snapshot missing {key} — partial state is not a session")
+        if snap["state"] not in STATES or snap["state"] == "done":
+            _refuse(f"snapshot state {snap['state']!r} cannot resume — stated")
+        s = cls(snap["session_id"], telco=snap["telco"],
+                country=snap["country"], day=snap["day"])
+        s.state = snap["state"]
+        s.draft = dict(snap["draft"])
+        s.transcript = list(snap.get("transcript", []))
+        s.transcript.append({"state": snap["state"],
+                             "in": "<resumed after telco drop — stated>"})
+        return s
 
 
 def verify_by_code(vreg, *, cover_ref, day, lane):

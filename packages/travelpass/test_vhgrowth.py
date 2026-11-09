@@ -98,6 +98,46 @@ class TestChannel(unittest.TestCase):
         with self.assertRaises(ChannelError):
             s._go("menu")
 
+    def test_session_survives_the_telco_drop(self):
+        # Telco sessions die at 30-60s. The user redials; the aggregator
+        # mints a new session id; the snapshot restores the exact menu.
+        s = LaneSession("s1", telco="mtn-ng", country="ng", day=0)
+        s.handle("")
+        s.handle("1")
+        s.handle("14")          # mid-flow at buy_age — telco drops here
+        snap = s.snapshot()
+        r = LaneSession.restore({**snap, "session_id": "s2-redial"})
+        self.assertEqual(r.state, "buy_age")
+        self.assertEqual(r.draft["days"], 14)
+        self.assertIn("resumed after telco drop", r.transcript[-1]["in"])
+        # the resumed session completes the flow
+        self.assertIn("Confirm", r.handle("30"))
+        self.assertIn("Quote issued", r.handle("1"))
+
+    def test_done_sessions_do_not_resume(self):
+        s = LaneSession("s1", telco="mtn-ng", country="ng", day=0)
+        s.handle("")
+        s.handle("2")
+        s.handle("VHC-XYZ")
+        with self.assertRaises(ChannelError):
+            s.snapshot()        # finished is finished
+        snap = {"session_id": "s1", "telco": "mtn-ng", "country": "ng",
+                "day": 0, "state": "done", "draft": {}}
+        with self.assertRaises(ChannelError):
+            LaneSession.restore(snap)
+
+    def test_partial_snapshot_is_not_a_session(self):
+        s = LaneSession("s1", telco="mtn-ng", country="ng", day=0)
+        s.handle("")
+        snap = s.snapshot()
+        del snap["state"]
+        with self.assertRaises(ChannelError):
+            LaneSession.restore(snap)
+        bad = s.snapshot()
+        bad["state"] = "backstage"      # not a real state
+        with self.assertRaises(ChannelError):
+            LaneSession.restore(bad)
+
     def test_verify_by_code_red_on_unknown(self):
         class NoReg:
             def verify(self, **kw):
