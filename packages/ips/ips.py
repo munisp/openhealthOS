@@ -147,3 +147,72 @@ def validate_ips(bundle):
         if spec["required"] and spec["title"] not in titles:
             problems.append(f"missing required section: {key}")
     return {"valid": not problems, "problems": problems}
+
+
+# ---------------------------------------------------------------- CLI seam
+# Consumed by services/shr-service (ips.go) as a subprocess:
+#   python3 ips.py build     — JSON ipsInput on stdin → IPS Bundle on stdout
+#   python3 ips.py validate  — Bundle JSON on stdin → exit 0, else exit 1
+#                              with the problems on stderr.
+# The CLI is a thin adapter: all clinical rules live in build_ips /
+# validate_ips above. A subprocess that exits 0 without producing the
+# document would be a silent empty IPS — so validate re-checks output
+# shape and build refuses empty input.
+
+def _cli_build(stdin_text):
+    data = json.loads(stdin_text)
+    if not isinstance(data, dict) or not data:
+        raise IPSError("empty ipsInput — refusing to emit an empty IPS")
+    patient = data.get("patient") or {}
+    if "birthDate" not in patient and "birth_date" in patient:
+        patient = dict(patient, birthDate=patient["birth_date"])
+    if not patient.get("name"):
+        # The SHR seeds nameless patients in some locales; the CLI states
+        # it instead of inventing one.
+        patient = dict(patient, name="(name withheld at source)")
+    # The SHR's ipsInput sends "observations"; the IPS registry calls that
+    # section "results" (LOINC 30954-2). Same facts, standard name.
+    if "observations" in data and "results" not in data:
+        data = dict(data, results=data["observations"])
+    sections = {}
+    for key in SECTIONS:
+        if key in data:
+            entries = data[key]
+            sections[key] = ({"entries": entries} if entries
+                             else {"empty_reason": "none-known"})
+    for req in (k for k, s in SECTIONS.items() if s["required"]):
+        sections.setdefault(req, {"empty_reason": "none-known"})
+    bundle = build_ips(patient, sections=sections,
+                       author=data.get("author", "shr-service"),
+                       generated_day=data.get("generated_day", "unknown"))
+    return json.dumps(bundle)
+
+
+def _cli_validate(stdin_text):
+    try:
+        bundle = json.loads(stdin_text)
+    except json.JSONDecodeError as exc:
+        print(f"not JSON: {exc}", file=sys.stderr)
+        return 1
+    verdict = validate_ips(bundle)
+    if not verdict["valid"]:
+        print("; ".join(verdict["problems"]), file=sys.stderr)
+        return 1
+    return 0
+
+
+if __name__ == "__main__":
+    import sys
+    if len(sys.argv) != 2 or sys.argv[1] not in ("build", "validate"):
+        print("usage: ips.py build|validate  (JSON on stdin)",
+              file=sys.stderr)
+        sys.exit(2)
+    _in = sys.stdin.read()
+    if sys.argv[1] == "build":
+        try:
+            print(_cli_build(_in))
+        except IPSError as exc:
+            print(str(exc), file=sys.stderr)
+            sys.exit(1)
+    else:
+        sys.exit(_cli_validate(_in))

@@ -73,7 +73,7 @@ func TestIPSDocument(t *testing.T) {
 	for _, s := range comp["section"].([]any) {
 		sections[s.(map[string]any)["title"].(string)] = true
 	}
-	for _, req := range []string{"problems", "allergies", "medications", "immunizations", "results"} {
+	for _, req := range []string{"Problem List", "Allergies and Intolerances", "History of Medication use", "History of Immunizations", "Relevant diagnostic tests"} {
 		if !sections[req] {
 			t.Fatalf("missing IPS section %s", req)
 		}

@@ -87,3 +87,62 @@ class TestIPS(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+# ------------------------------------------------------------ CLI seam tests
+# services/shr-service consumes ips.py as a subprocess; these pin the
+# wire contract so the seam can't silently rot again (it shipped with
+# NO __main__ for months and the Go side 502'd — a fail-closed save,
+# but the feature was dead).
+
+import json
+import subprocess
+import sys
+import os
+
+IPS_PY = os.path.join(os.path.dirname(__file__), "ips.py")
+
+
+def _run(*args, stdin=""):
+    return subprocess.run([sys.executable, IPS_PY, *args],
+                          input=stdin, capture_output=True, text=True,
+                          timeout=10)
+
+
+class TestIpsCli(unittest.TestCase):
+    def test_build_produces_document_bundle(self):
+        r = _run("build", stdin=json.dumps({
+            "patient": {"id": "p1", "name": "Amina Yusuf"},
+            "problems": [{"code": "Malaria", "display": "Malaria"}],
+            "observations": [{"code": "HR", "display": "Heart rate",
+                              "value": "72 /min"}],
+        }))
+        self.assertEqual(r.returncode, 0, r.stderr)
+        bundle = json.loads(r.stdout)
+        self.assertEqual(bundle["resourceType"], "Bundle")
+        self.assertEqual(bundle["type"], "document")
+        titles = {s["title"] for s in
+                  bundle["entry"][0]["resource"]["section"]}
+        # shr-service's Go test asserts on these exact titles
+        self.assertIn("Problem List", titles)
+        self.assertIn("Relevant diagnostic tests", titles)
+
+    def test_build_validate_roundtrip(self):
+        r = _run("build", stdin=json.dumps(
+            {"patient": {"id": "p1", "name": "Amina Yusuf"}}))
+        v = _run("validate", stdin=r.stdout)
+        self.assertEqual(v.returncode, 0, v.stderr)
+
+    def test_build_empty_input_refused_loudly(self):
+        r = _run("build", stdin="{}")
+        self.assertEqual(r.returncode, 1)
+        self.assertIn("empty ipsInput", r.stderr)
+
+    def test_validate_rejects_garbage(self):
+        self.assertEqual(_run("validate", stdin="not json").returncode, 1)
+        bad = json.dumps({"resourceType": "Bundle", "type": "collection"})
+        self.assertEqual(_run("validate", stdin=bad).returncode, 1)
+
+    def test_bad_usage_exit_2(self):
+        self.assertEqual(_run().returncode, 2)
+        self.assertEqual(_run("frob").returncode, 2)
