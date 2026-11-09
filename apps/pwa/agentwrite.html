@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Agent write pipeline — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Agent write pipeline — machines propose, people commit</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. One clinic morning with a triage agent: an allergy search that states what it searched, a malaria record the reviewer approves (commit verified by independent read-back), an observation with an invented code system that policy denies BEFORE any reviewer is asked, and a sepsis record the reviewer denies. Refusals are the feature.</div>
+
+  <div class="card">
+    <h2>Capability gating — a degraded host is never offered a pen</h2>
+    <div class="row"><b>Host that cannot render</b><span id="cap-degraded"></span></div>
+    <div class="row"><b>Rendering host</b><span id="cap-full"></span></div>
+    <div class="mono" style="margin-top:6px">write tools are not merely refused for a non-rendering host — they are never listed; it cannot even ask</div>
+  </div>
+
+  <div class="card">
+    <h2>Read with a stated search set — absence is evidence of search</h2>
+    <div id="read"></div>
+  </div>
+
+  <div class="card">
+    <h2>Write outcomes</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-committed"></div><div class="kpi-label">committed</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-policy"></div><div class="kpi-label">policy-denied</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-reviewer"></div><div class="kpi-label">reviewer-denied</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-env"></div><div class="kpi-label">envelopes</div></div>
+    </div>
+    <div id="writes" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Coverage — a fraction with a declared denominator</h2>
+    <div class="row"><b>US Core readable types</b><span><span class="badge ok" id="cov-frac"></span> <span class="mono" id="cov-den"></span></span></div>
+    <div class="mono" style="margin-top:6px" id="cov-note"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Audit chains</b><span id="chains"></span></div>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function writeRow(ev) {
+  if (ev.kind === "write-approved") {
+    return `<div class="row"><b>${esc(ev.tool)}</b>
+      <span><span class="badge ok">committed</span>
+      <span class="mono"> ${esc(ev.decision.verified_by)} ·
+      resource ${esc(ev.decision.resource_id)} · provenance
+      ${esc(ev.decision.provenance_id)}</span></span></div>
+      <div class="mono" style="margin:2px 0 8px">rendering the reviewer approved: “${esc(ev.proposal.rendering)}” — meta carries AIAST + ai-authored + session tag</div>`;
+  }
+  if (ev.kind === "write-policy-denied") {
+    return `<div class="gate" style="margin:6px 0"><b>${esc(ev.tool)}</b>
+      — policy-denied before presentation: ${esc(ev.outcome.reason)}<br>
+      <span class="mono">agent received repair detail: ${esc(ev.outcome.problems || "")}</span><br>
+      <span class="mono">${esc(ev.note)}</span></div>`;
+  }
+  if (ev.kind === "write-reviewer-denied") {
+    return `<div class="gate" style="margin:6px 0"><b>${esc(ev.tool)}</b>
+      — denied by <b>${esc("dr-sim-ada")}</b>, attributed to the reviewer; nothing committed.
+      <span class="mono">proposal was: “${esc(ev.proposal.rendering)}”</span></div>`;
+  }
+  return "";
+}
+
+async function load() {
+  const res = await fetch("agentwrite.json");
+  const p = await res.json();
+
+  $("hdr").textContent = `${p.version} · actor ${p.actor} · reviewer ${p.reviewer} · patient ${p.patient} · ${p.generated_at}`;
+
+  const cap = p.events.find((e) => e.kind === "capability");
+  $("cap-degraded").innerHTML = cap.degraded_host_tools.map((t) =>
+    `<span class="badge warn">${esc(t)}</span>`).join(" ") +
+    ` <span class="mono">read tools only</span>`;
+  $("cap-full").innerHTML = cap.rendering_host_tools.map((t) =>
+    `<span class="badge ok">${esc(t)}</span>`).join(" ");
+
+  const read = p.events.find((e) => e.kind === "read");
+  const r = read.outcome.result;
+  $("read").innerHTML =
+    `<div class="row"><b>${esc(read.tool)}</b>
+     <span><span class="badge warn">absent</span>
+     <span class="mono"> searched: ${esc(r.search_set.map((c) => c.store).join(", "))}</span></span></div>
+     <div class="row"><b>Verdict</b><span>${esc(r.absence.verdict)}</span></div>
+     <div class="mono" style="margin-top:4px">fingerprint ${esc(r.absence.fingerprint.slice(0, 24))}… — “no allergies found” never means “no allergies exist”</div>`;
+
+  const writes = p.events.filter((e) => e.kind.startsWith("write"));
+  $("k-committed").textContent = writes.filter((e) => e.kind === "write-approved").length;
+  $("k-policy").textContent = writes.filter((e) => e.kind === "write-policy-denied").length;
+  $("k-reviewer").textContent = writes.filter((e) => e.kind === "write-reviewer-denied").length;
+  $("k-env").textContent = p.audit.envelopes_issued;
+  $("writes").innerHTML = writes.map(writeRow).join("");
+
+  $("cov-frac").textContent = p.coverage.fraction;
+  $("cov-den").textContent = p.coverage.denominator;
+  $("cov-note").textContent = p.coverage.note;
+
+  $("chains").innerHTML = ["registry_chain", "gate_chain", "stack_chain"]
+    .map((k) => `<span class="badge ${p.audit[k] === "verified" ? "ok" : "warn"}">${esc(k.replace("_", " "))}: ${esc(p.audit[k])}</span>`).join(" ");
+  $("sha").textContent = p.sha256;
+  $("versions").textContent = p.version;
+}
+
+load();
+</script>
+</body>
+</html>

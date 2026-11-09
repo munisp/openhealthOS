@@ -17,6 +17,7 @@ const SHELL_URLS = [
   "./css/depth-theme.css", "./css/brand.ng.css", "./css/brand.cv.css",
   "./js/depth-strings.json", "./js/depth-i18n.js",
   "./specialty-depth.html", "./design-tokens.css",
+  "./agentwrite.html", "./agentwrite.json",
 ];
 
 self.addEventListener("install", (e) => {

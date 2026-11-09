@@ -1,0 +1,143 @@
+{
+ "version": "agentwrite-demo@1.0.0",
+ "generated_at": "2026-11-10T08:00:00Z",
+ "actor": "triage-llm",
+ "reviewer": "dr-sim-ada",
+ "patient": "pax-sim-0001",
+ "events": [
+  {
+   "kind": "capability",
+   "degraded_host_tools": [
+    "patient.allergy_search"
+   ],
+   "rendering_host_tools": [
+    "patient.allergy_search",
+    "condition.record",
+    "observation.record",
+    "condition.record.sepsis"
+   ],
+   "note": "a host that cannot render proposals is never offered write capability \u2014 it cannot even ask"
+  },
+  {
+   "kind": "read",
+   "tool": "patient.allergy_search",
+   "outcome": {
+    "status": "ok",
+    "result": {
+     "findings": [],
+     "search_set": [
+      {
+       "store": "shr-allergyintolerance",
+       "filters": {
+        "subject": "pax-sim-0001"
+       },
+       "n": 0
+      }
+     ],
+     "not_checked": [
+      {
+       "store": "paper-chart",
+       "reason": "no adapter configured for legacy paper charts"
+      }
+     ],
+     "absence": {
+      "kind": "patient.allergy_search",
+      "subject": "pax-sim-0001",
+      "as_of": "2026-11-10T08:00:00Z",
+      "searched": [
+       "shr-allergyintolerance"
+      ],
+      "absent_in": [
+       "shr-allergyintolerance"
+      ],
+      "found_in": [],
+      "not_checked": [
+       {
+        "store": "paper-chart",
+        "reason": "no adapter configured for legacy paper charts"
+       }
+      ],
+      "verdict": "patient.allergy_search absent from searched stores ['shr-allergyintolerance']; NOT CHECKED: ['paper-chart']",
+      "fingerprint": "fd89dcff54afd4363a45e57935d61ffb69cdb1514b5d4906e843f814239237c6"
+     }
+    }
+   }
+  },
+  {
+   "kind": "write-approved",
+   "tool": "condition.record",
+   "proposal": {
+    "status": "pending",
+    "proposal_id": "prop-1",
+    "rendering": "Record condition \u2014 Malaria (ICD-10 B54), clinical status: active, recorded 2026-11-10, patient pax-sim-0001.",
+    "note": "machines propose, people commit \u2014 this write exists only as a proposal until a named reviewer approves it"
+   },
+   "decision": {
+    "status": "approved",
+    "committed": true,
+    "resource_id": "r2",
+    "provenance_id": "r3",
+    "verified_by": "read-back"
+   },
+   "committed_meta": {
+    "tag": [
+     {
+      "code": "ai-authored",
+      "display": "AI-authored (triage-llm)",
+      "system": "https://openhealthos.org/provenance"
+     },
+     {
+      "system": "https://openhealthos.org/session",
+      "code": "opd-a"
+     }
+    ],
+    "security": [
+     {
+      "system": "http://terminology.hl7.org/CodeSystem/v3-ObservationValue",
+      "code": "AIAST",
+      "display": "Artificial Intelligence asserted"
+     }
+    ],
+    "versionId": "1"
+   }
+  },
+  {
+   "kind": "write-policy-denied",
+   "tool": "observation.record",
+   "outcome": {
+    "status": "policy-denied",
+    "reason": "ai-write validation failed (fhirguard) \u2014 resource does not meet the platform's write-validation rules",
+    "committed": false,
+    "problems": "code.coding system 'http://example.org/made-up' not recognised (allowed: ICD-10-CM, SNOMED CT, LOINC)"
+   },
+   "note": "policy runs BEFORE presentation \u2014 no reviewer was ever asked"
+  },
+  {
+   "kind": "write-reviewer-denied",
+   "tool": "condition.record.sepsis",
+   "proposal": {
+    "status": "pending",
+    "proposal_id": "prop-2",
+    "rendering": "Record condition \u2014 Sepsis, unspecified (ICD-10 A41.9), active, patient pax-sim-0001.",
+    "note": "machines propose, people commit \u2014 this write exists only as a proposal until a named reviewer approves it"
+   },
+   "decision": {
+    "status": "denied",
+    "committed": false,
+    "attributed_to": "reviewer"
+   }
+  }
+ ],
+ "coverage": {
+  "fraction": "27/27",
+  "denominator": "us-core-9.0.0",
+  "note": "no percentage of FHIR R4 is computed \u2014 the denominator is the declared profile set"
+ },
+ "audit": {
+  "registry_chain": "verified",
+  "gate_chain": "verified",
+  "stack_chain": "verified",
+  "envelopes_issued": 1
+ },
+ "sha256": "b6a3f35afaff870e7e7ffc09e276b64625173f94686cb5e9fa728d630ce64531"
+}
