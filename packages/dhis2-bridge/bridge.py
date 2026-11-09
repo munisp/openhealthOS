@@ -102,7 +102,8 @@ def emit(events: list[dict], spool_path: str | None = None,
     return {"payload": payload, "drops": drops, "resend": resend}
 
 
-def to_datavalueset(values: list[dict], dataset: str = "OH-PHC-MONTHLY") -> dict:
+def to_datavalueset(values: list[dict], dataset: str = "OH-PHC-MONTHLY",
+                    complete_date: str | None = None) -> dict:
     """Render aggregates as a DHIS2 dataValueSet payload."""
     by_key: dict[tuple[str, str], list[dict]] = defaultdict(list)
     for v in values:
@@ -114,7 +115,7 @@ def to_datavalueset(values: list[dict], dataset: str = "OH-PHC-MONTHLY") -> dict
             "dataSet": dataset,
             "orgUnit": org,
             "period": period,
-            "completeDate": datetime.now().date().isoformat(),
+            "completeDate": complete_date or datetime.now().date().isoformat(),
             "dataValues": dvs,
         })
     return {"dataValueSets": sets}

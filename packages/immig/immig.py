@@ -206,9 +206,11 @@ def defaulter_status(birth_date: str, immunizations: list[dict],
 def build_aefi_bundle(patient_id: str, immunization_ref: str,
                       reaction_code: str, reaction_text: str,
                       severity: str, onset: str, reporter: str,
-                      facility: str) -> dict:
-    """AEFI report as a FHIR transaction Bundle — POSTable to the SHR as-is."""
-    obs_id = f"aefi-{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+                      facility: str, stamp: str | None = None) -> dict:
+    """AEFI report as a FHIR transaction Bundle — POSTable to the SHR as-is.
+    `stamp` fixes the observation id for deterministic replays; live
+    callers leave it None and get the wall clock."""
+    obs_id = f"aefi-{stamp or datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     return {
         "resourceType": "Bundle", "type": "transaction",
         "entry": [

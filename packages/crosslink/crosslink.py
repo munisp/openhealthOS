@@ -796,15 +796,19 @@ def clear_public_health_hold(registry, traveler_id, *, day, by,
 # idempotent-open discipline as escalate_events: the second bell is
 # not a second case.
 
-def feed_health_to_oversight(health, icu, *, facility, day, opened):
+def feed_health_to_oversight(health, icu, *, facility, day, opened,
+                             as_of=None):
     """Stale and quarantined feeds open oversight; live and honestly
     unmonitored feeds do not page anyone.
 
     `health` is a FeedHealth (or anything with .report(as_of) and a
     datetime-free report shape); `opened` is caller-owned
-    (feed_id → case_id) so repeat polls are idempotent."""
-    import datetime as _dt
-    as_of = _dt.datetime.now()
+    (feed_id → case_id) so repeat polls are idempotent. `as_of` is the
+    injectable clock — tests and replays pass it; wall clock only when
+    genuinely running live."""
+    if as_of is None:
+        import datetime as _dt
+        as_of = _dt.datetime.now()
     report = health.report(as_of) if hasattr(health, "report") \
         else health
     opened_now, already = [], []
