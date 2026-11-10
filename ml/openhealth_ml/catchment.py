@@ -26,10 +26,18 @@ import argparse
 import csv
 import json
 import math
+import os
 import random
+import sys
 from collections import defaultdict
 
-EARTH_RADIUS_KM = 6371.0088  # IUGG mean — matches the registry endpoint
+# Geodesy is owned by geolock (ADR-0075): one contract, one function.
+# The private IUGG-mean radius (6371.0088) is retired — the 1.4 ppm
+# divergence from the contract radius is absorbed by the stated 0.3%
+# honesty band and moves no planning decision.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "..",
+                                "packages", "geolock"))
+import geolock  # noqa: E402
 
 # Planning floors (named, tunable — not hidden in the math):
 BEDS_PER_1K_FLOOR = 1.0        # beds per 1,000 catchment members
@@ -38,11 +46,9 @@ AVG_DISTANCE_KM_CEIL = 5.0     # WHO: care within ~5km / 1h walk for PHC
 
 
 def haversine_km(lat1: float, lng1: float, lat2: float, lng2: float) -> float:
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * EARTH_RADIUS_KM * math.asin(min(1.0, math.sqrt(a)))
+    """Delegates to geolock.distance_km (ADR-0075) — one contract, one
+    function. Kept under its historic name for the CLI and callers."""
+    return geolock.distance_km(lat1, lng1, lat2, lng2)
 
 
 def load_facilities_csv(path: str) -> list[dict]:
@@ -185,7 +191,9 @@ def analyze(facilities: list[dict], members: list[dict]) -> dict:
     return {"per_lga": rows, "national": national,
             "floors": {"beds_per_1k": BEDS_PER_1K_FLOOR,
                        "members_per_facility": MEMBERS_PER_FACILITY_CEIL,
-                       "avg_distance_km": AVG_DISTANCE_KM_CEIL}}
+                       "avg_distance_km": AVG_DISTANCE_KM_CEIL},
+            "geodesy": {"basis": "geolock-geodesy-contract",
+                        "contract": geolock.GEODESY_CONTRACT}}
 
 
 def main() -> int:

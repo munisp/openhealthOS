@@ -47,7 +47,25 @@ import hashlib
 import json
 import math
 
-GEOLOCK_VERSION = "geolock@1.0.0"
+GEOLOCK_VERSION = "geolock@1.1.0"
+
+#: The estate's geodesy contract, stated as data (ADR-0075). Before this
+#: constant, five packages each re-implemented spherical haversine with
+#: two different earth radii (6371.0 and the IUGG mean 6371.0088) and no
+#: stated basis. One contract now owns the arithmetic; every consumer
+#: either delegates here or is pinned equal to this by the drift-guard
+#: (packages/geodesy). The 1.381 ppm between the retired IUGG mean and
+#: this radius is absorbed by the stated honesty band — 0.3% (3000 ppm)
+#: is more than 2000x wider than the correction, so no stamped surface
+#: moves.
+GEODESY_CONTRACT = {
+    "model": "spherical-haversine",
+    "radius_km": 6371.0,
+    "honest_error": "<=0.3% vs WGS-84 geodesic",
+    "never": "survey-grade — property lines and engineering need a geodesist",
+    "crs_meaning": "degrees are WGS-84 lng/lat — CRS governance lives in this package",
+    "supersedes": "five private haversines, radii 6371.0 and 6371.0088 (ADR-0075)",
+}
 
 #: Closed projection vocabulary. A projection not listed here is
 #: refused at CRS registration — transforms never guess.
@@ -331,6 +349,35 @@ def utm_zone_for(lng):
     if not -180 <= lng <= 180:
         raise GeolockError("longitude %r out of range" % (lng,))
     return min(int((lng + 180) // 6) + 1, 60)
+
+
+def distance_km(lat1, lng1, lat2, lng2):
+    """Great-circle distance in km under GEODESY_CONTRACT (ADR-0075).
+
+    Inputs are WGS-84 degrees, lng/lat axis order per the estate's CRS
+    contract. Metre-space coordinates are not degrees — range-check them
+    with point() before measuring, or a projected extract will silently
+    produce a nonsense distance (that failure mode is why the router
+    range-checks at graph build and at route time).
+
+    The sqrt argument is clamped to 1.0: at exactly antipodal points
+    floating-point rounding can push it a hair above 1, and the estate's
+    retired private haversines would have raised a domain error there.
+    The clamp is stated, and value-identical everywhere the unclamped
+    formula did not crash.
+    """
+    for name, v, lo, hi in (("lat1", lat1, -90, 90), ("lat2", lat2, -90, 90),
+                            ("lng1", lng1, -180, 180), ("lng2", lng2, -180, 180)):
+        if not lo <= v <= hi:
+            raise GeolockError(
+                "%s %r out of range — degrees are WGS-84 lng/lat; "
+                "metre-space coordinates are not distances waiting to "
+                "happen, reproject first (geolock.transform)" % (name, v))
+    p1, p2 = math.radians(lat1), math.radians(lat2)
+    dp = math.radians(lat2 - lat1)
+    dl = math.radians(lng2 - lng1)
+    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
+    return 2 * GEODESY_CONTRACT["radius_km"] * math.asin(min(1.0, math.sqrt(a)))
 
 
 def area_km2(registry, crs, ring):

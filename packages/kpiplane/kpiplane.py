@@ -40,12 +40,25 @@ from datetime import datetime, timezone
 # --- sibling-package wiring (same seam as packages/economics) -----------
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _REPO = os.path.dirname(os.path.dirname(_HERE))
-for _rel in ("packages/economics", "packages/benefits", "ml"):
+for _rel in ("packages/economics", "packages/benefits", "packages/geolock", "ml"):
     _p = os.path.join(_REPO, _rel)
     if os.path.isdir(_p) and _p not in sys.path:
         sys.path.insert(0, _p)
 
-EARTH_RADIUS_KM = 6371.0088  # IUGG mean — matches ml/openhealth_ml/catchment.py
+import geolock  # noqa: E402
+
+KPIPLANE_VERSION = "kpiplane@1.1.0"
+
+#: ADR-0075: the private IUGG-mean radius (6371.0088) is retired. The
+#: estate converges on geolock.GEODESY_CONTRACT (6371.0). The 1.381 ppm
+#: between the two is more than 2000x narrower than the contract's
+#: stated 0.3% honesty band (3000 ppm), so the correction moves no
+#: planning decision and no stamped surface. Stated here — a silent
+#: constant swap would be the folklore this ADR exists to kill.
+GEODESY_BASIS = "geolock-geodesy-contract"
+GEODESY_SUPERSEDED = {"retired_radius_km": 6371.0088,
+                      "divergence_ppm": 1.381,
+                      "absorbed_by": "contract honesty band (<=0.3%)"}
 
 BAND_ORDER = ["under5", "adult", "older-adult", "elderly", "maternal", "chronic"]
 
@@ -127,11 +140,9 @@ def panel_risk(enrollees_path):
 
 # ---------------------------------------------------------------- catchments
 def _haversine_km(lat1, lng1, lat2, lng2):
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lng2 - lng1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * EARTH_RADIUS_KM * math.asin(math.sqrt(a))
+    """Delegates to geolock.distance_km (ADR-0075) — one contract, one
+    function. Kept under its historic name for in-package callers."""
+    return geolock.distance_km(lat1, lng1, lat2, lng2)
 
 
 def assign_catchments(members, facilities):
@@ -175,7 +186,10 @@ def assign_catchments(members, facilities):
     return {"status": "ok",
             "members": len(members), "unassigned": unassigned,
             "facilities": rows,
-            "over_15km_total": sum(r["over_15km"] for r in rows)}
+            "over_15km_total": sum(r["over_15km"] for r in rows),
+            "geodesy": {"basis": GEODESY_BASIS,
+                        "contract": geolock.GEODESY_CONTRACT,
+                        "superseded": GEODESY_SUPERSEDED}}
 
 
 # ------------------------------------------------------- geo intelligence
@@ -255,7 +269,10 @@ def assign_catchments_capacity(members, facilities, capacity_per_bed_day: float 
     rows.sort(key=lambda r: -r["assigned"])
     return {"status": "ok", "members": len(members), "unassigned": unassigned,
             "overflow": overflow, "facilities": rows,
-            "over_15km_total": sum(r["over_15km"] for r in rows)}
+            "over_15km_total": sum(r["over_15km"] for r in rows),
+            "geodesy": {"basis": GEODESY_BASIS,
+                        "contract": geolock.GEODESY_CONTRACT,
+                        "superseded": GEODESY_SUPERSEDED}}
 
 
 def coverage_gaps(members, facilities, threshold_km: float = 15.0,
@@ -288,7 +305,10 @@ def coverage_gaps(members, facilities, threshold_km: float = 15.0,
             "gap_share_pct": round(100 * len(gaps) / len(members), 2) if members else None,
             "threshold_km": threshold_km, "max_minutes": max_minutes,
             "by_lga": dict(sorted(by_lga.items(), key=lambda kv: -kv[1])),
-            "points": gaps[:5000]}  # cap: planners cluster, they don't eyeball 1M dots
+            "points": gaps[:5000],  # cap: planners cluster, they don't eyeball 1M dots
+            "geodesy": {"basis": GEODESY_BASIS,
+                        "contract": geolock.GEODESY_CONTRACT,
+                        "superseded": GEODESY_SUPERSEDED}}
 
 
 # ---------------------------------------------------------------- ml health

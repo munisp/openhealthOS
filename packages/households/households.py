@@ -16,8 +16,21 @@ from __future__ import annotations
 
 import hashlib
 import math
+import os
+import sys
 from dataclasses import dataclass, field
 from datetime import date, timedelta
+
+# Geodesy is owned by geolock (ADR-0075): one contract, one function.
+# Same in-repo sys.path pattern as agentwrite/gisexport — stdlib only.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "geolock"))
+import geolock  # noqa: E402
+
+HOUSEHOLDS_VERSION = "households@1.1.0"
+
+#: Stated basis carried on every coverage() result — absence is not a
+#: value; the arithmetic a catchment decision rests on is disclosed.
+GEODESY_BASIS = "geolock-geodesy-contract"
 
 
 def _d(iso: str) -> date:
@@ -25,12 +38,11 @@ def _d(iso: str) -> date:
 
 
 def haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
-    r = 6371.0
-    p1, p2 = math.radians(lat1), math.radians(lat2)
-    dp = math.radians(lat2 - lat1)
-    dl = math.radians(lon2 - lon1)
-    a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * r * math.asin(math.sqrt(a))
+    """Great-circle km — delegates to geolock.distance_km (ADR-0075).
+    Kept under its historic name: chw-tasks and malariaprog import this
+    symbol. Out-of-range degrees now refuse (fail-closed) instead of
+    silently measuring nonsense."""
+    return geolock.distance_km(lat1, lon1, lat2, lon2)
 
 
 @dataclass
@@ -112,6 +124,8 @@ class HouseholdRegister:
             "members_outside": sum(len(h.members) for h, _ in outside),
             "furthest_km": round(max((km for _, km in inside), default=0.0), 2),
             "outside_ids": [h.household_id for h, _ in outside],
+            "geodesy": {"basis": GEODESY_BASIS,
+                        "contract": geolock.GEODESY_CONTRACT},
         }
 
     def to_geojson(self, anonymize: bool = True, as_of: str = "") -> dict:

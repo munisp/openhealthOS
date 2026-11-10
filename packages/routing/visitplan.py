@@ -7,18 +7,31 @@ point (usually the PHC), produce an ordered route that minimises total
 travel: nearest-neighbour for the seed tour, then 2-opt exchanges until no
 improvement — optimal enough at PHC scale (N ≤ a few hundred).
 
-Distances: haversine × road factor by default (offline, zero data); when a
-RoadGraph is available the caller can pass a dist function backed by real
-roads. Returns the ordered visits plus total km — honest arithmetic the CHW
-supervisor can eyeball on paper.
+Distances: geolock.distance_km × road factor by default (offline, zero
+data); when a RoadGraph is available the caller can pass a dist function
+backed by real roads. Returns the ordered visits plus total km — honest
+arithmetic the CHW supervisor can eyeball on paper.
+
+ADR-0075: the private haversine is retired; geodesy is geolock's. The
+ADR-0074 line stands for the ROUTER (routing.py injects its registry,
+never imports geolock) — visitplan imports only a pure function and a
+constant, which is arithmetic, not an engine.
 """
 from __future__ import annotations
 
-import math
+import os
+import sys
 from dataclasses import dataclass
 
-EARTH_KM = 6371.0
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "geolock"))
+import geolock  # noqa: E402
+
+VISITPLAN_VERSION = "visitplan@1.1.0"
 ROAD_FACTOR = 1.4  # same heuristic as dispatch ETA when no road graph
+
+#: Stated basis carried on every plan — the supervisor's paper check
+#: deserves to know what arithmetic it is checking.
+GEODESY_BASIS = "geolock-geodesy-contract"
 
 
 @dataclass
@@ -30,11 +43,9 @@ class Visit:
 
 
 def haversine_km(a_lat, a_lng, b_lat, b_lng) -> float:
-    p1, p2 = math.radians(a_lat), math.radians(b_lat)
-    dp = math.radians(b_lat - a_lat)
-    dl = math.radians(b_lng - a_lng)
-    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * EARTH_KM * math.asin(math.sqrt(h))
+    """Delegates to geolock.distance_km (ADR-0075) — one contract, one
+    function. Kept under its historic name for callers and tests."""
+    return geolock.distance_km(a_lat, a_lng, b_lat, b_lng)
 
 
 def _dist_fn(graph_route=None):
@@ -59,7 +70,10 @@ def plan_visits(visits: list[Visit], start_lat: float, start_lng: float,
     a visit); legs: per-hop km for the supervisor's paper check.
     """
     if not visits:
-        return {"order": [], "total_km": 0.0, "legs": []}
+        return {"order": [], "total_km": 0.0, "legs": [],
+                "geodesy": {"basis": GEODESY_BASIS,
+                            "road_factor": ROAD_FACTOR,
+                            "contract": geolock.GEODESY_CONTRACT}}
     dist = _dist_fn(graph_route)
     start = Visit("__start__", start_lat, start_lng)
 
@@ -95,4 +109,8 @@ def plan_visits(visits: list[Visit], start_lat: float, start_lng: float,
     return {"order": [v.id for v in tour], "total_km": round(best, 2),
             "legs": legs,
             "visits": [{"id": v.id, "lat": v.lat, "lng": v.lng, "label": v.label}
-                       for v in tour]}
+                       for v in tour],
+            "geodesy": {"basis": ("road-graph-with-geodesy-fallback"
+                                  if graph_route else GEODESY_BASIS),
+                        "road_factor": ROAD_FACTOR,
+                        "contract": geolock.GEODESY_CONTRACT}}

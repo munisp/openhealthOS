@@ -4,7 +4,17 @@ an alert is a SIGNAL for investigation, never a declared outbreak; k-anonymity
 floor from notifiable.py still applies to anything published.
 """
 from __future__ import annotations
-import json, math, statistics, sys
+import json, math, os, statistics, sys
+
+# Geodesy is owned by geolock (ADR-0075): one contract, one function.
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "geolock"))
+import geolock  # noqa: E402
+
+OUTBREAK_VERSION = "outbreak@1.1.0"
+
+#: Stated basis carried on every cluster — an investigation dispatch
+#: rests on the arithmetic, so the arithmetic is disclosed.
+GEODESY_BASIS = "geolock-geodesy-contract"
 
 def detect_anomalies(series: list[int], lookback: int = 14, threshold_sigma: float = 3.0,
                      min_count: int = 5) -> list[dict]:
@@ -42,15 +52,15 @@ def cluster(cases: list[dict], radius_km: float = 5.0, min_cases: int = 3) -> li
             clusters.append({"size": len(group),
                              "centroid": {"lat": round(sum(g["lat"] for g in group) / len(group), 4),
                                           "lng": round(sum(g["lng"] for g in group) / len(group), 4)},
-                             "signal": "geographic cluster — dispatch investigation"})
+                             "signal": "geographic cluster — dispatch investigation",
+                             "geodesy": {"basis": GEODESY_BASIS,
+                                         "contract": geolock.GEODESY_CONTRACT}})
     return clusters
 
 def _km(a: dict, b: dict) -> float:
-    R = 6371.0
-    p1, p2 = math.radians(a["lat"]), math.radians(b["lat"])
-    dp = math.radians(b["lat"] - a["lat"]); dl = math.radians(b["lng"] - a["lng"])
-    h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * R * math.asin(math.sqrt(h))
+    """Delegates to geolock.distance_km (ADR-0075) — one contract, one
+    function. Out-of-range degrees now refuse (fail-closed)."""
+    return geolock.distance_km(a["lat"], a["lng"], b["lat"], b["lng"])
 
 def main(argv):
     doc = json.load(sys.stdin)

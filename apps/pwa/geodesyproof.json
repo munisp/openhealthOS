@@ -1,0 +1,187 @@
+{
+  "banner": "Synthetic coordinates only — every measurement below is production code exercising production refusals.",
+  "control": {
+    "contract": {
+      "crs_meaning": "degrees are WGS-84 lng/lat — CRS governance lives in this package",
+      "honest_error": "<=0.3% vs WGS-84 geodesic",
+      "model": "spherical-haversine",
+      "never": "survey-grade — property lines and engineering need a geodesist",
+      "radius_km": 6371.0,
+      "supersedes": "five private haversines, radii 6371.0 and 6371.0088 (ADR-0075)"
+    },
+    "divergence": {
+      "band_margin_x": 2171.931818335106,
+      "contract_km": 816.896710177375,
+      "contract_radius_km": 6371.0,
+      "divergence_ppm": 1.3812588289717351,
+      "honesty_band_ppm": 3000.0,
+      "leg": "kano-to-port-harcourt",
+      "retired_km": 816.8978385231683,
+      "retired_radius_km": 6371.0088
+    },
+    "drift_guard": {
+      "owner_core": {
+        "honest_error": "<=0.3% vs WGS-84 geodesic",
+        "model": "spherical-haversine",
+        "radius_km": 6371.0
+      },
+      "pinned_equal": true,
+      "router_core": {
+        "honest_error": "<=0.3% vs WGS-84 geodesic",
+        "model": "spherical-haversine",
+        "radius_km": 6371.0
+      }
+    },
+    "legs": [
+      "kaduna-to-lagos",
+      "kano-to-port-harcourt",
+      "one-degree-of-latitude",
+      "identical-point",
+      "true-antipodal"
+    ],
+    "matrix_agrees_bit_for_bit": true,
+    "matrix_sha256": "98555a4626c39f84564835cfab19cd13fc4f261b4717a83be4f8efb6cb3081e6",
+    "reference_leg_km": {
+      "identical-point": 0.0,
+      "kaduna-to-lagos": 630.9185788095126,
+      "kano-to-port-harcourt": 816.896710177375,
+      "one-degree-of-latitude": 111.19492664455873,
+      "true-antipodal": 20015.086796020572
+    },
+    "sites": [
+      "geolock (owner)",
+      "households.haversine_km",
+      "kpiplane._haversine_km",
+      "outbreak._km",
+      "visitplan.haversine_km",
+      "catchment.haversine_km"
+    ]
+  },
+  "convergence_matrix": [
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "cb579d16dadc69d2cb77a31fbb5f3d35a49e3116a2986facb21f02644f69ed4f",
+      "site": "geolock (owner)"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "d290b969075282f51d5ab5cd353d30c9d65a732b2851ba94ad4b5d83afc60d43",
+      "site": "households.haversine_km"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "4d982402afc5391f05afef59534b9c6ff5363a26720143092bebd1e651571e4a",
+      "site": "kpiplane._haversine_km"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "5a7b74b816696bee11404ba1f33d2bd89f37052a63eb2e70ec25bbacf200c44e",
+      "site": "outbreak._km"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "0ffa78bd62bb41df762c002de5826a5421c5c035da7455c799d115c0655aa5af",
+      "site": "visitplan.haversine_km"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "c2002851a5b6ed8b2d404fd5efc3ae98896bf77b372f5dfa2949b3f47fdfccdd",
+      "site": "catchment.haversine_km"
+    }
+  ],
+  "demo": true,
+  "drills": [
+    {
+      "attack": "EPSG:3857 easting as a longitude",
+      "name": "a metre-space coordinate is fed to the distance function",
+      "result": {
+        "detail": "GeolockError: lng1 376170.8 out of range — degrees are WGS-84 lng/lat; metre-space coordinates are not distances waiting to happen, reproject first (geolock.transform)",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "drift — radius_km 6371.0 becomes 6371.0088",
+      "name": "the contract is edited back to the old radius",
+      "result": {
+        "detail": "drift guard pins router core == owner core; a tampered radius (6371.0088) compares unequal and fails the suite",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "float rounding pushes the haversine argument a hair past 1.0 — the retired implementations raised a domain error here",
+      "name": "two exactly antipodal points are measured",
+      "result": {
+        "detail": "clamp-stated: sqrt argument is capped at 1.0; antipodal distance is 20015.087 km (half the contract circumference), no crash",
+        "outcome": "stated"
+      }
+    },
+    {
+      "attack": "silent divergence between subsystems",
+      "name": "the old IUGG radius keeps being used in a corner",
+      "result": {
+        "detail": "absorbed-by-honesty-band: the retired radius differs by 1.381 ppm on the longest leg — 2172x narrower than the stated 0.3% band, disclosed in ADR-0075 instead of swapped silently",
+        "outcome": "stated"
+      }
+    }
+  ],
+  "generated_at": "2026-11-11T16:30:00Z",
+  "honesty": {
+    "absence_is_not_a_value": "every coverage, catchment, cluster and visit-plan result now carries its geodesy basis as data",
+    "drift_guard": "packages/geodesy pins the semantic core of routing.GEODESY_CONTRACT equal to geolock's — duplication with a guard is four-eyes, duplication without one is folklore",
+    "folklore_named": "the clamp is stated; the superseded radius is stated; the unversioned ml module is stated",
+    "implementations_retired": 5,
+    "one_function": "geolock.distance_km — every site delegates or the matrix diverges and the meta gate fails",
+    "radii_retired": [
+      "private 6371.0 copies (households, outbreak, visitplan)",
+      "IUGG mean 6371.0088 (kpiplane, openhealth_ml.catchment)"
+    ]
+  },
+  "sha256": "82aebd338ee46e82544beebbb84720b0abceb5cd820d0f22e76909750688f87e",
+  "surface": "geodesyproof",
+  "versions": {
+    "catchment": "openhealth_ml.catchment (unversioned module — stated, not hidden)",
+    "exporter": "geodesyproof-demo@1.0.0",
+    "geolock": "geolock@1.1.0",
+    "households": "households@1.1.0",
+    "kpiplane": "kpiplane@1.1.0",
+    "outbreak": "outbreak@1.1.0",
+    "routing": "routing@1.1.0",
+    "visitplan": "visitplan@1.1.0"
+  }
+}

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geodesyproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Geodesyproof — the estate converges on one geodesy contract</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic coordinates only — the legs below are fixtures, never a real patient, facility or household. The machinery exercised — geolock.distance_km and the six production sites that delegate to it — is the production code. Before this wave the estate measured distance five ways with two different earth radii and no stated basis; the retired folklore is named below, not hidden. Silence was the defect; disclosure is the fix.</div>
+
+  <div class="card">
+    <h2>The control — six sites, five legs, bit-for-bit agreement</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-sites"></div><div class="kpi-label">sites converged</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-agree"></div><div class="kpi-label">bit-for-bit</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-ppm"></div><div class="kpi-label">ppm absorbed</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The convergence matrix — one function, six delegations</h2>
+    <div id="matrix"></div>
+  </div>
+
+  <div class="card">
+    <h2>The reference legs — fixed coordinates, identical answers</h2>
+    <div id="legs"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — two fail closed, two pass with the basis stated</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Matrix sha256</b><span class="mono" id="msha"></span></div>
+    <div class="row"><b>Drift guard</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Absence is not a value</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./geodesyproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  $("k-sites").textContent = c.sites.length;
+  $("k-agree").textContent = c.matrix_agrees_bit_for_bit ? "yes" : "NO";
+  $("k-ppm").textContent = c.divergence.divergence_ppm.toFixed(3);
+  $("k-drills").textContent = p.drills.length;
+  $("control-note").textContent =
+    "contract " + c.contract.model + " r=" + c.contract.radius_km +
+    " km (" + c.contract.honest_error + ") · drift guard router==owner: " +
+    c.drift_guard.pinned_equal + " · retired IUGG " +
+    c.divergence.retired_radius_km + " absorbed " +
+    Math.round(c.divergence.band_margin_x) + "x inside the stated band";
+
+  const dig = {};
+  p.convergence_matrix.forEach((row) => { dig[row.site] = row.row_sha256; });
+  $("matrix").innerHTML = p.convergence_matrix.map((row) =>
+    `<div class="row"><b>${esc(row.site)}</b><span class="mono" style="opacity:.7">sha ${esc(row.row_sha256.slice(0, 12))}…</span></div>`
+  ).join("") +
+  `<div class="mono" style="margin-top:6px">every row digest verifies against its own content; the leg lists are identical across all six rows</div>`;
+
+  $("legs").innerHTML = Object.entries(c.reference_leg_km).map(([name, km]) =>
+    `<div class="row"><b>${esc(name)}</b><span class="mono">${esc(km.toFixed(6))} km</span></div>`
+  ).join("");
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const badge = r.outcome === "refused" ? "ok" : "warn";
+    const detail = r.reason || r.detail || "";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(r.outcome)}</span>
+     <br><span style="opacity:.8">${esc(detail)}</span></div>`;
+  }).join("") +
+  `<div class="mono" style="margin-top:6px">four attacks on the geodesy seam — refused or stated; none silent</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("msha").textContent = c.matrix_sha256;
+  $("h1").textContent = p.honesty.drift_guard;
+  $("h2").textContent = p.honesty.absence_is_not_a_value;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>
