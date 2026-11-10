@@ -77,5 +77,90 @@ class TestRouting(unittest.TestCase):
         self.assertEqual(a, b)
 
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "geolock"))
+
+import geolock  # noqa: E402
+
+
+class TestCrsGovernance(unittest.TestCase):
+    """ADR-0074: the CRS gate is fail-closed; the geodesy model and the
+    source digest are stated on every graph and every route."""
+
+    def test_undeclared_extract_states_assumed_basis(self):
+        g = routing.build_graph_from_geojson(ROADS)
+        self.assertEqual(g["crs_contract"]["basis"], "assumed-rfc-7946")
+        self.assertEqual(g["crs_contract"]["code"], "EPSG:4326")
+        self.assertEqual(len(g["source_sha256"]), 64)
+
+    def test_metre_space_extract_refused_with_coordinate_named(self):
+        bad = {"type": "FeatureCollection", "features": [
+            {"type": "Feature", "properties": {"highway": "primary"},
+             "geometry": {"type": "LineString",
+                          "coordinates": [[376170.8, 727867.6],
+                                          [376200.0, 727900.0]]}}]}
+        with self.assertRaises(routing.Error) as ctx:
+            routing.build_graph_from_geojson(bad)
+        self.assertIn("376170.8", str(ctx.exception))
+
+    def test_legacy_crs_member_non_wgs84_refused(self):
+        bad = {"type": "FeatureCollection",
+               "crs": {"type": "name",
+                       "properties": {"name": "EPSG:3857"}},
+               "features": ROADS["features"]}
+        with self.assertRaises(routing.Error):
+            routing.build_graph_from_geojson(bad)
+
+    def test_legacy_crs_member_crs84_accepted(self):
+        ok = {"type": "FeatureCollection",
+              "crs": {"type": "name",
+                      "properties": {"name":
+                                     "urn:ogc:def:crs:OGC:1.3:CRS84"}},
+              "features": ROADS["features"]}
+        g = routing.build_graph_from_geojson(ok)
+        self.assertEqual(g["crs_contract"]["basis"],
+                         "declared-legacy-crs84")
+
+    def test_geolock_member_wrong_crs_refused(self):
+        bad = {"type": "FeatureCollection",
+               "openhealth:geolock": {"crs": "EPSG:3857",
+                                      "axis_order": "x,y",
+                                      "governed": True},
+               "features": ROADS["features"]}
+        with self.assertRaises(routing.Error):
+            routing.build_graph_from_geojson(bad)
+
+    def test_registry_governed_build(self):
+        reg = geolock.CRSRegistry()
+        g = routing.build_graph_from_geojson(ROADS, registry=reg)
+        self.assertEqual(g["crs_contract"]["basis"], "registry-governed")
+
+    def test_registry_missing_crs_refused(self):
+        with self.assertRaises(geolock.GeolockError):
+            routing.build_graph_from_geojson(
+                ROADS, registry=geolock.CRSRegistry(seeded=False))
+
+    def test_route_carries_digest(self):
+        g = routing.RoadGraph(routing.build_graph_from_geojson(ROADS))
+        r = g.route(6.520, 3.370, 6.529, 3.379)
+        self.assertEqual(len(r["route_sha256"]), 64)
+        again = g.route(6.520, 3.370, 6.529, 3.379)
+        self.assertEqual(r["route_sha256"], again["route_sha256"])
+
+    def test_route_refuses_metre_space_endpoints(self):
+        g = routing.RoadGraph(routing.build_graph_from_geojson(ROADS))
+        with self.assertRaises(routing.Error):
+            g.route(727867.6, 376170.8, 6.529, 3.379)
+
+    def test_geodesy_contract_stated_as_data(self):
+        g = routing.build_graph_from_geojson(ROADS)
+        geo = g["crs_contract"]["geodesy"]
+        self.assertEqual(geo["model"], "spherical-haversine")
+        self.assertEqual(geo["radius_km"], 6371.0)
+
+
 if __name__ == "__main__":
     unittest.main()

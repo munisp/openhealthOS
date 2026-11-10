@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geointproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Geointproof — the geospatial pipeline under one CRS contract</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. The geography below is fixture, never a real facility or household. The machinery exercised — geolock preflight, governed GeoJSON export, metre-space centroids, CRS-gated graph build, digested A* routes — is the production code. A legacy pipeline state is never hidden: degree-space centroids and assumed CRS bases are disclosed on the artifact. Silence was the defect; disclosure is the fix.</div>
+
+  <div class="card">
+    <h2>The control — one governed pipeline, preflight to route</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-preflight"></div><div class="kpi-label">KAT preflight</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-export"></div><div class="kpi-label">governed layers</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-route"></div><div class="kpi-label">route km</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The pipeline — five stages, each pinned</h2>
+    <div id="pipeline"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — four fail closed, two pass with the basis stated</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Folklore named</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Injection, not import</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./geointproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  $("k-preflight").textContent = c.preflight.known_answers;
+  $("k-export").textContent = c.facilities_export.features + "+" + c.density_layer.features;
+  $("k-route").textContent = c.route.distance_km;
+  $("k-drills").textContent = p.drills.length;
+  $("control-note").textContent =
+    "preflight " + c.preflight.known_answers + " (" + c.preflight.vectors +
+    " vectors ≤ " + c.preflight.tolerance_m + " m) · density centroids in " +
+    c.density_layer.centroid_space + " via " + c.density_layer.centroid_crs +
+    " · graph basis " + c.road_graph.basis + " · privacy floor: " +
+    c.privacy_floor.households_in + " households in, " +
+    c.privacy_floor.features_out + " feature out — sparse cell suppressed";
+
+  $("pipeline").innerHTML = p.pipeline.map((s, i) => {
+    const dig = {1: c.facilities_export.features_sha256,
+                 3: c.road_graph.source_sha256,
+                 4: c.route.route_sha256}[i];
+    const tail = dig ? ` <span class="mono" style="opacity:.7">sha ${dig.slice(0, 12)}…</span>` : "";
+    return `<div class="row"><b>stage ${i + 1}</b><span>${esc(s)}${tail}</span></div>`;
+  }).join("") +
+  `<div class="row"><b>geodesy</b><span class="mono">${esc(c.road_graph.geodesy)} — stated as data, never presented as survey-grade</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const badge = r.outcome === "refused" ? "ok" : "warn";
+    const detail = r.reason || r.detail || "";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(r.outcome)}</span>
+     <br><span style="opacity:.8">${esc(detail)}</span></div>`;
+  }).join("") +
+  `<div class="mono" style="margin-top:6px">six attacks on the pipeline seam — refused or stated; none silent</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("h1").textContent = p.honesty.folklore_named;
+  $("h2").textContent = p.honesty.injection_not_import;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

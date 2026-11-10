@@ -66,5 +66,87 @@ class TestGeoJSON(unittest.TestCase):
         self.assertEqual(fc["features"], [])
 
 
+import os  # noqa: E402
+import sys  # noqa: E402
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "geolock"))
+
+import geolock  # noqa: E402
+
+
+def _registry():
+    reg = geolock.CRSRegistry()
+    reg.register("EPSG:32631", kind="projected", projection="utm",
+                 name="UTM 31N", params={"zone": 31, "hemisphere": "N"})
+    return reg
+
+
+class TestGeolockContract(unittest.TestCase):
+    """ADR-0074: every export states its CRS contract; governed exports
+    fail closed against the registry."""
+
+    def test_ungoverned_export_states_the_default(self):
+        fc = gx.facilities_layer(FACS)
+        member = fc["openhealth:geolock"]
+        self.assertEqual(member["crs"], "EPSG:4326")
+        self.assertEqual(member["axis_order"], "lng,lat")
+        self.assertFalse(member["governed"])
+        self.assertEqual(member["basis"], "rfc-7946-default-stated")
+        self.assertEqual(len(member["features_sha256"]), 64)
+
+    def test_governed_export_validates_against_registry(self):
+        fc = gx.facilities_layer(FACS, registry=_registry())
+        member = fc["openhealth:geolock"]
+        self.assertTrue(member["governed"])
+        self.assertEqual(member["basis"], "registry-governed")
+
+    def test_governed_export_refuses_unregistered_crs(self):
+        with self.assertRaises(geolock.GeolockError):
+            gx.facilities_layer(FACS,
+                                registry=geolock.CRSRegistry(seeded=False))
+
+    def test_governed_export_refuses_projected_export_crs(self):
+        reg = geolock.CRSRegistry()
+        reg.systems["EPSG:4326"] = {"code": "EPSG:4326", "kind": "projected",
+                                    "projection": "web-mercator",
+                                    "name": "tampered", "params": {}}
+        with self.assertRaises(geolock.GeolockError):
+            gx.facilities_layer(FACS, registry=reg)
+
+    def test_legacy_centroid_is_stated_degree_average(self):
+        fc = gx.households_density_layer(households(6, jitter=0.001))
+        props = fc["features"][0]["properties"]
+        self.assertEqual(props["centroid_space"], "degree-average")
+        self.assertNotIn("centroid_crs", props)
+
+    def test_governed_centroid_is_metre_space(self):
+        fc = gx.households_density_layer(households(6, jitter=0.001),
+                                         registry=_registry())
+        props = fc["features"][0]["properties"]
+        self.assertEqual(props["centroid_space"], "utm-metres")
+        self.assertEqual(props["centroid_crs"], "EPSG:32631")
+
+    def test_metre_centroid_stays_near_the_cluster(self):
+        fc = gx.households_density_layer(households(8, jitter=0.0005),
+                                         registry=_registry())
+        lng, lat = fc["features"][0]["geometry"]["coordinates"]
+        self.assertAlmostEqual(lat, 6.55175, places=3)
+        self.assertAlmostEqual(lng, 3.37175, places=3)
+
+    def test_governed_density_refuses_unregistered_zone(self):
+        reg = geolock.CRSRegistry()  # no UTM zones registered
+        with self.assertRaises(geolock.GeolockError):
+            gx.households_density_layer(households(6), registry=reg)
+
+    def test_k_anonymity_binds_under_governance(self):
+        dense = households(6)
+        sparse = [{"lat": 7.50, "lng": 4.50, "members": 3}]
+        fc = gx.households_density_layer(dense + sparse,
+                                         registry=_registry())
+        self.assertEqual(len(fc["features"]), 1)
+        self.assertNotIn("7.5", str(fc))
+
+
 if __name__ == "__main__":
     unittest.main()

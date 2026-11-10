@@ -1,0 +1,111 @@
+{
+  "banner": "Synthetic geography only — every layer below is production code exercising production refusals.",
+  "control": {
+    "density_layer": {
+      "centroid_crs": "EPSG:32631",
+      "centroid_space": "utm-metres",
+      "features": 1
+    },
+    "facilities_export": {
+      "basis": "registry-governed",
+      "features": 3,
+      "features_sha256": "cebb1802951aa7a7697d89a2aaaaa212b67c344bc7cd6f8fe260690578179417",
+      "governed": true
+    },
+    "preflight": {
+      "known_answers": "pinned",
+      "tolerance_m": 0.01,
+      "vectors": 6
+    },
+    "privacy_floor": {
+      "features_out": 1,
+      "households_in": 7,
+      "suppressed_sparse_cell": true
+    },
+    "road_graph": {
+      "basis": "registry-governed",
+      "geodesy": "spherical-haversine",
+      "nodes": 4,
+      "source_sha256": "251a5f18f2181aef23dda2319aabb5262f41445d1e9dd9bfdc64043d0f7e8a36"
+    },
+    "route": {
+      "distance_km": 2.0,
+      "eta_min": 1.5,
+      "route_sha256": "968914c07e74b17f477dcc635c20c4cd01f073febe1c31a0c402c0481ebec2d0"
+    }
+  },
+  "demo": true,
+  "drills": [
+    {
+      "attack": "EPSG:3857 coordinates as degrees",
+      "name": "a metre-space extract is fed to the router",
+      "result": {
+        "outcome": "refused",
+        "reason": "coordinate out of range: 376170.8, 727867.6 — metre-space coordinates are not routable degrees; reproject first (geolock.transform)"
+      }
+    },
+    {
+      "attack": "pre-7946 crs member naming EPSG:3857",
+      "name": "a legacy extract declares the wrong CRS",
+      "result": {
+        "outcome": "refused",
+        "reason": "extract declares a non-WGS-84 CRS ({\"type\": \"name\", \"properties\": {\"name\": \"EPSG:3857\"}}) — reproject to WGS-84 lng/lat first (geolock.transform); degrees are the only routable input"
+      }
+    },
+    {
+      "attack": "governed export against an empty registry",
+      "name": "an export demands a CRS nobody registered",
+      "result": {
+        "outcome": "refused",
+        "reason": "unregistered CRS 'EPSG:4326' — absence is stated, never faked"
+      }
+    },
+    {
+      "attack": "registry-governed build, empty registry",
+      "name": "a graph build demands a CRS nobody registered",
+      "result": {
+        "outcome": "refused",
+        "reason": "unregistered CRS 'EPSG:4326' — absence is stated, never faked"
+      }
+    },
+    {
+      "attack": "density layer with no registry injected",
+      "name": "a centroid is averaged in degrees",
+      "result": {
+        "detail": "centroid_space is degree-average — the degree-average is disclosed on the feature, not hidden",
+        "outcome": "stated"
+      }
+    },
+    {
+      "attack": "undeclared roads extract",
+      "name": "an extract arrives with no CRS declaration at all",
+      "result": {
+        "detail": "graph basis is assumed-rfc-7946 — the RFC 7946 default is disclosed, not assumed silently",
+        "outcome": "stated"
+      }
+    }
+  ],
+  "generated_at": "2026-11-11T16:00:00Z",
+  "honesty": {
+    "crs_as_data": "the CRS is a registry entry; unregistered is a named refusal at export AND at graph build",
+    "engine_never_embedded": "reprojection to the heavy formats composes through geolock's ratified adapters; nothing is embedded (ADR-0005)",
+    "folklore_named": "degree-space centroids and assumed CRS bases are disclosed on the artifact — silence was the defect, disclosure is the fix",
+    "injection_not_import": "routing never imports geolock — the registry is injected like a clock; the seam is the protocol",
+    "privacy_floor_holds": "k-anonymity suppression binds under governed export — sparse cells never leak"
+  },
+  "pipeline": [
+    "geolock preflight",
+    "governed facilities export",
+    "metre-space density centroids",
+    "CRS-gated graph build",
+    "digested A* route"
+  ],
+  "sha256": "c05491e21e01c2c965729f554e18d724d522165e0c5a1ec88b31e5b736f5d9d6",
+  "surface": "geointproof",
+  "versions": {
+    "exporter": "geointproof-demo@1.0.0",
+    "geolock": "geolock@1.0.0",
+    "gisexport": "gisexport@1.1.0",
+    "routing": "routing@1.1.0"
+  }
+}

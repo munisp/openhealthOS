@@ -8,15 +8,79 @@ or any GIS tool opens directly.
 
 All exports are k-anonymised by default for patient-derived layers — the
 same doctrine as surveillance (ADR-0020): planners need density, not names.
+
+gisexport@1.1.0 (ADR-0074) — the CRS layer is no longer silent:
+
+- Every collection carries an ``openhealth:geolock`` foreign member
+  (RFC 7946 §6.1 permits foreign members; §4 forbids a ``crs`` member, so
+  the contract travels under our own name). The member states the CRS,
+  the axis order, and whether the export was governed by a geolock
+  CRSRegistry. ``governed: false`` means the RFC 7946 default (WGS-84,
+  lng/lat) is *stated*, not assumed — silence was the defect.
+- With a registry injected, the CRS must be registered and geographic —
+  an unregistered CRS is a named refusal, never a fallback.
+- Density centroids: without a registry the centroid is a degree-average
+  and the feature SAYS SO (``centroid_space: degree-average``); with a
+  registry the cell's points are projected to their UTM zone, averaged
+  in metres, and transformed back (``centroid_space: utm-metres``).
+  Folklore is named, never hidden.
 """
 
+import hashlib
+import json
 import math
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                                "..", "geolock"))
+
+import geolock  # noqa: E402
+
+GIS_VERSION = "gisexport@1.1.0"
 
 K_ANONYMITY = 5  # suppress cells below this count
+
+#: The CRS contract every export states. GeoJSON is WGS-84 with
+#: longitude-first axis order (OGC CRS84); geolock's EPSG:4326 entry is
+#: the same ellipsoid under the estate's x=lng, y=lat convention.
+CRS_CONTRACT = {
+    "code": "EPSG:4326",
+    "axis_order": "lng,lat",
+    "spec": "RFC 7946 (WGS-84, OGC CRS84 axis order)",
+}
 
 
 class Error(Exception):
     pass
+
+
+def _canon(obj) -> str:
+    """Compact canonical digest — the estate's primary contract."""
+    return hashlib.sha256(
+        json.dumps(obj, sort_keys=True, separators=(",", ":"))
+        .encode()).hexdigest()
+
+
+def _geolock_member(registry, features):
+    """The foreign member every collection carries. Governed mode fails
+    closed: the CRS must be registered and geographic."""
+    member = {"crs": CRS_CONTRACT["code"],
+              "axis_order": CRS_CONTRACT["axis_order"],
+              "features_sha256": _canon(features)}
+    if registry is None:
+        member["governed"] = False
+        member["basis"] = "rfc-7946-default-stated"
+        return member
+    rec = registry.get(CRS_CONTRACT["code"])  # named refusal if absent
+    if rec.get("kind") != "geographic":
+        raise geolock.GeolockError(
+            "export CRS %r is %s — GeoJSON is geographic; project in "
+            "the workbench, not at the gate"
+            % (CRS_CONTRACT["code"], rec.get("kind")))
+    member["governed"] = True
+    member["basis"] = "registry-governed"
+    return member
 
 
 def _feature(lng, lat, properties):
@@ -27,23 +91,47 @@ def _feature(lng, lat, properties):
             "properties": properties}
 
 
-def collection(features):
-    return {"type": "FeatureCollection", "features": features}
+def collection(features, *, registry=None):
+    fc = {"type": "FeatureCollection", "features": features}
+    fc["openhealth:geolock"] = _geolock_member(registry, features)
+    return fc
 
 
-def facilities_layer(facilities):
+def facilities_layer(facilities, *, registry=None):
     """facilities: [{id, name, kind, lat, lng, beds, services:[...]}]"""
     feats = [_feature(f["lng"], f["lat"],
                       {"id": f["id"], "name": f["name"], "kind": f["kind"],
                        "beds": f.get("beds", 0),
                        "services": ";".join(f.get("services", []))})
              for f in facilities]
-    return collection(feats)
+    return collection(feats, registry=registry)
 
 
-def households_density_layer(households, cell_deg=0.05, k=K_ANONYMITY):
+def _metre_centroid(registry, lats, lngs):
+    """Average in metres, not degrees: project every point to the UTM
+    zone of the degree-average longitude, average eastings/northings,
+    transform back. The zone follows the coordinate."""
+    zone = geolock.utm_zone_for(sum(lngs) / len(lngs))
+    code = "EPSG:326%02d" % zone
+    registry.get(code)  # named refusal: the zone must be registered
+    es, ns = [], []
+    for lat, lng in zip(lats, lngs):
+        r = geolock.transform(registry, CRS_CONTRACT["code"], code,
+                              lng, lat)
+        es.append(r["output"]["x"])
+        ns.append(r["output"]["y"])
+    back = geolock.transform(registry, code, CRS_CONTRACT["code"],
+                             sum(es) / len(es), sum(ns) / len(ns))
+    return back["output"]["y"], back["output"]["x"], code
+
+
+def households_density_layer(households, cell_deg=0.05, k=K_ANONYMITY,
+                             *, registry=None):
     """Aggregate households into grid cells (default ~5 km) with k-anonymity.
-    households: [{lat, lng, members}] — raw points NEVER leave this layer."""
+    households: [{lat, lng, members}] — raw points NEVER leave this layer.
+
+    Centroid honesty (ADR-0074): governed exports average in UTM metres;
+    ungoverned exports average in degrees and the feature says so."""
     cells = {}
     for h in households:
         key = (math.floor(h["lat"] / cell_deg), math.floor(h["lng"] / cell_deg))
@@ -57,17 +145,28 @@ def households_density_layer(households, cell_deg=0.05, k=K_ANONYMITY):
     for (ilat, ilng), c in sorted(cells.items()):
         if c["households"] < k:
             continue  # k-anonymity: sparse cells are suppressed entirely
-        feats.append(_feature(
-            sum(c["lngs"]) / len(c["lngs"]), sum(c["lats"]) / len(c["lats"]),
-            {"households": c["households"], "members": c["members"],
-             "cell": f"{ilat}_{ilng}"}))
-    return collection(feats)
+        if registry is None:
+            clat = sum(c["lats"]) / len(c["lats"])
+            clng = sum(c["lngs"]) / len(c["lngs"])
+            space = "degree-average"
+        else:
+            clat, clng, zone_code = _metre_centroid(
+                registry, c["lats"], c["lngs"])
+            space = "utm-metres"
+        props = {"households": c["households"], "members": c["members"],
+                 "cell": f"{ilat}_{ilng}", "centroid_space": space}
+        if registry is not None:
+            props["centroid_crs"] = zone_code
+        feats.append(_feature(clng, clat, props))
+    return collection(feats, registry=registry)
 
 
-def response_time_layer(incidents, cell_deg=0.05, k=K_ANONYMITY):
+def response_time_layer(incidents, cell_deg=0.05, k=K_ANONYMITY,
+                        *, registry=None):
     """incidents: [{lat, lng, response_min}] -> mean response per cell,
     k-anonymised. This is the layer planners overlay on population density
-    to site new ambulance posts."""
+    to site new ambulance posts. Cell centres are degree-grid coordinates —
+    a deterministic grid, stated as ``cell_space``."""
     cells = {}
     for inc in incidents:
         key = (math.floor(inc["lat"] / cell_deg), math.floor(inc["lng"] / cell_deg))
@@ -81,13 +180,16 @@ def response_time_layer(incidents, cell_deg=0.05, k=K_ANONYMITY):
             {"incidents": len(times),
              "mean_response_min": round(sum(times) / len(times), 1),
              "worst_response_min": max(times),
-             "cell": f"{ilat}_{ilng}"}))
-    return collection(feats)
+             "cell": f"{ilat}_{ilng}", "cell_space": "degree-grid"}))
+    return collection(feats, registry=registry)
 
 
-def coverage_gap_layer(facilities, households, max_km=5.0, k=K_ANONYMITY):
+def coverage_gap_layer(facilities, households, max_km=5.0, k=K_ANONYMITY,
+                       *, registry=None):
     """Households farther than max_km from ANY facility — the classic
-    'where is care out of reach' layer. k-anonymised grid output."""
+    'where is care out of reach' layer. k-anonymised grid output.
+    Distances are spherical haversine (stated in routing.GEODESY_CONTRACT);
+    output cells are degree-grid coordinates, stated as ``cell_space``."""
     def hav(a_lat, a_lng, b_lat, b_lng):
         r = 6371.0
         p1, p2 = math.radians(a_lat), math.radians(b_lat)
@@ -114,5 +216,6 @@ def coverage_gap_layer(facilities, households, max_km=5.0, k=K_ANONYMITY):
             {"unserved_households": len(hs),
              "members": sum(h.get("members", 1) for h in hs),
              "mean_distance_km": round(
-                 sum(h["distance_km"] for h in hs) / len(hs), 1)}))
-    return collection(feats)
+                 sum(h["distance_km"] for h in hs) / len(hs), 1),
+             "cell_space": "degree-grid"}))
+    return collection(feats, registry=registry)
