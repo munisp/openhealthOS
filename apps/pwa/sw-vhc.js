@@ -5,7 +5,7 @@
  * cache-first; payloads are network-first with cache fallback — a
  * stale payload renders with its checksum and a STALE badge, never as
  * if it were fresh. Absence is not a value; staleness is stated. */
-const SHELL = "vhc-shell-v7";
+const SHELL = "vhc-shell-v8";
 const PAYLOADS = "vhc-payloads-v1";
 const SHELL_URLS = [
   "./vhc-verify.html", "./traveler.html", "./dispatch.html",

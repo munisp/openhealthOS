@@ -8,11 +8,17 @@ Doctrines under test:
 - A claim without evidence is red. A remainder without an owner is
   refused at the door. The whole assessment fails closed on one bad
   entry — via a malformed REGISTER entry, not a skipped row.
+- Evidence cross-check (ADR-0070): payload-named evidence that the
+  proof index cannot verify is VOID — named, never silently dropped;
+  a capability whose evidence all voids falls to unsubstantiated.
+- Every payload ref in the register is registered in proofindex —
+  the wave-6 blind spot cannot re-open at the readiness layer.
 - The demo surface is deterministic, self-stamped, and its drills are
   named.
 """
 import json
 import os
+import sys
 import unittest
 
 import shipgate
@@ -20,6 +26,11 @@ from shipgate import (CAPABILITIES, EVIDENCE_KINDS, OWNERS,
                       SHIPGATE_VERSION, ShipgateError, assess,
                       validate_entry, verdict_of)
 import demo_shipgate
+
+_HERE = os.path.dirname(os.path.abspath(__file__))
+sys.path.insert(0, os.path.normpath(os.path.join(_HERE, "..",
+                                                 "proofindex")))
+import proofindex
 
 
 def _entry(**over):
@@ -65,6 +76,118 @@ class TestRegister(unittest.TestCase):
         # Regulatory clearance is NEVER green on this platform.
         self.assertEqual(verdict_of(reg[0]), "stated-remainder")
         self.assertTrue(reg[0]["outstanding"])
+
+    def test_every_payload_ref_is_registered(self):
+        """A payload ref the index does not know is the wave-6 blind
+        spot re-opened at the readiness layer — refused here."""
+        registered = {e["path"] for e in proofindex.PAYLOADS}
+        named = [ev["payload"] for e in CAPABILITIES
+                 for ev in e["evidence"] if "payload" in ev]
+        self.assertTrue(named)   # the cross-check must have teeth
+        for p in named:
+            self.assertIn(p, registered)
+
+
+class TestEvidenceCrossCheck(unittest.TestCase):
+    """ADR-0070: evidence the index cannot verify is void — named."""
+
+    @staticmethod
+    def _idx(*pairs):
+        return {"payloads": [{"path": p, "status": s}
+                             for p, s in pairs]}
+
+    def test_verified_payload_keeps_proven(self):
+        e = _entry(evidence=[{"kind": "determinism", "ref": "demo",
+                              "payload": "apps/pwa/x.json"}])
+        rows = assess(index=self._idx(("apps/pwa/x.json", "verified")),
+                      entries=[e])["capabilities"]
+        self.assertEqual(rows[0]["verdict"], "proven")
+        self.assertEqual(rows[0]["evidence_alerts"], [])
+        self.assertEqual(rows[0]["evidence"][0]["payload_status"],
+                         "verified")
+
+    def test_drifted_payload_voids_only_evidence(self):
+        e = _entry(evidence=[{"kind": "determinism", "ref": "demo",
+                              "payload": "apps/pwa/x.json"}])
+        rows = assess(index=self._idx(("apps/pwa/x.json", "drift")),
+                      entries=[e])["capabilities"]
+        self.assertEqual(rows[0]["verdict"], "unsubstantiated")
+        self.assertEqual(rows[0]["evidence_alerts"],
+                         [{"payload": "apps/pwa/x.json",
+                           "status": "drift"}])
+        self.assertEqual(rows[0]["evidence_effective"], 0)
+
+    def test_unregistered_payload_ref_is_void(self):
+        e = _entry(evidence=[{"kind": "determinism", "ref": "demo",
+                              "payload": "apps/pwa/ghost.json"}])
+        rows = assess(index=self._idx(), entries=[e])["capabilities"]
+        self.assertEqual(rows[0]["verdict"], "unsubstantiated")
+        self.assertEqual(rows[0]["evidence_alerts"][0]["status"],
+                         "unregistered")
+
+    def test_absent_payload_is_void(self):
+        e = _entry(evidence=[{"kind": "determinism", "ref": "demo",
+                              "payload": "apps/pwa/x.json"}])
+        rows = assess(index=self._idx(("apps/pwa/x.json", "absent")),
+                      entries=[e])["capabilities"]
+        self.assertEqual(rows[0]["verdict"], "unsubstantiated")
+
+    def test_surviving_evidence_still_substantiates(self):
+        """One rotten payload voids THAT evidence, named — the other
+        proof still stands, and the row says so."""
+        e = _entry(evidence=[
+            {"kind": "test-suite", "ref": "tests"},
+            {"kind": "determinism", "ref": "demo",
+             "payload": "apps/pwa/x.json"}])
+        rows = assess(index=self._idx(("apps/pwa/x.json", "drift")),
+                      entries=[e])["capabilities"]
+        self.assertEqual(rows[0]["verdict"], "proven")
+        self.assertEqual(rows[0]["evidence_effective"], 1)
+        self.assertEqual(len(rows[0]["evidence_alerts"]), 1)
+
+    def test_no_index_states_not_run(self):
+        report = assess(entries=[_entry()])
+        xc = report["summary"]["evidence_crosscheck"]
+        self.assertFalse(xc["run"])
+        self.assertIn("note", xc)
+
+    def test_crosscheck_summary_counts(self):
+        entries = [
+            _entry(id="a", evidence=[
+                {"kind": "determinism", "ref": "d",
+                 "payload": "p1"}]),
+            _entry(id="b", evidence=[
+                {"kind": "determinism", "ref": "d",
+                 "payload": "p2"}]),
+        ]
+        report = assess(index=self._idx(("p1", "verified"),
+                                        ("p2", "drift")),
+                        entries=entries)
+        xc = report["summary"]["evidence_crosscheck"]
+        self.assertTrue(xc["run"])
+        self.assertEqual(xc["payload_refs"], 2)
+        self.assertEqual(xc["voided"], 1)
+        self.assertFalse(xc["all_verified"])
+
+    def test_malformed_payload_ref_refused(self):
+        e = _entry(evidence=[{"kind": "determinism", "ref": "d",
+                              "payload": ""}])
+        with self.assertRaises(ShipgateError):
+            validate_entry(e)
+
+    def test_live_register_crosscheck_all_verified(self):
+        """The real register against the real tree: every payload-named
+        evidence must verify right now."""
+        report = assess(index=proofindex.verify_all(
+            root=os.path.normpath(os.path.join(_HERE, "..", "..")),
+            generated_at="test"))
+        xc = report["summary"]["evidence_crosscheck"]
+        self.assertTrue(xc["run"])
+        self.assertTrue(xc["all_verified"],
+                        msg="voided evidence: %r" % [
+                            (r["id"], r["evidence_alerts"])
+                            for r in report["capabilities"]
+                            if r["evidence_alerts"]])
 
 
 class TestVerdicts(unittest.TestCase):
@@ -174,6 +297,9 @@ class TestDemoShipproof(unittest.TestCase):
         self.assertTrue(p["flags"]["all_substantiated"])
         self.assertTrue(p["flags"]["all_remainders_owned"])
         self.assertTrue(p["flags"]["drills_named"])
+        self.assertTrue(p["flags"]["evidence_crosscheck_run"])
+        self.assertTrue(p["flags"]["all_evidence_verified"])
+        self.assertEqual(len(p["drills"]), 4)
         self.assertEqual({d["verdict"] for d in p["drills"]},
                          {"unsubstantiated", "refused"})
         s = p["assessment"]["summary"]
@@ -181,6 +307,7 @@ class TestDemoShipproof(unittest.TestCase):
                          s["proven"] + s["stated_remainder"]
                          + s["unsubstantiated"])
         self.assertIn("why_demo", p["honesty"])
+        self.assertIn("evidence_crosscheck", p["honesty"])
 
     def test_file_emission(self):
         demo_shipgate.main()

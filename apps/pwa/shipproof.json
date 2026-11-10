@@ -1,8 +1,8 @@
 {
-  "version": "shipproof-demo@1.0.0",
+  "version": "shipproof-demo@1.1.0",
   "generated_at": "2026-11-10T11:00:00Z",
   "assessment": {
-    "version": "shipgate@1.0.0",
+    "version": "shipgate@1.1.0",
     "capabilities": [
       {
         "id": "audit-chain",
@@ -17,9 +17,13 @@
           },
           {
             "kind": "determinism",
-            "ref": "anchorproof demo \u2014 byte-identical reruns"
+            "ref": "anchorproof demo \u2014 byte-identical reruns",
+            "payload": "apps/pwa/anchorproof.json",
+            "payload_status": "verified"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": []
       },
       {
@@ -35,9 +39,13 @@
           },
           {
             "kind": "determinism",
-            "ref": "anchorproof-demo \u2014 history-rewritten demonstrated"
+            "ref": "anchorproof-demo \u2014 history-rewritten demonstrated",
+            "payload": "apps/pwa/anchorproof.json",
+            "payload_status": "verified"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "fabric-gateway consortium backend",
@@ -59,9 +67,13 @@
           },
           {
             "kind": "determinism",
-            "ref": "tamperproof demo \u2014 byte-identical reruns"
+            "ref": "tamperproof demo \u2014 byte-identical reruns",
+            "payload": "apps/pwa/tamperproof.json",
+            "payload_status": "verified"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": []
       },
       {
@@ -80,6 +92,8 @@
             "ref": "12-exporter byte-determinism meta gate"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": []
       },
       {
@@ -95,9 +109,13 @@
           },
           {
             "kind": "determinism",
-            "ref": "deployproof demo"
+            "ref": "deployproof demo",
+            "payload": "apps/pwa/deployproof.json",
+            "payload_status": "verified"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "live certification",
@@ -118,6 +136,8 @@
             "ref": "Cryptoki v2.40 ABI proven against compiled mock through the provider and keyring"
           }
         ],
+        "evidence_effective": 1,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "device certification",
@@ -139,9 +159,13 @@
           },
           {
             "kind": "determinism",
-            "ref": "deployproof demo"
+            "ref": "deployproof demo",
+            "payload": "apps/pwa/deployproof.json",
+            "payload_status": "verified"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "production endpoint certification",
@@ -166,6 +190,8 @@
             "ref": "erpstorm: 10k events, offline window, replay \u2014 exactly-once, order preserved"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "live server certification",
@@ -190,6 +216,8 @@
             "ref": "77 syncmesh tests"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "managed sync service",
@@ -210,6 +238,8 @@
             "ref": "webhook dedupe, status monotonicity, template registry, messaging-tier caps"
           }
         ],
+        "evidence_effective": 1,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "Meta Business approval",
@@ -230,6 +260,8 @@
             "ref": "session state machine + delivery ladder tests"
           }
         ],
+        "evidence_effective": 1,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "aggregator contract",
@@ -251,9 +283,13 @@
           },
           {
             "kind": "determinism",
-            "ref": "agentwrite demo"
+            "ref": "agentwrite demo",
+            "payload": "apps/pwa/agentwrite.json",
+            "payload_status": "verified"
           }
         ],
+        "evidence_effective": 2,
+        "evidence_alerts": [],
         "outstanding": []
       },
       {
@@ -268,6 +304,8 @@
             "ref": "none yet \u2014 this row exists so absence is stated"
           }
         ],
+        "evidence_effective": 1,
+        "evidence_alerts": [],
         "outstanding": [
           {
             "item": "health-authority review",
@@ -288,7 +326,13 @@
       "stated_remainder": 9,
       "unsubstantiated": 0,
       "all_substantiated": true,
-      "all_remainders_owned": true
+      "all_remainders_owned": true,
+      "evidence_crosscheck": {
+        "run": true,
+        "payload_refs": 6,
+        "voided": 0,
+        "all_verified": true
+      }
     }
   },
   "drills": [
@@ -305,20 +349,38 @@
       "verdict": "refused",
       "severity": "red",
       "note": "outstanding 'certification' on drill-orphan has no named owner \u2014 an unowned remainder is a defect"
+    },
+    {
+      "attack": "evidence drifted after it was cited",
+      "expected": "unsubstantiated",
+      "verdict": "unsubstantiated",
+      "severity": "red",
+      "note": "voided evidence is named, never silently dropped: apps/pwa/tamperproof.json=drift"
+    },
+    {
+      "attack": "evidence the index never registered",
+      "expected": "unsubstantiated",
+      "verdict": "unsubstantiated",
+      "severity": "red",
+      "note": "an unregistered payload cannot substantiate anything \u2014 a registry that falls behind is a blind spot, here it fails closed"
     }
   ],
   "flags": {
     "all_substantiated": true,
     "all_remainders_owned": true,
-    "drills_named": true
+    "drills_named": true,
+    "evidence_crosscheck_run": true,
+    "all_evidence_verified": true
   },
   "honesty": {
     "why_demo": "the DATA on every evidence board is synthetic and deterministic \u2014 real patient data must never appear on a screenshot-verifiable page; the machinery being exercised is the production code",
-    "no_blanket_verdict": "the strongest word this gate has is 'proven' \u2014 there is no 'production ready' verdict, because readiness is a property of evidence, not of ambition"
+    "no_blanket_verdict": "the strongest word this gate has is 'proven' \u2014 there is no 'production ready' verdict, because readiness is a property of evidence, not of ambition",
+    "evidence_crosscheck": "a readiness claim is only as strong as its evidence \u2014 every determinism claim on this board names a stamped payload, and the gate re-checks those payloads against the live proof index before it speaks (ADR-0070)"
   },
   "versions": {
-    "shipgate": "shipgate@1.0.0",
-    "demo": "shipproof-demo@1.0.0"
+    "shipgate": "shipgate@1.1.0",
+    "demo": "shipproof-demo@1.1.0",
+    "proofindex": "proofindex@1.1.0"
   },
-  "sha256": "e59f9c5fec6488e7172e74df68b2fc8489249acdc439749c3c8bcc327c712cf4"
+  "sha256": "c4849a7e4a306fd2f8c71756df4af0275fdab5a481118aeccc993a00505281be"
 }

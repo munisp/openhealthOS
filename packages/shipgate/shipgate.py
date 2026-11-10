@@ -1,4 +1,4 @@
-"""shipgate@1.0.0 — production readiness as data, never as adjectives.
+"""shipgate@1.1.0 — production readiness as data, never as adjectives.
 
 The question "is this production ready?" has exactly one honest shape
 on this platform: per capability, with evidence, with named remainders.
@@ -28,13 +28,25 @@ Doctrines enforced here:
   deterministic, reproducible), never the machinery: every board
   exercises the production code paths. Real patient data must never
   appear on a screenshot-verifiable page.
+- Evidence cross-check (ADR-0070): a claim is only as strong as its
+  evidence, and evidence the proof index cannot verify is an
+  assertion, not a proof. Evidence entries MAY name a stamped payload
+  ("payload": repo-relative path). When assess() is given a proofindex
+  report, every payload-named piece of evidence is re-checked against
+  it: anything not "verified" is VOID — named on the row, removed from
+  the substantiating set, never silently dropped. A capability whose
+  evidence ALL voids falls to "unsubstantiated", however impressive
+  the title. A payload ref the index does not register is "unregistered"
+  and void — the wave-6 lesson, enforced at the readiness layer.
+  Calling assess() without an index is legal but STATED
+  ("evidence_crosscheck": {"run": false}) — never implied.
 
 Stdlib only (ADR-0005). No clocks are read here.
 """
 
 from __future__ import annotations
 
-SHIPGATE_VERSION = "shipgate@1.0.0"
+SHIPGATE_VERSION = "shipgate@1.1.0"
 
 #: The only evidence kinds the gate recognises. Closed on purpose.
 EVIDENCE_KINDS = ("test-suite", "storm", "wire-conformance",
@@ -52,7 +64,9 @@ class ShipgateError(ValueError):
 
 #: The capability register — entries, not adjectives. Each entry:
 #:   id, title, layer (where the machinery lives),
-#:   evidence: [{"kind", "ref"}]   — what proves it, with a pointer
+#:   evidence: [{"kind", "ref", "payload"?}] — what proves it, with a
+#:     pointer; "payload" names a proofindex-registered stamped payload
+#:     when the evidence IS one (ADR-0070 cross-check)
 #:   outstanding: [{"item", "needs", "owner"}] — what is NOT closed
 CAPABILITIES = [
     {"id": "audit-chain",
@@ -61,7 +75,8 @@ CAPABILITIES = [
      "evidence": [
          {"kind": "test-suite", "ref": "packages/auditlake tests"},
          {"kind": "determinism",
-          "ref": "anchorproof demo — byte-identical reruns"},
+          "ref": "anchorproof demo — byte-identical reruns",
+          "payload": "apps/pwa/anchorproof.json"},
      ],
      "outstanding": []},
     {"id": "external-notary",
@@ -70,7 +85,8 @@ CAPABILITIES = [
      "evidence": [
          {"kind": "test-suite", "ref": "25 ledgeranchor tests"},
          {"kind": "determinism",
-          "ref": "anchorproof-demo — history-rewritten demonstrated"},
+          "ref": "anchorproof-demo — history-rewritten demonstrated",
+          "payload": "apps/pwa/anchorproof.json"},
      ],
      "outstanding": [
          {"item": "fabric-gateway consortium backend",
@@ -85,7 +101,8 @@ CAPABILITIES = [
          {"kind": "test-suite",
           "ref": "exhaustive single-char tamper sweep + garbage sweeps"},
          {"kind": "determinism",
-          "ref": "tamperproof demo — byte-identical reruns"},
+          "ref": "tamperproof demo — byte-identical reruns",
+          "payload": "apps/pwa/tamperproof.json"},
      ],
      "outstanding": []},
     {"id": "proof-index",
@@ -104,7 +121,8 @@ CAPABILITIES = [
          {"kind": "wire-conformance",
           "ref": "Paystack/Flutterwave/Stripe/M-Pesa export shapes "
                  "as four-eyes-ratified template adapters"},
-         {"kind": "determinism", "ref": "deployproof demo"},
+         {"kind": "determinism", "ref": "deployproof demo",
+          "payload": "apps/pwa/deployproof.json"},
      ],
      "outstanding": [
          {"item": "live certification",
@@ -132,7 +150,8 @@ CAPABILITIES = [
          {"kind": "test-suite",
           "ref": "SqliteOutbox persist-before-send + restart replay "
                  "under the original idempotency key"},
-         {"kind": "determinism", "ref": "deployproof demo"},
+         {"kind": "determinism", "ref": "deployproof demo",
+          "payload": "apps/pwa/deployproof.json"},
      ],
      "outstanding": [
          {"item": "production endpoint certification",
@@ -204,7 +223,8 @@ CAPABILITIES = [
          {"kind": "test-suite",
           "ref": "scripted-reviewer conformance harness incl. "
                  "broken-gate negative test"},
-         {"kind": "determinism", "ref": "agentwrite demo"},
+         {"kind": "determinism", "ref": "agentwrite demo",
+          "payload": "apps/pwa/agentwrite.json"},
      ],
      "outstanding": []},
     {"id": "regulatory",
@@ -247,6 +267,12 @@ def validate_entry(entry: dict) -> None:
             raise ShipgateError("evidence on %s lacks a ref — a proof "
                                 "you cannot point at is not a proof"
                                 % entry["id"])
+        if "payload" in ev and (not isinstance(ev["payload"], str)
+                                or not ev["payload"]):
+            raise ShipgateError("evidence on %s has a malformed "
+                                "payload ref — a stamped payload is "
+                                "named by its path or not at all"
+                                % entry["id"])
     for out in entry["outstanding"]:
         if not isinstance(out.get("item"), str) or not out["item"]:
             raise ShipgateError("outstanding item on %s is unnamed"
@@ -262,38 +288,93 @@ def validate_entry(entry: dict) -> None:
                                             entry["id"]))
 
 
-def verdict_of(entry: dict) -> str:
-    """Three words, no more. No evidence → unsubstantiated (red),
-    regardless of how impressive the title sounds."""
-    if not entry["evidence"]:
+def _verdict(entry: dict, effective: int) -> str:
+    if effective == 0:
         return "unsubstantiated"
     if entry["outstanding"]:
         return "stated-remainder"
     return "proven"
 
 
-def assess() -> dict:
-    """Assess the whole register. Validates every entry first — one
-    malformed claim refuses the report."""
+def verdict_of(entry: dict) -> str:
+    """Three words, no more. No evidence → unsubstantiated (red),
+    regardless of how impressive the title sounds. Static form: every
+    stated evidence counts (no cross-check — see assess(index=...))."""
+    return _verdict(entry, len(entry["evidence"]))
+
+
+def _status_map(index: dict) -> dict:
+    """path → status from a proofindex verify_all() report. Injected,
+    never imported — this module stays standalone (ADR-0005)."""
+    return {p["path"]: p.get("status") for p in index.get("payloads", [])
+            if isinstance(p, dict) and "path" in p}
+
+
+def assess(index=None, entries=None) -> dict:
+    """Assess the register. Validates every entry first — one malformed
+    claim refuses the report.
+
+    With `index` (a proofindex verify_all() report), payload-named
+    evidence is cross-checked: a payload whose status is not "verified"
+    is VOID — named in evidence_alerts, removed from the substantiating
+    set. A capability left with zero effective evidence falls to
+    "unsubstantiated": a gate that cannot see its own evidence rot is
+    decoration (ADR-0070). Without an index the cross-check is stated
+    as not-run, never implied.
+    """
+    register = CAPABILITIES if entries is None else entries
     ids = set()
-    for entry in CAPABILITIES:
+    for entry in register:
         validate_entry(entry)
         if entry["id"] in ids:
             raise ShipgateError("duplicate capability id: "
                                 + entry["id"])
         ids.add(entry["id"])
+    smap = _status_map(index) if index is not None else None
     rows = []
-    for entry in CAPABILITIES:
-        verdict = verdict_of(entry)
+    payload_refs = 0
+    voided = 0
+    for entry in register:
+        ev_out = []
+        alerts = []
+        effective = 0
+        for ev in entry["evidence"]:
+            ev2 = dict(ev)
+            if smap is not None and "payload" in ev:
+                payload_refs += 1
+                status = smap.get(ev["payload"])
+                if status is None:
+                    status = "unregistered"
+                ev2["payload_status"] = status
+                if status == "verified":
+                    effective += 1
+                else:
+                    voided += 1
+                    alerts.append({"payload": ev["payload"],
+                                   "status": status})
+            else:
+                effective += 1
+            ev_out.append(ev2)
+        verdict = _verdict(entry, effective)
         rows.append({
             "id": entry["id"], "title": entry["title"],
             "layer": entry["layer"], "verdict": verdict,
             "severity": _SEVERITY[verdict],
-            "evidence": entry["evidence"],
+            "evidence": ev_out,
+            "evidence_effective": effective,
+            "evidence_alerts": alerts,
             "outstanding": entry["outstanding"],
         })
     counts = {v: sum(1 for r in rows if r["verdict"] == v)
               for v in _SEVERITY}
+    if smap is None:
+        crosscheck = {"run": False,
+                      "note": "no proofindex report injected — "
+                              "payload-named evidence is stated, not "
+                              "re-verified; never implied"}
+    else:
+        crosscheck = {"run": True, "payload_refs": payload_refs,
+                      "voided": voided, "all_verified": voided == 0}
     return {
         "version": SHIPGATE_VERSION,
         "capabilities": rows,
@@ -306,5 +387,6 @@ def assess() -> dict:
             "all_remainders_owned": all(
                 o.get("owner") in OWNERS and o.get("needs")
                 for r in rows for o in r["outstanding"]),
+            "evidence_crosscheck": crosscheck,
         },
     }

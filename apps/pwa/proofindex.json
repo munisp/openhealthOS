@@ -46,8 +46,8 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "e59f9c5fec6488e7172e74df68b2fc8489249acdc439749c3c8bcc327c712cf4",
-        "payload_version": "shipproof-demo@1.0.0"
+        "presented": "c4849a7e4a306fd2f8c71756df4af0275fdab5a481118aeccc993a00505281be",
+        "payload_version": "shipproof-demo@1.1.0"
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -302,5 +302,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "8267884733be6cb8b3414f29c5ac2ab8ee5964d57a81470f7d52f3b4f95ee443"
+  "sha256": "6d3d2e93d182396236e3ba1463ea7afc667ba911d5dfbbd0698b2b1ee58aaaae"
 }

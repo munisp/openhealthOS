@@ -22,8 +22,10 @@
       <div class="kpi"><div class="kpi-num" id="k-proven"></div><div class="kpi-label">proven</div></div>
       <div class="kpi"><div class="kpi-num" id="k-remainder"></div><div class="kpi-label">stated remainder</div></div>
       <div class="kpi"><div class="kpi-num" id="k-unsub"></div><div class="kpi-label">unsubstantiated</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-voided"></div><div class="kpi-label">evidence voided</div></div>
     </div>
     <div class="mono" id="verdict-note" style="margin-top:8px"></div>
+    <div class="mono" id="xc-note" style="margin-top:4px;opacity:.8"></div>
   </div>
 
   <div class="card">
@@ -50,14 +52,22 @@ const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
 
 function capCard(c) {
   const badge = c.severity === "green" ? "ok" : (c.severity === "amber" ? "warn" : "bad");
-  const ev = c.evidence.map((e) =>
-    `<span class="badge">${esc(e.kind)}</span>`).join(" ");
+  const ev = c.evidence.map((e) => {
+    let b = `<span class="badge">${esc(e.kind)}</span>`;
+    if (e.payload_status)
+      b += e.payload_status === "verified"
+        ? ` <span class="badge ok">✓ payload verified</span>`
+        : ` <span class="badge bad">void: ${esc(e.payload_status)}</span>`;
+    return b;
+  }).join(" ");
+  const alerts = (c.evidence_alerts || []).map((a) =>
+    `<div class="mono" style="color:#ff8080;margin:2px 0 0 12px">— VOID EVIDENCE: ${esc(a.payload)} — ${esc(a.status)}</div>`).join("");
   const outs = c.outstanding.map((o) =>
     `<div class="mono" style="opacity:.8;margin:2px 0 0 12px">— ${esc(o.item)}: needs ${esc(o.needs)} · owner: <b>${esc(o.owner)}</b></div>`).join("");
   return `<div class="row"><b>${esc(c.title)}</b>
     <span><span class="badge ${badge}">${esc(c.verdict)}</span> ${ev}</span></div>
     <div class="mono" style="opacity:.7;margin:-4px 0 4px">${esc(c.layer)}</div>
-    ${outs ? outs : ""}`;
+    ${alerts}${outs ? outs : ""}`;
 }
 
 fetch("./shipproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
@@ -69,17 +79,24 @@ fetch("./shipproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) 
   $("k-proven").textContent = s.proven;
   $("k-remainder").textContent = s.stated_remainder;
   $("k-unsub").textContent = s.unsubstantiated;
+  const xc = s.evidence_crosscheck || { run: false };
+  $("k-voided").textContent = xc.run ? xc.voided : "—";
   $("verdict-note").textContent =
     "production-engineered: " + s.proven + " proven · " + s.stated_remainder +
     " with named, owned remainders (none are code — they need real partners, devices and regulators) · " +
     s.unsubstantiated + " unsubstantiated claims";
+  $("xc-note").textContent = xc.run
+    ? "evidence cross-check (ADR-0070): " + xc.payload_refs +
+      " stamped payloads re-verified against the live proof index before this gate spoke · " +
+      xc.voided + " voided"
+    : "evidence cross-check NOT run — stated, never implied";
 
   $("caps").innerHTML = p.assessment.capabilities.map(capCard).join("");
   $("drills").innerHTML = p.drills.map((d) =>
     `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
      <br><b>${esc(d.verdict)}</b> <span class="badge bad">red</span>
      <br><span style="opacity:.8">${esc(d.note)}</span></div>`).join("") +
-    `<div class="mono" style="margin-top:6px">two attacks on the gate itself, two named refusals</div>`;
+    `<div class="mono" style="margin-top:6px">four attacks on the gate itself, four named verdicts</div>`;
 
   $("sha").textContent = p.sha256;
   $("honesty").textContent = p.honesty.no_blanket_verdict;
