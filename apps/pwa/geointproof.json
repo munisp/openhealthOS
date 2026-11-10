@@ -100,12 +100,12 @@
     "CRS-gated graph build",
     "digested A* route"
   ],
-  "sha256": "c05491e21e01c2c965729f554e18d724d522165e0c5a1ec88b31e5b736f5d9d6",
+  "sha256": "bd51e01624b5843af1526a27ef6baebf679a10ef916e9b66e8e86954365240fb",
   "surface": "geointproof",
   "versions": {
     "exporter": "geointproof-demo@1.0.0",
-    "geolock": "geolock@1.0.0",
-    "gisexport": "gisexport@1.1.0",
+    "geolock": "geolock@1.1.0",
+    "gisexport": "gisexport@1.3.0",
     "routing": "routing@1.1.0"
   }
 }

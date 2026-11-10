@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geostructureproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Geostructureproof — shape is gated before bytes are pinned</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic fixtures only — every geometry below is production code exercising production refusals. Range is not shape: an in-range but malformed geometry (an unclosed ring, a Point wearing a MultiPoint's coordinates, a bbox contradicting its own feature) used to be stamped faithfully. Now structure is gated before range before stamp, and what was checked is disclosed as data. The wave-14 census miss — a sixth private haversine in the gate package itself — is named on this payload, not quietly fixed.</div>
+
+  <div class="card">
+    <h2>The control — one governed export, structure checked before stamped</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-geom"></div><div class="kpi-label">geometries checked</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-rings"></div><div class="kpi-label">rings closed</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-elev"></div><div class="kpi-label">elevations disclosed</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The census — the miss is data, stated on the artifact</h2>
+    <div id="census"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — seven fail closed, three pass with the basis stated</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Features sha256</b><span class="mono" id="fsha"></span></div>
+    <div class="row"><b>Shape before range before stamp</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Census is data</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./geostructureproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  const g = c.governed_export;
+  const sc = g.structure_checked;
+  $("k-geom").textContent = sc.geometries;
+  $("k-rings").textContent = sc.rings;
+  $("k-elev").textContent = sc.elevations;
+  $("k-drills").textContent = p.drills.length;
+  $("control-note").textContent =
+    "basis " + g.basis + " · " + g.features + " features · " +
+    g.coordinates_checked + " positions ranged · " + sc.positions +
+    " positions structure-checked · coverage-gap geodesy radius " +
+    c.coverage_gap_geodesy.radius_km + " km · unserved cells " +
+    c.coverage_gap_geodesy.unserved_cells;
+
+  $("census").innerHTML =
+    `<div class="row"><b>private haversines before wave 14</b><span class="mono">${esc(c.census.private_haversines_before_wave14)}</span></div>` +
+    `<div class="row"><b>private haversines after wave 16</b><span class="mono">${esc(c.census.private_haversines_after_wave16)}</span></div>` +
+    `<div class="row"><b>intentional guarded copy</b><span class="mono" style="opacity:.8">${esc(c.census.intentional_copies_stated[0])}</span></div>` +
+    `<div class="row"><b>wave-14 miss, stated</b><span class="mono" style="opacity:.8">${esc(c.census.wave14_miss_stated)}</span></div>` +
+    `<div class="row"><b>method</b><span class="mono" style="opacity:.8">${esc(c.census.method)}</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const badge = r.outcome === "refused" ? "ok" : "warn";
+    const detail = r.reason || r.detail || "";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(r.outcome)}</span>
+     <br><span style="opacity:.8">${esc(detail)}</span></div>`;
+  }).join("") +
+  `<div class="mono" style="margin-top:6px">ten attacks on the structure seam — refused or stated; none silent</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("fsha").textContent = g.features_sha256;
+  $("h1").textContent = p.honesty.shape_before_range_before_stamp;
+  $("h2").textContent = p.honesty.census_is_data;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

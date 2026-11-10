@@ -86,7 +86,7 @@
         "account": "acct-sim-99",
         "claimants": 3,
         "claims": 4,
-        "evidence_sha256": "74c6e4ec0e5bbd3964654b9d323b34c453ef8fb1d4d6651a3a94d694c97c39d2"
+        "evidence_sha256": "55eef05b33afab898b5ef62d573554cacdeb7e74401b20227c3e1d5601fd26f8"
       }
     ]
   },
@@ -199,5 +199,5 @@
       "za-vhc@0.9.0"
     ]
   },
-  "sha256": "2c465ec88d6a37296d3ca411e526f25edfd66cd55f93c36966a7fb38bc18217d"
+  "sha256": "47f51a697c9d7aad56b48a324117a4934c7a42a67aa37c29919994b66d268c2e"
 }

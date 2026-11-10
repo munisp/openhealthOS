@@ -202,10 +202,10 @@
     "seeded": 2,
     "systems": 6
   },
-  "sha256": "7f46e8c8bc01b611e5721e94f8e72eee82328fcd9353578ac10fd610ba391f07",
+  "sha256": "94a42a051788c497cbe9dcab60a8bccbda7d96ebb98ffcf7423f9b1062250d63",
   "surface": "geoproof",
   "versions": {
     "exporter": "geoproof-demo@1.0.0",
-    "geolock": "geolock@1.0.0"
+    "geolock": "geolock@1.1.0"
   }
 }

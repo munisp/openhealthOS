@@ -40,7 +40,7 @@
       "true-antipodal"
     ],
     "matrix_agrees_bit_for_bit": true,
-    "matrix_sha256": "98555a4626c39f84564835cfab19cd13fc4f261b4717a83be4f8efb6cb3081e6",
+    "matrix_sha256": "0d02c6626640825f000f5bb6b5c93a2a40b4d0efdb135361e702c1deae5005ab",
     "reference_leg_km": {
       "identical-point": 0.0,
       "kaduna-to-lagos": 630.9185788095126,
@@ -50,6 +50,7 @@
     },
     "sites": [
       "geolock (owner)",
+      "gisexport.distance_km",
       "households.haversine_km",
       "kpiplane._haversine_km",
       "outbreak._km",
@@ -68,6 +69,17 @@
       ],
       "row_sha256": "cb579d16dadc69d2cb77a31fbb5f3d35a49e3116a2986facb21f02644f69ed4f",
       "site": "geolock (owner)"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
+      "row_sha256": "16236abd6e65ccb01dacce31363689b99c66f0868a4ff31379d67170a5f79564",
+      "site": "gisexport.distance_km"
     },
     {
       "legs_km": [
@@ -158,6 +170,14 @@
         "detail": "absorbed-by-honesty-band: the retired radius differs by 1.381 ppm on the longest leg — 2172x narrower than the stated 0.3% band, disclosed in ADR-0075 instead of swapped silently",
         "outcome": "stated"
       }
+    },
+    {
+      "attack": "an incomplete census presented as complete",
+      "name": "the wave-14 census missed a sixth private haversine",
+      "result": {
+        "detail": "census-miss-stated: gisexport.coverage_gap_layer carried a private 6371.0 closure the wave-14 sweep missed — found in wave-16 recon, retired, and added to this matrix as the seventh row. A census is data; a census that missed is stated, not quietly fixed",
+        "outcome": "stated"
+      }
     }
   ],
   "generated_at": "2026-11-11T16:30:00Z",
@@ -165,20 +185,22 @@
     "absence_is_not_a_value": "every coverage, catchment, cluster and visit-plan result now carries its geodesy basis as data",
     "drift_guard": "packages/geodesy pins the semantic core of routing.GEODESY_CONTRACT equal to geolock's — duplication with a guard is four-eyes, duplication without one is folklore",
     "folklore_named": "the clamp is stated; the superseded radius is stated; the unversioned ml module is stated",
-    "implementations_retired": 5,
+    "implementations_retired": 6,
     "one_function": "geolock.distance_km — every site delegates or the matrix diverges and the meta gate fails",
     "radii_retired": [
       "private 6371.0 copies (households, outbreak, visitplan)",
+      "private 6371.0 closure (gisexport.coverage_gap_layer — the wave-14 census miss, named)",
       "IUGG mean 6371.0088 (kpiplane, openhealth_ml.catchment)"
     ]
   },
-  "sha256": "82aebd338ee46e82544beebbb84720b0abceb5cd820d0f22e76909750688f87e",
+  "sha256": "c84c2ab5dad95ce4f6c9d643f3972f2e542535cf75c8f604d7d27d59e33e6750",
   "surface": "geodesyproof",
   "versions": {
     "catchment": "openhealth_ml.catchment (unversioned module — stated, not hidden)",
-    "exporter": "geodesyproof-demo@1.0.0",
+    "exporter": "geodesyproof-demo@1.1.0",
     "geolock": "geolock@1.1.0",
-    "households": "households@1.1.0",
+    "gisexport": "gisexport@1.3.0",
+    "households": "households@1.2.0",
     "kpiplane": "kpiplane@1.1.0",
     "outbreak": "outbreak@1.1.0",
     "routing": "routing@1.1.0",

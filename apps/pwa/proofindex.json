@@ -79,7 +79,51 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "7f46e8c8bc01b611e5721e94f8e72eee82328fcd9353578ac10fd610ba391f07",
+        "presented": "94a42a051788c497cbe9dcab60a8bccbda7d96ebb98ffcf7423f9b1062250d63",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/geointproof.json",
+        "title": "Geospatial-pipeline proof",
+        "contract": "compact",
+        "exporter": "packages/geoint/demo_geoint.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "bd51e01624b5843af1526a27ef6baebf679a10ef916e9b66e8e86954365240fb",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/geodesyproof.json",
+        "title": "Geodesy-convergence proof",
+        "contract": "compact",
+        "exporter": "packages/geodesy/demo_geodesy.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "c84c2ab5dad95ce4f6c9d643f3972f2e542535cf75c8f604d7d27d59e33e6750",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/geoexportproof.json",
+        "title": "Export-gate proof",
+        "contract": "compact",
+        "exporter": "packages/geoexport/demo_geoexport.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "4795a48b85b0a3bf3c5c723941c9ce9da0e55027f5798c40f3b871259c2e7426",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/geostructureproof.json",
+        "title": "Structure-gate proof",
+        "contract": "compact",
+        "exporter": "packages/geostructure/demo_geostructure.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "c3f5dd9e8824b01de4efb97991321389451883520d8a119d92957ad0d819ac19",
         "payload_version": null
       },
       {
@@ -260,8 +304,8 @@
       }
     ],
     "summary": {
-      "total": 23,
-      "verified": 23,
+      "total": 27,
+      "verified": 27,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -269,8 +313,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 24,
-      "registered": 23,
+      "stamped_on_disk": 28,
+      "registered": 27,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -281,7 +325,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 15,
+      "compact": 19,
       "spaced-utf8": 8
     }
   },
@@ -335,5 +379,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "a68a34c037260865a216906ad3c9e81e3f14e0a7aed30214faae37bcd590bae2"
+  "sha256": "2e1400e95448239e7b115c840a1dce621d2587fa2e965d0a8db24182fc03ac27"
 }

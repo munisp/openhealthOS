@@ -30,6 +30,36 @@ validates every coordinate in every feature BEFORE stamping, over a
 closed geometry vocabulary, with the offender named. The checksum is
 the contract — and the checksum presumes bytes that deserve it. The
 member states how many positions were checked.
+
+gisexport@1.3.0 (ADR-0077) — the structure gate, and the wave-14
+census miss closed:
+
+- ``collection()`` now validates RFC 7946 STRUCTURE before range: a
+  Point carries exactly one position (a Point wearing a position list
+  is refused — that shape is a MultiPoint); a LineString needs at
+  least two positions; every polygon ring has at least four positions
+  and is CLOSED (first position == last, §3.1.6); empty coordinates
+  are refused — an empty geometry is a null geometry, and null is how
+  you say so (§3.2); positions are two or three numbers (the third is
+  elevation, counted and disclosed — beyond elevation the estate has
+  no contract); a feature or geometry ``bbox`` must be well-formed
+  [minLng, minLat, maxLng, maxLat] and must CONTAIN its own geometry —
+  a bbox that contradicts its positions is a lie with a checksum.
+  Antimeridian-crossing bboxes (minLng > maxLng, §5.2) are outside the
+  export contract and refused with the reason named — the estate's
+  theatres are West-African; if that changes, the gate changes loudly.
+- The member carries ``structure_checked`` (geometries / positions /
+  rings / elevations / null geometries) alongside
+  ``coordinates_checked``. An in-range but malformed geometry used to
+  be stamped; now shape is gated before bytes are pinned.
+- THE CENSUS MISS: wave 14 (ADR-0075) retired five private haversines
+  and missed a SIXTH — the closure inside ``coverage_gap_layer``
+  below, r=6371.0, undocumented by the convergence matrix. It now
+  delegates to ``geolock.distance_km`` (exposed here as
+  ``gisexport.distance_km`` — the gate package computes on the same
+  contract it stamps), and the layer's collection carries an
+  ``openhealth:geodesy`` member naming the basis and the miss. A
+  census is data; a census that missed is stated, not quietly fixed.
 """
 
 import hashlib
@@ -43,7 +73,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 import geolock  # noqa: E402
 
-GIS_VERSION = "gisexport@1.2.0"
+GIS_VERSION = "gisexport@1.3.0"
 
 K_ANONYMITY = 5  # suppress cells below this count
 
@@ -104,10 +134,22 @@ GEOMETRY_TYPES = ("Point", "MultiPoint", "LineString",
                   "MultiLineString", "Polygon", "MultiPolygon")
 
 
-def _positions(geometry, where):
-    """Yield (lng, lat) positions from a geometry, refusing anything
-    outside the closed vocabulary. A null geometry is legal RFC 7946
-    (§3.2) and yields nothing — absence is stated, not validated."""
+def _is_position(node):
+    """A position is two or three numbers [lng, lat] or
+    [lng, lat, elevation] (RFC 7946 §3.1.1). Booleans are not numbers
+    here; beyond elevation the estate has no contract."""
+    return (isinstance(node, (list, tuple)) and 2 <= len(node) <= 3
+            and all(isinstance(v, (int, float))
+                    and not isinstance(v, bool) for v in node))
+
+
+def _structure(geometry, where, stats):
+    """Fail-closed structural walker (ADR-0077): validate RFC 7946
+    shape and yield (lng, lat) positions. Structure is gated BEFORE
+    range and BEFORE stamping — an in-range but malformed geometry is
+    still a malformed geometry, and the checksum presumes bytes that
+    deserve it. A null geometry is legal (§3.2) and yields nothing —
+    absence is stated, not validated."""
     if geometry is None:
         return
     gtype = geometry.get("type")
@@ -116,19 +158,139 @@ def _positions(geometry, where):
             "geometry type %r at %s is outside the closed export "
             "vocabulary %s — an ungated geometry is an unstamped one"
             % (gtype, where, GEOMETRY_TYPES))
+    coords = geometry.get("coordinates")
+    if not isinstance(coords, (list, tuple)) or len(coords) == 0:
+        raise Error(
+            "geometry %r at %s has empty or missing coordinates — an "
+            "empty geometry is a null geometry; use null and say so "
+            "(RFC 7946 §3.2)" % (gtype, where))
 
-    def walk(node):
-        if (isinstance(node, (list, tuple)) and len(node) >= 2
-                and all(isinstance(v, (int, float))
-                        and not isinstance(v, bool) for v in node[:2])):
-            yield node[0], node[1]
-        elif isinstance(node, (list, tuple)):
-            for child in node:
-                yield from walk(child)
+    def position(p, w):
+        if not _is_position(p):
+            raise Error(
+                "malformed position at %s: %r — a position is two or "
+                "three numbers [lng, lat] or [lng, lat, elevation]; "
+                "beyond elevation the estate has no contract" % (w, p))
+        stats["positions"] += 1
+        if len(p) == 3:
+            stats["elevations"] += 1
+        return p[0], p[1]
+
+    def ring(r, w):
+        if not isinstance(r, (list, tuple)) or len(r) < 4:
+            raise Error(
+                "linear ring at %s has %s positions — RFC 7946 §3.1.6 "
+                "requires at least four and a closed ring"
+                % (w, len(r) if isinstance(r, (list, tuple)) else r))
+        for p in r:
+            if not _is_position(p):
+                raise Error("malformed position at %s in ring: %r"
+                            % (w, p))
+        if list(r[0]) != list(r[-1]):
+            raise Error(
+                "linear ring at %s is not closed — first position %r "
+                "!= last %r (RFC 7946 §3.1.6); an unclosed ring is "
+                "not a polygon" % (w, list(r[0]), list(r[-1])))
+        stats["rings"] += 1
+        for p in r:
+            yield position(p, w)
+
+    stats["geometries"] += 1
+    if gtype == "Point":
+        if not _is_position(coords):
+            raise Error(
+                "Point at %s wears %r as coordinates — a Point carries "
+                "exactly one position; a list of positions is a "
+                "MultiPoint, and a smuggled shape is a refused shape"
+                % (where, coords))
+        yield position(coords, where)
+    elif gtype == "MultiPoint":
+        for p in coords:
+            yield position(p, where)
+    elif gtype == "LineString":
+        if len(coords) < 2:
+            raise Error(
+                "LineString at %s has one position — a line needs at "
+                "least two (RFC 7946 §3.1.4)" % where)
+        for p in coords:
+            yield position(p, where)
+    elif gtype == "MultiLineString":
+        for line in coords:
+            if not isinstance(line, (list, tuple)) or len(line) < 2:
+                raise Error(
+                    "MultiLineString part at %s has %s positions — "
+                    "every part is a LineString and needs at least two "
+                    "(RFC 7946 §3.1.5)"
+                    % (where,
+                       len(line) if isinstance(line, (list, tuple))
+                       else line))
+            for p in line:
+                yield position(p, where)
+    elif gtype == "Polygon":
+        for r in coords:
+            yield from ring(r, where)
+    else:  # MultiPolygon
+        for poly in coords:
+            if not isinstance(poly, (list, tuple)) or len(poly) == 0:
+                raise Error(
+                    "MultiPolygon part at %s has no rings — every part "
+                    "is a Polygon (RFC 7946 §3.1.7)" % where)
+            for r in poly:
+                yield from ring(r, where)
+
+
+def _positions(geometry, where):
+    """Yield (lng, lat) positions from a geometry, structure-validated
+    (ADR-0077) over the closed vocabulary (ADR-0076)."""
+    stats = {"geometries": 0, "positions": 0, "rings": 0,
+             "elevations": 0}
+    yield from _structure(geometry, where, stats)
+
+
+def _check_bbox(bbox, where, pts):
+    """A bbox, when present, must be well-formed and must CONTAIN its
+    own geometry (RFC 7946 §5). Antimeridian-crossing bboxes (minLng >
+    maxLng, §5.2) are refused with the reason named — outside the
+    export contract for the estate's theatres."""
+    if bbox is None:
+        return
+    if not (isinstance(bbox, (list, tuple)) and len(bbox) == 4
+            and all(isinstance(v, (int, float))
+                    and not isinstance(v, bool) for v in bbox)):
+        raise Error(
+            "bbox at %s is %r — exports are 2-D; a bbox is [minLng, "
+            "minLat, maxLng, maxLat] (RFC 7946 §5)" % (where, bbox))
+    if bbox[0] > bbox[2] or bbox[1] > bbox[3]:
+        raise Error(
+            "bbox at %s has min after max: %r — antimeridian-crossing "
+            "bboxes are outside the export contract; split the "
+            "geometry instead" % (where, list(bbox)))
+    for lng, lat in pts:
+        if not (bbox[0] <= lng <= bbox[2] and bbox[1] <= lat <= bbox[3]):
+            raise Error(
+                "bbox at %s does not contain its own geometry — %s,%s "
+                "lies outside %r; a bbox that contradicts its "
+                "positions is a lie with a checksum"
+                % (where, lng, lat, list(bbox)))
+
+
+def _check_structure(features):
+    """Fail-closed structural gate (ADR-0077): shape before range
+    before stamp. Returns the counts the member discloses."""
+    stats = {"geometries": 0, "positions": 0, "rings": 0,
+             "elevations": 0, "null_geometries": 0}
+    for i, feat in enumerate(features):
+        where = "feature %d" % i
+        geom = feat.get("geometry")
+        if geom is None:
+            stats["null_geometries"] += 1
+            pts = []
         else:
-            raise Error("malformed coordinates at %s" % where)
-
-    yield from walk(geometry.get("coordinates"))
+            pts = list(_structure(geom, where, stats))
+        _check_bbox(feat.get("bbox"), where, pts)
+        if geom is not None:
+            _check_bbox(geom.get("bbox"), where + " geometry", pts)
+    return stats
 
 
 def _check_coordinates(features):
@@ -151,10 +313,19 @@ def _check_coordinates(features):
     return n
 
 
+def distance_km(lat1, lng1, lat2, lng2):
+    """The sixth delegation (ADR-0077): coverage_gap_layer's private
+    closure haversine — the wave-14 census miss — is retired. The gate
+    package computes on the same contract it stamps."""
+    return geolock.distance_km(lat1, lng1, lat2, lng2)
+
+
 def collection(features, *, registry=None):
+    structure = _check_structure(features)
     checked = _check_coordinates(features)
     fc = {"type": "FeatureCollection", "features": features}
     fc["openhealth:geolock"] = _geolock_member(registry, features)
+    fc["openhealth:geolock"]["structure_checked"] = structure
     fc["openhealth:geolock"]["coordinates_checked"] = checked
     return fc
 
@@ -250,18 +421,13 @@ def coverage_gap_layer(facilities, households, max_km=5.0, k=K_ANONYMITY,
                        *, registry=None):
     """Households farther than max_km from ANY facility — the classic
     'where is care out of reach' layer. k-anonymised grid output.
-    Distances are spherical haversine (stated in routing.GEODESY_CONTRACT);
-    output cells are degree-grid coordinates, stated as ``cell_space``."""
-    def hav(a_lat, a_lng, b_lat, b_lng):
-        r = 6371.0
-        p1, p2 = math.radians(a_lat), math.radians(b_lat)
-        dp, dl = math.radians(b_lat - a_lat), math.radians(b_lng - a_lng)
-        a = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-        return 2 * r * math.asin(math.sqrt(a))
-
+    Distances delegate to geolock.distance_km (ADR-0077 — this layer's
+    private closure was the wave-14 census miss); output cells are
+    degree-grid coordinates, stated as ``cell_space``."""
     far = []
     for h in households:
-        nearest = min((hav(h["lat"], h["lng"], f["lat"], f["lng"])
+        nearest = min((distance_km(h["lat"], h["lng"],
+                                   f["lat"], f["lng"])
                        for f in facilities), default=None)
         if nearest is None or nearest > max_km:
             far.append({**h, "distance_km": nearest})
@@ -280,4 +446,11 @@ def coverage_gap_layer(facilities, households, max_km=5.0, k=K_ANONYMITY,
              "mean_distance_km": round(
                  sum(h["distance_km"] for h in hs) / len(hs), 1),
              "cell_space": "degree-grid"}))
-    return collection(feats, registry=registry)
+    fc = collection(feats, registry=registry)
+    fc["openhealth:geodesy"] = {
+        "basis": "geolock.GEODESY_CONTRACT via gisexport.distance_km — "
+                 "the gate computes on the contract it stamps",
+        "contract": geolock.GEODESY_CONTRACT,
+        "supersedes": "private closure haversine r=6371.0 — the wave-14 "
+                      "census miss, named not hidden (ADR-0077)"}
+    return fc

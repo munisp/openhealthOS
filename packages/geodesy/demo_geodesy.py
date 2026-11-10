@@ -17,6 +17,15 @@ the router's own stated contract equal to geolock's semantic core, so a
 future radius edit fails the suite instead of drifting silently. Four
 drills follow: two fail closed, two pass with the basis stated —
 silence was the defect, disclosure is the fix.
+
+geodesyproof-demo@1.1.0 (ADR-0077) — the census miss, stated. The
+wave-14 census found five private haversines and missed a SIXTH: a
+closure inside gisexport.coverage_gap_layer (r=6371.0), sitting in the
+very package that stamps exports. Wave-16 recon found it; it now
+delegates via gisexport.distance_km and takes its place as the seventh
+row of the matrix. A census is data, and a census that missed is
+stated — not quietly fixed. Five drills below; the fifth is the miss
+itself.
 """
 
 from __future__ import annotations
@@ -28,12 +37,13 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
-for _sib in ("geolock", "households", "kpiplane", "surveillance",
-             "routing"):
+for _sib in ("geolock", "gisexport", "households", "kpiplane",
+             "surveillance", "routing"):
     sys.path.insert(0, os.path.join(_HERE, "..", _sib))
 sys.path.insert(0, os.path.join(_HERE, "..", "..", "ml", "openhealth_ml"))
 
 import geolock  # noqa: E402
+import gisexport  # noqa: E402
 import households  # noqa: E402
 import kpiplane  # noqa: E402
 import outbreak  # noqa: E402
@@ -41,7 +51,7 @@ import visitplan  # noqa: E402
 import routing  # noqa: E402
 import catchment  # noqa: E402
 
-DEMO_VERSION = "geodesyproof-demo@1.0.0"
+DEMO_VERSION = "geodesyproof-demo@1.1.0"
 CLOCK = "2026-11-11T16:30:00Z"
 OUT = os.path.join(_HERE, "..", "..", "apps", "pwa", "geodesyproof.json")
 
@@ -93,10 +103,14 @@ def _refusal(fn):
 
 
 def _sites():
-    """The six callables that must agree bit-for-bit."""
+    """The seven callables that must agree bit-for-bit. The seventh —
+    gisexport.distance_km — is the wave-14 census miss: the gate
+    package now computes on the same contract it stamps (ADR-0077)."""
     return [
         ("geolock (owner)",
          lambda a, b: geolock.distance_km(a[0], a[1], b[0], b[1])),
+        ("gisexport.distance_km",
+         lambda a, b: gisexport.distance_km(a[0], a[1], b[0], b[1])),
         ("households.haversine_km",
          lambda a, b: households.haversine_km(a[0], a[1], b[0], b[1])),
         ("kpiplane._haversine_km",
@@ -189,6 +203,16 @@ def run_demo():
                               "stated 0.3%% band, disclosed in ADR-0075 "
                               "instead of swapped silently"
                               % (ppm, round(band_ppm / ppm))}},
+        {"name": "the wave-14 census missed a sixth private haversine",
+         "attack": "an incomplete census presented as complete",
+         "result": {"outcome": "stated",
+                    "detail": "census-miss-stated: gisexport."
+                              "coverage_gap_layer carried a private "
+                              "6371.0 closure the wave-14 sweep missed "
+                              "— found in wave-16 recon, retired, and "
+                              "added to this matrix as the seventh row. "
+                              "A census is data; a census that missed "
+                              "is stated, not quietly fixed"}},
     ]
 
     body = {
@@ -197,6 +221,7 @@ def run_demo():
         "banner": "Synthetic coordinates only — every measurement below "
                   "is production code exercising production refusals.",
         "versions": {"geolock": geolock.GEOLOCK_VERSION,
+                     "gisexport": gisexport.GIS_VERSION,
                      "households": households.HOUSEHOLDS_VERSION,
                      "kpiplane": kpiplane.KPIPLANE_VERSION,
                      "outbreak": outbreak.OUTBREAK_VERSION,
@@ -210,9 +235,12 @@ def run_demo():
         "control": control,
         "drills": drills,
         "honesty": {
-            "implementations_retired": 5,
+            "implementations_retired": 6,
             "radii_retired": ["private 6371.0 copies (households, "
                               "outbreak, visitplan)",
+                              "private 6371.0 closure (gisexport."
+                              "coverage_gap_layer — the wave-14 census "
+                              "miss, named)",
                               "IUGG mean 6371.0088 (kpiplane, "
                               "openhealth_ml.catchment)"],
             "one_function": "geolock.distance_km — every site delegates "

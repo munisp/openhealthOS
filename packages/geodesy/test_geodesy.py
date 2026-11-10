@@ -38,7 +38,7 @@ class TestGeodesyProof(unittest.TestCase):
     def test_payload_shape(self):
         body = demo_geodesy.run_demo()
         self.assertEqual(body["surface"], "geodesyproof")
-        self.assertEqual(len(body["convergence_matrix"]), 6)
+        self.assertEqual(len(body["convergence_matrix"]), 7)
         self.assertTrue(body["control"]["matrix_agrees_bit_for_bit"])
         rows = body["convergence_matrix"]
         self.assertEqual(len({tuple(r["legs_km"]) for r in rows}), 1)
@@ -61,11 +61,14 @@ class TestGeodesyProof(unittest.TestCase):
             body["control"]["reference_leg_km"]["true-antipodal"],
             20015.086796, places=4)
         drills = body["drills"]
-        self.assertEqual(len(drills), 4)
+        self.assertEqual(len(drills), 5)
         self.assertTrue(all(d["result"]["outcome"] == "refused"
                             for d in drills[:2]))
         self.assertTrue(all(d["result"]["outcome"] == "stated"
                             for d in drills[2:]))
+        # the fifth drill states the wave-14 census miss, by name
+        self.assertIn("census-miss-stated", drills[4]["result"]["detail"])
+        self.assertIn("gisexport", drills[4]["result"]["detail"])
         # the metre-space drill names the offender
         self.assertIn("376170.8", drills[0]["result"]["detail"])
 
