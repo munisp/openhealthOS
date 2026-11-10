@@ -1,0 +1,211 @@
+{
+  "banner": "Synthetic coordinates only — every engine below is production code exercising production refusals.",
+  "control": {
+    "adapter_call": {
+      "adapter": "terrio-cli",
+      "command_sha256": "16fa17418325f102055c341a38d201a6eb6d79f434bc04796ea6625ee444fda2",
+      "executed_at": "2026-11-11T14:00:00Z",
+      "result": {
+        "answer": "synthetic-cog-window",
+        "command": [
+          "info",
+          "s3://synthetic/cog.tif",
+          "--json"
+        ],
+        "sha256": "0e58b2343984cc6c92db10e05f2a39d106a728d9a10cef12bd236f48217830a3"
+      },
+      "status": "ok"
+    },
+    "catchment_area_km2": 4.0,
+    "facility_point": {
+      "crs": "EPSG:4326",
+      "sha256": "d9b60a8e2afde8140823983ce9a8617be0f015d07879115d4a03f69cf04db2e0",
+      "subject": "synthetic-facility",
+      "x": 3.3792,
+      "y": 6.5244
+    },
+    "facility_projected": {
+      "dst": "EPSG:32631",
+      "input": {
+        "x": 3.3792,
+        "y": 6.5244
+      },
+      "input_sha256": "44947cf6542a25abeee17fa56e353e903a4e9a353c6c0745acc499b7e70f5205",
+      "output": {
+        "x": 541924.3013987598,
+        "y": 721189.2172458901
+      },
+      "output_sha256": "5cd95e8ee93ba26fb26da6d1a030a4e880a36a2cf451fed196737007af26d94b",
+      "src": "EPSG:4326"
+    },
+    "known_answers": {
+      "status": "pinned",
+      "tolerance": 0.01,
+      "vectors": [
+        {
+          "dst": "EPSG:3857",
+          "error": 1.1641532182693481e-09,
+          "src": "EPSG:4326",
+          "status": "pinned",
+          "tolerance": 0.01,
+          "x": 3.3792,
+          "y": 6.5244
+        },
+        {
+          "dst": "EPSG:32631",
+          "error": 1.7306381775204216e-09,
+          "src": "EPSG:4326",
+          "status": "pinned",
+          "tolerance": 0.01,
+          "x": 3.3792,
+          "y": 6.5244
+        },
+        {
+          "dst": "EPSG:32632",
+          "error": 1.198803325801809e-06,
+          "src": "EPSG:4326",
+          "status": "pinned",
+          "tolerance": 0.01,
+          "x": 7.3986,
+          "y": 9.0765
+        },
+        {
+          "dst": "EPSG:32734",
+          "error": 5.8866874539800415e-05,
+          "src": "EPSG:4326",
+          "status": "pinned",
+          "tolerance": 0.01,
+          "x": 18.4241,
+          "y": -33.9249
+        },
+        {
+          "dst": "EPSG:32627",
+          "error": 1.1307479966280474e-05,
+          "src": "EPSG:4326",
+          "status": "pinned",
+          "tolerance": 0.01,
+          "x": -23.5133,
+          "y": 14.933
+        },
+        {
+          "dst": "EPSG:3857",
+          "error": 7.450580596923828e-09,
+          "src": "EPSG:4326",
+          "status": "pinned",
+          "tolerance": 0.01,
+          "x": 0.0,
+          "y": 85.05112878
+        }
+      ]
+    },
+    "roundtrip": {
+      "crs": "EPSG:32631",
+      "detail": "roundtrip within tolerance",
+      "drift_m": 1.56378373521018e-05,
+      "severity": "green",
+      "status": "pinned",
+      "tolerance_m": 0.001
+    },
+    "zone_inference": {
+      "lagos_lng_3.3792": 31
+    }
+  },
+  "demo": true,
+  "drills": [
+    {
+      "attack": "unregistered CRS transform",
+      "name": "a coordinate arrives in a CRS nobody registered",
+      "result": {
+        "outcome": "refused",
+        "reason": "unregistered CRS 'EPSG:99999' — absence is stated, never faked"
+      }
+    },
+    {
+      "attack": "area in a geographic CRS",
+      "name": "an area is demanded in degrees",
+      "result": {
+        "outcome": "refused",
+        "reason": "area in degrees is folklore — register a projected CRS (e.g. the UTM zone of the polygon) first"
+      }
+    },
+    {
+      "attack": "out-of-range coordinate",
+      "name": "a point claims the far side of the world",
+      "result": {
+        "outcome": "refused",
+        "reason": "coordinate out of range: 3.3792, 96.5244"
+      }
+    },
+    {
+      "attack": "UTM with missing params",
+      "name": "a UTM CRS is registered without its zone",
+      "result": {
+        "outcome": "refused",
+        "reason": "a UTM CRS needs zone (1-60) and hemisphere (N/S) — absence is not a value"
+      }
+    },
+    {
+      "attack": "unknown projection",
+      "name": "a projection outside the closed vocabulary",
+      "result": {
+        "outcome": "refused",
+        "reason": "unknown projection 'oblique-stereographic' — the vocabulary is closed; heavier engines compose through adapters"
+      }
+    },
+    {
+      "attack": "gdal-cli, zero approvers",
+      "name": "a template engine runs before ratification",
+      "result": {
+        "adapter": "gdal-cli",
+        "command_sha256": "f316aa5e2b62de95ab30d6ed721aeb7cd16493e3a10702a752697d26fdbe0ba3",
+        "detail": "adapter is template — a template engine carries no clinical geometry until two named approvers ratify it",
+        "executed_at": "2026-11-11T14:00:00Z",
+        "status": "refused"
+      }
+    },
+    {
+      "attack": "missing executor",
+      "name": "a ratified engine has no wire",
+      "result": {
+        "adapter": "terrio-cli",
+        "command_sha256": "112a49417b8fa14b863c034e49ba50325be354a53ff79dc29fb162b596dcbe8f",
+        "detail": "no executor injected — a missing wire is stated, never faked",
+        "executed_at": "2026-11-11T14:00:00Z",
+        "status": "not-run"
+      }
+    },
+    {
+      "attack": "executor error",
+      "name": "the engine fails mid-command",
+      "result": {
+        "adapter": "terrio-cli",
+        "command_sha256": "112a49417b8fa14b863c034e49ba50325be354a53ff79dc29fb162b596dcbe8f",
+        "detail": "executor error: RuntimeError: simulated engine failure — stated, never swallowed",
+        "executed_at": "2026-11-11T14:00:00Z",
+        "status": "not-run"
+      }
+    }
+  ],
+  "generated_at": "2026-11-11T14:00:00Z",
+  "honesty": {
+    "absence_is_not_a_value": "a failed engine call is stated NOT RUN — never an empty result",
+    "area_needs_projection": "area in degrees is refused — degrees are not distances",
+    "crs_as_data": "every CRS is a registry entry — WGS-84 and Web Mercator seeded, UTM zones deployment-registered; the zone follows the coordinate, not the codebase",
+    "engine_never_embedded": "terrio/GDAL compose via ratified adapters + injected executor; nothing is embedded (ADR-0005)",
+    "known_answers_are_data": "every projection is pinned by control vectors verified against PROJ at pin time, tolerance stated"
+  },
+  "registry": {
+    "adapters": 2,
+    "deployment_registered": 4,
+    "kat_tolerance_m": 0.01,
+    "kat_vectors": 6,
+    "seeded": 2,
+    "systems": 6
+  },
+  "sha256": "7f46e8c8bc01b611e5721e94f8e72eee82328fcd9353578ac10fd610ba391f07",
+  "surface": "geoproof",
+  "versions": {
+    "exporter": "geoproof-demo@1.0.0",
+    "geolock": "geolock@1.0.0"
+  }
+}

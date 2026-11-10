@@ -72,6 +72,17 @@
         "payload_version": null
       },
       {
+        "path": "apps/pwa/geoproof.json",
+        "title": "Coordinate-governance proof",
+        "contract": "compact",
+        "exporter": "packages/geolock/demo_geolock.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "7f46e8c8bc01b611e5721e94f8e72eee82328fcd9353578ac10fd610ba391f07",
+        "payload_version": null
+      },
+      {
         "path": "apps/pwa/agentwrite.json",
         "title": "Agent-write stack",
         "contract": "compact",
@@ -249,8 +260,8 @@
       }
     ],
     "summary": {
-      "total": 22,
-      "verified": 22,
+      "total": 23,
+      "verified": 23,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -258,8 +269,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 23,
-      "registered": 22,
+      "stamped_on_disk": 24,
+      "registered": 23,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -270,7 +281,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 14,
+      "compact": 15,
       "spaced-utf8": 8
     }
   },
@@ -324,5 +335,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "66c7880a3f746e44aac0314c272ebc8db4d0fc2d7ba90ab836220132655526dc"
+  "sha256": "a68a34c037260865a216906ad3c9e81e3f14e0a7aed30214faae37bcd590bae2"
 }

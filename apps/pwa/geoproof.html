@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geoproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Geoproof — coordinates under contract, projections pinned by known answers</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. The coordinates below are fixtures, never a real facility. The machinery exercised — CRS registry, pinned projection formulas, coordinate contracts, area gates, ratified heavy-I/O adapters — is the production code. Heavy engines (terrio, GDAL) are never embedded: they compose as ratified adapters over an injected wire, and a failed engine call is stated NOT RUN — never an empty result.</div>
+
+  <div class="card">
+    <h2>The control — known answers pinned, roundtrip within tolerance, area in metres</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-crs"></div><div class="kpi-label">CRSs registered</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-kat"></div><div class="kpi-label">KAT vectors pinned</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-area"></div><div class="kpi-label">catchment km²</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The registry — CRSs and engines as data</h2>
+    <div id="registry"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — eight attacks on the coordinate seam, eight named outcomes</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Known answers are data</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Engine never embedded</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./geoproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  $("k-crs").textContent = p.registry.systems;
+  $("k-kat").textContent = c.known_answers.vectors.filter((v) => v.status === "pinned").length + "/" + c.known_answers.vectors.length;
+  $("k-drills").textContent = p.drills.length;
+  $("k-area").textContent = c.catchment_area_km2;
+  const fp = c.facility_projected;
+  $("control-note").textContent =
+    "synthetic facility (3.3792°E, 6.5244°N) → UTM 31N E " +
+    fp.output.x.toFixed(1) + " N " + fp.output.y.toFixed(1) +
+    " · roundtrip drift " + c.roundtrip.drift_m.toExponential(1) + " m ≤ " +
+    c.roundtrip.tolerance_m + " m · zone inference: lng 3.3792 → zone " +
+    c.zone_inference["lagos_lng_3.3792"] +
+    " · adapter call: " + c.adapter_call.status;
+
+  $("registry").innerHTML =
+    `<div class="row"><b>seeded CRSs</b><span class="mono">EPSG:4326 (WGS 84) · EPSG:3857 (Web Mercator)</span></div>` +
+    `<div class="row"><b>deployment CRSs</b><span class="mono">${p.registry.deployment_registered} UTM zones registered as data — the zone follows the coordinate, not the codebase</span></div>` +
+    `<div class="row"><b>known-answer vectors</b><span class="mono">${p.registry.kat_vectors} control points · tolerance ${p.registry.kat_tolerance_m} m · verified against PROJ at pin time</span></div>` +
+    `<div class="row"><b>heavy-I/O adapters</b><span class="mono">${p.registry.adapters} template entries (terrio-cli, gdal-cli) — ratified four-eyes, injected executor, never embedded</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const outcome = r.outcome || r.status;
+    const badge = outcome === "refused" ? "ok" : "warn";
+    const detail = r.reason || r.detail || "";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(outcome)}</span>
+     <br><span style="opacity:.8">${esc(detail)}</span></div>`;
+  }).join("") +
+  `<div class="mono" style="margin-top:6px">eight attacks on the coordinate seam — refused or stated not-run; none silent</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("h1").textContent = p.honesty.known_answers_are_data;
+  $("h2").textContent = p.honesty.engine_never_embedded;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>
