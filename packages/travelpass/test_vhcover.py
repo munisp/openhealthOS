@@ -108,8 +108,14 @@ class TestVerdicts(unittest.TestCase):
     def test_tampered_qr_is_red_not_a_crash(self):
         reg = _cv()
         cover = _buy(reg)
-        bad = cover["qr"][:-2] + ("xx" if not cover["qr"].endswith("xx")
-                                  else "yy")
+        # Flip a fully-significant signature character. (Tail tampers on
+        # an unpadded base64url segment are caught even earlier — as
+        # "non-canonical encoding" — because the final char carries
+        # spare bits; see test_vhtamper.py.)
+        pos = len(cover["qr"]) - 3
+        bad = (cover["qr"][:pos]
+               + ("x" if cover["qr"][pos] != "x" else "y")
+               + cover["qr"][pos + 1:])
         v = reg.verify(bad, day=20)
         self.assertEqual(v["verdict"], "red")
         self.assertIn("unverifiable: bad signature", v["reasons"])

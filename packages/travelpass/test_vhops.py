@@ -203,7 +203,11 @@ class TestOfflinePwa(unittest.TestCase):
                                            "apps", "pwa"))
         with open(os.path.join(pwa, "sw-vhc.js"), encoding="utf-8") as fh:
             body = fh.read()
-        self.assertIn("vhc-shell-v1", body)
+        # the shell cache is versioned and bumped on any shell change —
+        # pin the practice (a vhc-shell-vN name + eviction of stale
+        # caches), not a specific version number
+        self.assertRegex(body, r'vhc-shell-v\d+')
+        self.assertIn("caches.delete", body)
         self.assertIn("stale-cache", body)
 
 

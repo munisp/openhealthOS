@@ -30,7 +30,7 @@ import json
 import secrets
 import time
 
-VHCOVER_VERSION = "vhcover@1.0.0"
+VHCOVER_VERSION = "vhcover@1.1.0"
 
 # Versioned country profiles — a rule that cannot be traced to a table
 # is a bribe with a receipt. Model "block": ceil(days/block_days) blocks
@@ -347,6 +347,21 @@ def read_qr(token, *, key_ring, day):
     parts = token.split(".")
     if len(parts) != 3:
         return None, False, ["unverifiable: malformed"]
+    # Canonical-form gate: the checksum is the contract, and the contract
+    # covers the STRING presented, not just the bytes it decodes to.
+    # Base64url without padding carries non-significant low bits in the
+    # final character of any segment whose decoded length is not a
+    # multiple of three — a tampered string can decode to the identical
+    # bytes and slip a green verdict. Re-encode and demand byte-identity
+    # with the presented segment. (A segment that does not decode at all
+    # is left to the segment-specific checks below, which name it.)
+    for seg in parts:
+        try:
+            raw = _b64u_dec(seg)
+        except VHCError:
+            continue
+        if _b64u(raw) != seg:
+            return None, False, ["unverifiable: non-canonical encoding"]
     try:
         header = json.loads(_b64u_dec(parts[0]))
     except Exception:

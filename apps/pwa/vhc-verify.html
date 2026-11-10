@@ -77,6 +77,15 @@
 <script>
 const b64u = s => Uint8Array.from(atob(s.replace(/-/g,"+").replace(/_/g,"/") +
   "===".slice((s.length+3)%4)), c => c.charCodeAt(0));
+const b64uEnc = b => btoa(Array.from(b, c => String.fromCharCode(c)).join(""))
+  .replace(/\+/g,"-").replace(/\//g,"_").replace(/=+$/,"");
+/* Canonical-form gate, mirroring vhcover.read_qr: base64url without
+ * padding carries non-significant low bits in a segment's final char —
+ * a tampered string can decode to identical bytes. The checksum is the
+ * contract over the STRING presented. Returns true=canonical,
+ * false=non-canonical, null=undecodable (the segment checks name it). */
+const canonical = s => { let d; try { d = b64u(s); } catch { return null; }
+  return b64uEnc(d) === s; };
 const enc = new TextEncoder();
 let CACHE = null;
 
@@ -105,6 +114,8 @@ async function verify(){
   const parts = token.split(".");
   let claims = null, ok = false;
   if (parts.length !== 3) reasons.push("unverifiable: malformed");
+  else if (parts.some(p => canonical(p) === false))
+    reasons.push("unverifiable: non-canonical encoding");
   else {
     let header;
     try { header = JSON.parse(new TextDecoder().decode(b64u(parts[0]))); }
