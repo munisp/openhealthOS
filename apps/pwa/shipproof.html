@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ship gate — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Ship gate — readiness as evidence, not adjectives</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. "Demo" refers to the DATA on this page: real patient data must never appear on a screenshot-verifiable board. The machinery being assessed is the production code. There is deliberately no "production ready" verdict — the strongest word this gate has is <b>proven</b>, and a claim without evidence is red.</div>
+
+  <div class="card">
+    <h2>The verdict — three words, no more</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-total"></div><div class="kpi-label">capabilities</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-proven"></div><div class="kpi-label">proven</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-remainder"></div><div class="kpi-label">stated remainder</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-unsub"></div><div class="kpi-label">unsubstantiated</div></div>
+    </div>
+    <div class="mono" id="verdict-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Every capability — evidence in, remainders named and owned</h2>
+    <div id="caps"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — the gate attacked with marketing</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Honesty</b><span class="mono" id="honesty"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function capCard(c) {
+  const badge = c.severity === "green" ? "ok" : (c.severity === "amber" ? "warn" : "bad");
+  const ev = c.evidence.map((e) =>
+    `<span class="badge">${esc(e.kind)}</span>`).join(" ");
+  const outs = c.outstanding.map((o) =>
+    `<div class="mono" style="opacity:.8;margin:2px 0 0 12px">— ${esc(o.item)}: needs ${esc(o.needs)} · owner: <b>${esc(o.owner)}</b></div>`).join("");
+  return `<div class="row"><b>${esc(c.title)}</b>
+    <span><span class="badge ${badge}">${esc(c.verdict)}</span> ${ev}</span></div>
+    <div class="mono" style="opacity:.7;margin:-4px 0 4px">${esc(c.layer)}</div>
+    ${outs ? outs : ""}`;
+}
+
+fetch("./shipproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const s = p.assessment.summary;
+  $("k-total").textContent = s.total;
+  $("k-proven").textContent = s.proven;
+  $("k-remainder").textContent = s.stated_remainder;
+  $("k-unsub").textContent = s.unsubstantiated;
+  $("verdict-note").textContent =
+    "production-engineered: " + s.proven + " proven · " + s.stated_remainder +
+    " with named, owned remainders (none are code — they need real partners, devices and regulators) · " +
+    s.unsubstantiated + " unsubstantiated claims";
+
+  $("caps").innerHTML = p.assessment.capabilities.map(capCard).join("");
+  $("drills").innerHTML = p.drills.map((d) =>
+    `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.verdict)}</b> <span class="badge bad">red</span>
+     <br><span style="opacity:.8">${esc(d.note)}</span></div>`).join("") +
+    `<div class="mono" style="margin-top:6px">two attacks on the gate itself, two named refusals</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("honesty").textContent = p.honesty.no_blanket_verdict;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

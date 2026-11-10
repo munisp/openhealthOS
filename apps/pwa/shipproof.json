@@ -1,0 +1,324 @@
+{
+  "version": "shipproof-demo@1.0.0",
+  "generated_at": "2026-11-10T11:00:00Z",
+  "assessment": {
+    "version": "shipgate@1.0.0",
+    "capabilities": [
+      {
+        "id": "audit-chain",
+        "title": "Audit chain + Merkle anchors",
+        "layer": "packages/auditlake",
+        "verdict": "proven",
+        "severity": "green",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "packages/auditlake tests"
+          },
+          {
+            "kind": "determinism",
+            "ref": "anchorproof demo \u2014 byte-identical reruns"
+          }
+        ],
+        "outstanding": []
+      },
+      {
+        "id": "external-notary",
+        "title": "External root publication (anti whole-chain-rewrite)",
+        "layer": "packages/ledgeranchor",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "25 ledgeranchor tests"
+          },
+          {
+            "kind": "determinism",
+            "ref": "anchorproof-demo \u2014 history-rewritten demonstrated"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "fabric-gateway consortium backend",
+            "needs": "a real consortium network with sovereign peers (ADR-0069: ECOWAS corridor is the qualifying case)",
+            "owner": "partner"
+          }
+        ]
+      },
+      {
+        "id": "offline-qr-verify",
+        "title": "Offline cover verification (QR + canonical gate)",
+        "layer": "packages/travelpass vhcover + qrtrust",
+        "verdict": "proven",
+        "severity": "green",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "exhaustive single-char tamper sweep + garbage sweeps"
+          },
+          {
+            "kind": "determinism",
+            "ref": "tamperproof demo \u2014 byte-identical reruns"
+          }
+        ],
+        "outstanding": []
+      },
+      {
+        "id": "proof-index",
+        "title": "Evidence self-verification (the meta layer)",
+        "layer": "packages/proofindex",
+        "verdict": "proven",
+        "severity": "green",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "22 proofindex tests"
+          },
+          {
+            "kind": "determinism",
+            "ref": "12-exporter byte-determinism meta gate"
+          }
+        ],
+        "outstanding": []
+      },
+      {
+        "id": "psp-settlement",
+        "title": "PSP settlement file adapters",
+        "layer": "packages/travelpass vhpsp",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "wire-conformance",
+            "ref": "Paystack/Flutterwave/Stripe/M-Pesa export shapes as four-eyes-ratified template adapters"
+          },
+          {
+            "kind": "determinism",
+            "ref": "deployproof demo"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "live certification",
+            "needs": "real settlement exports from each PSP parsed in production",
+            "owner": "partner"
+          }
+        ]
+      },
+      {
+        "id": "hsm-custody",
+        "title": "Signing-key custody (PKCS#11)",
+        "layer": "packages/vhpkcs11 + pkcs11_provider",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "wire-conformance",
+            "ref": "Cryptoki v2.40 ABI proven against compiled mock through the provider and keyring"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "device certification",
+            "needs": "a real HSM device on the production host",
+            "owner": "operations"
+          }
+        ]
+      },
+      {
+        "id": "ease-rail",
+        "title": "EASE production rail",
+        "layer": "packages/travelpass vhease",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "SqliteOutbox persist-before-send + restart replay under the original idempotency key"
+          },
+          {
+            "kind": "determinism",
+            "ref": "deployproof demo"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "production endpoint certification",
+            "needs": "the operator's live EASE endpoint accepting submissions",
+            "owner": "operations"
+          }
+        ]
+      },
+      {
+        "id": "erp-bridges",
+        "title": "ERP bridges (ERPNext + Odoo)",
+        "layer": "packages/erpnext-bridge + odoo-bridge",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "wire-conformance",
+            "ref": "real wire protocols against in-process fakes"
+          },
+          {
+            "kind": "storm",
+            "ref": "erpstorm: 10k events, offline window, replay \u2014 exactly-once, order preserved"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "live server certification",
+            "needs": "a real ERPNext/Odoo instance on the customer's infrastructure",
+            "owner": "operations"
+          }
+        ]
+      },
+      {
+        "id": "sync-engine",
+        "title": "Offline-first sync engine",
+        "layer": "packages/syncmesh + syncgate.js",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "storm",
+            "ref": "syncstorm: 1M mutations / 2,000 devices \u2014 exactly-once, zero lost verdicts"
+          },
+          {
+            "kind": "test-suite",
+            "ref": "77 syncmesh tests"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "managed sync service",
+            "needs": "a PowerSync (or self-hosted equivalent) service deployment",
+            "owner": "operations"
+          }
+        ]
+      },
+      {
+        "id": "whatsapp-lane",
+        "title": "WhatsApp engagement lane (howUdeyChat)",
+        "layer": "howUdeyChat wagateway@1.1.0",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "webhook dedupe, status monotonicity, template registry, messaging-tier caps"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "Meta Business approval",
+            "needs": "approved business account + production number",
+            "owner": "operations"
+          }
+        ]
+      },
+      {
+        "id": "ussd-lane",
+        "title": "USSD engagement lane",
+        "layer": "howUdeyChat ussdwire",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "session state machine + delivery ladder tests"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "aggregator contract",
+            "needs": "a signed aggregator (e.g. Africa's Talking) shortcode in each market",
+            "owner": "partner"
+          }
+        ]
+      },
+      {
+        "id": "agent-write",
+        "title": "Agent write path (AI-assisted charting)",
+        "layer": "packages/agentwrite + writegate + fhirguard",
+        "verdict": "proven",
+        "severity": "green",
+        "evidence": [
+          {
+            "kind": "test-suite",
+            "ref": "scripted-reviewer conformance harness incl. broken-gate negative test"
+          },
+          {
+            "kind": "determinism",
+            "ref": "agentwrite demo"
+          }
+        ],
+        "outstanding": []
+      },
+      {
+        "id": "regulatory",
+        "title": "Regulatory clearance",
+        "layer": "outside the codebase \u2014 stated, never implied",
+        "verdict": "stated-remainder",
+        "severity": "amber",
+        "evidence": [
+          {
+            "kind": "external-review",
+            "ref": "none yet \u2014 this row exists so absence is stated"
+          }
+        ],
+        "outstanding": [
+          {
+            "item": "health-authority review",
+            "needs": "ministry / NAFDAC-class review of clinical content and data protection posture",
+            "owner": "regulator"
+          },
+          {
+            "item": "data-protection registration",
+            "needs": "NDPC-class registration per operating market",
+            "owner": "regulator"
+          }
+        ]
+      }
+    ],
+    "summary": {
+      "total": 13,
+      "proven": 4,
+      "stated_remainder": 9,
+      "unsubstantiated": 0,
+      "all_substantiated": true,
+      "all_remainders_owned": true
+    }
+  },
+  "drills": [
+    {
+      "attack": "claim with no evidence",
+      "expected": "unsubstantiated",
+      "verdict": "unsubstantiated",
+      "severity": "red",
+      "note": "'world-class' with an empty evidence list is unsubstantiated \u2014 the gate cannot be greened by adjectives"
+    },
+    {
+      "attack": "remainder with no owner",
+      "expected": "refused",
+      "verdict": "refused",
+      "severity": "red",
+      "note": "outstanding 'certification' on drill-orphan has no named owner \u2014 an unowned remainder is a defect"
+    }
+  ],
+  "flags": {
+    "all_substantiated": true,
+    "all_remainders_owned": true,
+    "drills_named": true
+  },
+  "honesty": {
+    "why_demo": "the DATA on every evidence board is synthetic and deterministic \u2014 real patient data must never appear on a screenshot-verifiable page; the machinery being exercised is the production code",
+    "no_blanket_verdict": "the strongest word this gate has is 'proven' \u2014 there is no 'production ready' verdict, because readiness is a property of evidence, not of ambition"
+  },
+  "versions": {
+    "shipgate": "shipgate@1.0.0",
+    "demo": "shipproof-demo@1.0.0"
+  },
+  "sha256": "e59f9c5fec6488e7172e74df68b2fc8489249acdc439749c3c8bcc327c712cf4"
+}

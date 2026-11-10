@@ -39,6 +39,17 @@
         "payload_version": "anchorproof-demo@1.0.0"
       },
       {
+        "path": "apps/pwa/shipproof.json",
+        "title": "Production-readiness gate",
+        "contract": "compact",
+        "exporter": "packages/shipgate/demo_shipgate.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "e59f9c5fec6488e7172e74df68b2fc8489249acdc439749c3c8bcc327c712cf4",
+        "payload_version": "shipproof-demo@1.0.0"
+      },
+      {
         "path": "apps/pwa/agentwrite.json",
         "title": "Agent-write stack",
         "contract": "compact",
@@ -216,8 +227,8 @@
       }
     ],
     "summary": {
-      "total": 19,
-      "verified": 19,
+      "total": 20,
+      "verified": 20,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -225,8 +236,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 20,
-      "registered": 19,
+      "stamped_on_disk": 21,
+      "registered": 20,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -237,7 +248,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 11,
+      "compact": 12,
       "spaced-utf8": 8
     }
   },
@@ -291,5 +302,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "d3d18b7f6c13accc3f30ce26e9f128a558cf3e545f4418e26834dd7b3d75088a"
+  "sha256": "8267884733be6cb8b3414f29c5ac2ab8ee5964d57a81470f7d52f3b4f95ee443"
 }
