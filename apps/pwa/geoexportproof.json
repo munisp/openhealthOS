@@ -1,0 +1,90 @@
+{
+  "banner": "Synthetic households only — the register below is fixture, never a real person. The machinery exercised — the export coordinate gate, the governed members, the digest — is the production code.",
+  "control": {
+    "census": {
+      "method": "estate-wide grep for raw Feature/FeatureCollection construction outside the governed path — one site (households.to_geojson) found and adopted; apps JS and CSV writers carry no coordinates",
+      "raw_geojson_sites_after": 0,
+      "raw_geojson_sites_before": 1
+    },
+    "governed_export": {
+      "anonymized": true,
+      "basis": "registry-governed",
+      "coordinates_checked": 8,
+      "features": 8,
+      "features_sha256": "1453d8c28c5dc153a1af814adb83cc157ac364dcab808aab120c679c0fd78424",
+      "governed": true,
+      "quantization": "5 decimal places (~1.1 m at the equator) — planning-map precision, stated"
+    },
+    "privacy_floor": {
+      "identified_export_states_it": true,
+      "raw_ids_in_anonymized_export": false
+    }
+  },
+  "demo": true,
+  "drills": [
+    {
+      "attack": "EPSG:3857 coordinates as degrees at the door",
+      "name": "a metre-space household is registered",
+      "result": {
+        "detail": "ValueError: invalid coordinates: lat=727867.6 lon=376170.8 — degrees are WGS-84 lat/lng; metre-space coordinates are not degrees, reproject first (geolock.transform)",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "collection() with a hand-built EPSG:3857 Point",
+      "name": "a caller-built feature smuggles a metre-space point past the layer helpers",
+      "result": {
+        "detail": "Error: coordinate out of range at feature 0: 376170.8,727867.6 — metre-space coordinates are not degrees; reproject first (geolock.transform)",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "GeometryCollection at the export gate",
+      "name": "a geometry outside the closed vocabulary arrives",
+      "result": {
+        "detail": "Error: geometry type 'GeometryCollection' at feature 0 is outside the closed export vocabulary ('Point', 'MultiPoint', 'LineString', 'MultiLineString', 'Polygon', 'MultiPolygon') — an ungated geometry is an unstamped one",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "members 1 -> 99 post-export",
+      "name": "a feature is tampered with after the stamp",
+      "result": {
+        "detail": "recomputed features digest c345085006fd… != stamped 1453d8c28c5d… — the checksum catches it",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "ungoverned planning-map export",
+      "name": "an export runs with no registry injected",
+      "result": {
+        "detail": "basis is rfc-7946-default-stated and quantization is stated — the default is disclosed on the artifact, not assumed",
+        "outcome": "stated"
+      }
+    },
+    {
+      "attack": "anonymize=False for a named worklist",
+      "name": "a caller requests an identified export",
+      "result": {
+        "detail": "the artifact carries anonymized: false ON ITS FACE — the privacy downgrade is data, never silence (household id HH-DEMO-00 present by explicit choice)",
+        "outcome": "stated"
+      }
+    }
+  ],
+  "generated_at": "2026-11-11T17:00:00Z",
+  "honesty": {
+    "census_is_data": "raw-GeoJSON sites: 1 before, 0 after — the seam is adopted by its own estate, or it is decoration",
+    "checksum_presumes_deserving_bytes": "the gate validates every coordinate BEFORE the stamp — a governed-looking digest over a metre-space feature was the hole",
+    "closed_vocabulary": "geometry types are a closed set; GeometryCollection is refused until a caller needs it — an ungated geometry is an unstamped one",
+    "defence_in_depth": "registration refuses bad coordinates with the offender named (first wall); the export gate re-checks caller-built features (second wall)",
+    "privacy_as_data": "anonymization and 5dp quantization are foreign members on the artifact — a planner holding the file knows exactly what they are holding"
+  },
+  "sha256": "2f0e95c67a5169de941eab719b0ea1eb604936eff44d4238d7a6eb6442e1b95e",
+  "surface": "geoexportproof",
+  "versions": {
+    "exporter": "geoexportproof-demo@1.0.0",
+    "geolock": "geolock@1.1.0",
+    "gisexport": "gisexport@1.2.0",
+    "households": "households@1.2.0"
+  }
+}

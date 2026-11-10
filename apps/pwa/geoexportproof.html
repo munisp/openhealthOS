@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Geoexportproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Geoexportproof — every export through the governed gate</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic households only — the register below is fixture, never a real person. The machinery exercised — the export coordinate gate, the governed members, the digest — is the production code. The estate's last raw-GeoJSON site adopted the governed exporter this wave; the census is stated as data below. Silence was the defect; disclosure is the fix.</div>
+
+  <div class="card">
+    <h2>The control — one governed household export, checked before stamped</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-sites"></div><div class="kpi-label">raw sites left</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-checked"></div><div class="kpi-label">positions checked</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-gov"></div><div class="kpi-label">governed</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The census — the seam adopted by its own estate</h2>
+    <div id="census"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — four fail closed, two pass with the basis stated</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Features sha256</b><span class="mono" id="fsha"></span></div>
+    <div class="row"><b>Checksum presumes deserving bytes</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Privacy as data</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./geoexportproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  const g = c.governed_export;
+  $("k-sites").textContent = c.census.raw_geojson_sites_after;
+  $("k-checked").textContent = g.coordinates_checked;
+  $("k-gov").textContent = g.governed ? "yes" : "NO";
+  $("k-drills").textContent = p.drills.length;
+  $("control-note").textContent =
+    "basis " + g.basis + " · " + g.features + " features · quantization " +
+    g.quantization + " · anonymized: " + g.anonymized +
+    " · privacy floor: raw ids in anonymized export = " +
+    c.privacy_floor.raw_ids_in_anonymized_export;
+
+  $("census").innerHTML =
+    `<div class="row"><b>raw GeoJSON sites before</b><span class="mono">${esc(c.census.raw_geojson_sites_before)}</span></div>` +
+    `<div class="row"><b>raw GeoJSON sites after</b><span class="mono">${esc(c.census.raw_geojson_sites_after)}</span></div>` +
+    `<div class="row"><b>method</b><span class="mono" style="opacity:.8">${esc(c.census.method)}</span></div>` +
+    `<div class="row"><b>identified export states it</b><span class="mono">${esc(c.privacy_floor.identified_export_states_it)}</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const badge = r.outcome === "refused" ? "ok" : "warn";
+    const detail = r.reason || r.detail || "";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(r.outcome)}</span>
+     <br><span style="opacity:.8">${esc(detail)}</span></div>`;
+  }).join("") +
+  `<div class="mono" style="margin-top:6px">six attacks on the export seam — refused or stated; none silent</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("fsha").textContent = g.features_sha256;
+  $("h1").textContent = p.honesty.checksum_presumes_deserving_bytes;
+  $("h2").textContent = p.honesty.privacy_as_data;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

@@ -24,6 +24,12 @@ gisexport@1.1.0 (ADR-0074) — the CRS layer is no longer silent:
   registry the cell's points are projected to their UTM zone, averaged
   in metres, and transformed back (``centroid_space: utm-metres``).
   Folklore is named, never hidden.
+
+gisexport@1.2.0 (ADR-0076) — the export gate: ``collection()`` range-
+validates every coordinate in every feature BEFORE stamping, over a
+closed geometry vocabulary, with the offender named. The checksum is
+the contract — and the checksum presumes bytes that deserve it. The
+member states how many positions were checked.
 """
 
 import hashlib
@@ -37,7 +43,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)),
 
 import geolock  # noqa: E402
 
-GIS_VERSION = "gisexport@1.1.0"
+GIS_VERSION = "gisexport@1.2.0"
 
 K_ANONYMITY = 5  # suppress cells below this count
 
@@ -91,9 +97,65 @@ def _feature(lng, lat, properties):
             "properties": properties}
 
 
+#: Closed geometry vocabulary for the export gate (ADR-0076).
+#: GeometryCollection is refused until a caller needs it — a nested
+#: geometry nobody uses is a gate nobody tested.
+GEOMETRY_TYPES = ("Point", "MultiPoint", "LineString",
+                  "MultiLineString", "Polygon", "MultiPolygon")
+
+
+def _positions(geometry, where):
+    """Yield (lng, lat) positions from a geometry, refusing anything
+    outside the closed vocabulary. A null geometry is legal RFC 7946
+    (§3.2) and yields nothing — absence is stated, not validated."""
+    if geometry is None:
+        return
+    gtype = geometry.get("type")
+    if gtype not in GEOMETRY_TYPES:
+        raise Error(
+            "geometry type %r at %s is outside the closed export "
+            "vocabulary %s — an ungated geometry is an unstamped one"
+            % (gtype, where, GEOMETRY_TYPES))
+
+    def walk(node):
+        if (isinstance(node, (list, tuple)) and len(node) >= 2
+                and all(isinstance(v, (int, float))
+                        and not isinstance(v, bool) for v in node[:2])):
+            yield node[0], node[1]
+        elif isinstance(node, (list, tuple)):
+            for child in node:
+                yield from walk(child)
+        else:
+            raise Error("malformed coordinates at %s" % where)
+
+    yield from walk(geometry.get("coordinates"))
+
+
+def _check_coordinates(features):
+    """Fail-closed coordinate gate (ADR-0076): every position in every
+    feature is range-validated BEFORE the collection is stamped. The
+    checksum is the contract — and the checksum presumes bytes that
+    deserve it. A metre-space extract used to sail through collection()
+    and get a governed-looking stamp; now the offender is named.
+    Returns the number of positions checked (stated on the member)."""
+    n = 0
+    for i, feat in enumerate(features):
+        for lng, lat in _positions(feat.get("geometry"),
+                                   "feature %d" % i):
+            if not (-180 <= lng <= 180 and -90 <= lat <= 90):
+                raise Error(
+                    "coordinate out of range at feature %d: %s,%s — "
+                    "metre-space coordinates are not degrees; reproject "
+                    "first (geolock.transform)" % (i, lng, lat))
+            n += 1
+    return n
+
+
 def collection(features, *, registry=None):
+    checked = _check_coordinates(features)
     fc = {"type": "FeatureCollection", "features": features}
     fc["openhealth:geolock"] = _geolock_member(registry, features)
+    fc["openhealth:geolock"]["coordinates_checked"] = checked
     return fc
 
 

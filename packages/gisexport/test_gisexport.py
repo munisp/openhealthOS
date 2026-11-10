@@ -148,5 +148,82 @@ class TestGeolockContract(unittest.TestCase):
         self.assertNotIn("7.5", str(fc))
 
 
+def _pt(lng, lat):
+    return {"type": "Feature",
+            "geometry": {"type": "Point", "coordinates": [lng, lat]},
+            "properties": {}}
+
+
+class TestCoordinateGate(unittest.TestCase):
+    """ADR-0076: collection() range-validates every position BEFORE the
+    stamp, over a closed geometry vocabulary, with the offender named.
+    The checksum is the contract — it presumes bytes that deserve it."""
+
+    def test_valid_collection_passes_and_counts(self):
+        feats = [_pt(3.37, 6.52),
+                 {"type": "Feature",
+                  "geometry": {"type": "LineString",
+                               "coordinates": [[3.37, 6.52],
+                                               [3.38, 6.53]]},
+                  "properties": {}},
+                 {"type": "Feature",
+                  "geometry": {"type": "Polygon",
+                               "coordinates": [[[3.0, 6.0], [3.1, 6.0],
+                                                [3.1, 6.1], [3.0, 6.0]]]},
+                  "properties": {}}]
+        fc = gx.collection(feats, registry=_registry())
+        self.assertEqual(
+            fc["openhealth:geolock"]["coordinates_checked"], 7)
+
+    def test_metre_space_point_refused_named(self):
+        with self.assertRaises(gx.Error) as ctx:
+            gx.collection([_pt(376170.8, 727867.6)])
+        self.assertIn("376170.8", str(ctx.exception))
+        self.assertIn("feature 0", str(ctx.exception))
+
+    def test_interior_linestring_vertex_refused(self):
+        bad = {"type": "Feature",
+               "geometry": {"type": "LineString",
+                            "coordinates": [[3.37, 6.52],
+                                            [376170.8, 727867.6]]},
+               "properties": {}}
+        with self.assertRaises(gx.Error) as ctx:
+            gx.collection([_pt(3.37, 6.52), bad])
+        self.assertIn("feature 1", str(ctx.exception))
+
+    def test_polygon_ring_refused(self):
+        bad = {"type": "Feature",
+               "geometry": {"type": "Polygon",
+                            "coordinates": [[[3.0, 6.0], [3.1, 691.0],
+                                             [3.1, 6.1], [3.0, 6.0]]]},
+               "properties": {}}
+        with self.assertRaises(gx.Error) as ctx:
+            gx.collection([bad])
+        self.assertIn("691", str(ctx.exception))
+
+    def test_unknown_geometry_type_refused(self):
+        bad = {"type": "Feature",
+               "geometry": {"type": "GeometryCollection",
+                            "geometries": []},
+               "properties": {}}
+        with self.assertRaises(gx.Error) as ctx:
+            gx.collection([bad])
+        self.assertIn("GeometryCollection", str(ctx.exception))
+
+    def test_null_geometry_is_legal_and_stated(self):
+        feat = {"type": "Feature", "geometry": None,
+                "properties": {"note": "ungelocated"}}
+        fc = gx.collection([feat])
+        self.assertEqual(
+            fc["openhealth:geolock"]["coordinates_checked"], 0)
+
+    def test_bool_is_not_a_coordinate(self):
+        bad = {"type": "Feature",
+               "geometry": {"type": "Point", "coordinates": [True, 6.5]},
+               "properties": {}}
+        with self.assertRaises(gx.Error):
+            gx.collection([bad])
+
+
 if __name__ == "__main__":
     unittest.main()

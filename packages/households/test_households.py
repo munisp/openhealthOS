@@ -60,5 +60,47 @@ class TestGeoJSON(unittest.TestCase):
         self.assertEqual(gj["features"][0]["properties"]["household"], "HH-9")
 
 
+class TestGovernedExport(unittest.TestCase):
+    """ADR-0076: to_geojson flows through the governed exporter; the
+    privacy choice and the coordinate quantization are data on the
+    artifact, and the coordinate gate fails closed."""
+
+    def test_ungoverned_export_states_both_members(self):
+        reg = HouseholdRegister()
+        reg.register(Household("HH-9", "KAWO", 10.5, 7.4))
+        gj = reg.to_geojson()
+        gl = gj["openhealth:geolock"]
+        self.assertFalse(gl["governed"])
+        self.assertEqual(gl["basis"], "rfc-7946-default-stated")
+        self.assertEqual(gl["coordinates_checked"], 1)
+        hh = gj["openhealth:households"]
+        self.assertTrue(hh["anonymized"])
+        self.assertIn("5 decimal places", hh["coordinate_quantization"])
+
+    def test_governed_export(self):
+        import geolock
+        reg = HouseholdRegister()
+        reg.register(Household("HH-9", "KAWO", 10.5, 7.4))
+        gj = reg.to_geojson(registry=geolock.CRSRegistry())
+        self.assertTrue(gj["openhealth:geolock"]["governed"])
+        self.assertEqual(gj["openhealth:geolock"]["basis"],
+                         "registry-governed")
+
+    def test_identified_export_says_so_loudly(self):
+        reg = HouseholdRegister()
+        reg.register(Household("HH-9", "KAWO", 10.5, 7.4))
+        gj = reg.to_geojson(anonymize=False)
+        self.assertFalse(gj["openhealth:households"]["anonymized"])
+
+    def test_metre_space_household_refused_at_the_door(self):
+        """Defence in depth: registration is the first wall (fail-closed
+        with the offender named); the gisexport coordinate gate is the
+        second, proven in TestCoordinateGate for caller-built features."""
+        reg = HouseholdRegister()
+        with self.assertRaises(ValueError) as ctx:
+            reg.register(Household("HH-BAD", "KAWO", 727867.6, 376170.8))
+        self.assertIn("376170.8", str(ctx.exception))
+
+
 if __name__ == "__main__":
     unittest.main()

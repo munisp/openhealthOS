@@ -22,11 +22,22 @@ from dataclasses import dataclass, field
 from datetime import date, timedelta
 
 # Geodesy is owned by geolock (ADR-0075): one contract, one function.
-# Same in-repo sys.path pattern as agentwrite/gisexport — stdlib only.
+# Exports are owned by gisexport (ADR-0076): every GeoJSON artifact
+# flows through the governed exporter — this package was the estate's
+# last raw-FeatureCollection site. Same in-repo sys.path pattern as
+# agentwrite — stdlib only.
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "geolock"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "gisexport"))
 import geolock  # noqa: E402
+import gisexport  # noqa: E402
 
-HOUSEHOLDS_VERSION = "households@1.1.0"
+HOUSEHOLDS_VERSION = "households@1.2.0"
+
+#: Coordinates are rounded to 5 decimals before export (~1.1 m at the
+#: equator): planning-map precision, not household-doorstep precision.
+#: Now stated on the artifact — a privacy choice is data, not silence.
+COORDINATE_QUANTIZATION = ("5 decimal places (~1.1 m at the equator) — "
+                           "planning-map precision, stated")
 
 #: Stated basis carried on every coverage() result — absence is not a
 #: value; the arithmetic a catchment decision rests on is disclosed.
@@ -82,7 +93,11 @@ class HouseholdRegister:
         if not household.household_id:
             raise ValueError("household_id required")
         if not (-90 <= household.lat <= 90 and -180 <= household.lon <= 180):
-            raise ValueError("invalid coordinates")
+            raise ValueError(
+                "invalid coordinates: lat=%r lon=%r — degrees are WGS-84 "
+                "lat/lng; metre-space coordinates are not degrees, "
+                "reproject first (geolock.transform)"
+                % (household.lat, household.lon))
         self._households[household.household_id] = household
 
     def add_member(self, household_id: str, member: Member) -> None:
@@ -128,9 +143,15 @@ class HouseholdRegister:
                         "contract": geolock.GEODESY_CONTRACT},
         }
 
-    def to_geojson(self, anonymize: bool = True, as_of: str = "") -> dict:
-        """Planning-map export. anonymize=True: hashed ids, counts only —
-        no patient_id, no names, no phones."""
+    def to_geojson(self, anonymize: bool = True, as_of: str = "",
+                   *, registry=None) -> dict:
+        """Planning-map export via the governed exporter (ADR-0076).
+        anonymize=True: hashed ids, counts only — no patient_id, no
+        names, no phones. The privacy choice and the coordinate
+        quantization travel ON the artifact as data; an identified
+        export (anonymize=False) says so loudly. With a geolock
+        registry injected the collection is registry-governed; without
+        one the RFC 7946 default basis is stated, not assumed."""
         defaulter_count: dict[str, int] = {}
         if as_of:
             for d in self.defaulters(as_of):
@@ -147,4 +168,11 @@ class HouseholdRegister:
                                "members": len(h.members),
                                "defaulters": defaulter_count.get(h.household_id, 0)},
             })
-        return {"type": "FeatureCollection", "features": features}
+        fc = gisexport.collection(features, registry=registry)
+        fc["openhealth:households"] = {
+            "anonymized": anonymize,
+            "coordinate_quantization": COORDINATE_QUANTIZATION,
+            "as_of": as_of or None,
+            "basis": "privacy choices are data — an identified export "
+                     "says so on the artifact"}
+        return fc
