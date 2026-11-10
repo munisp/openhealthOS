@@ -1,4 +1,4 @@
-"""proofindex-demo@1.0.0 — the proof-index evidence surface.
+"""proofindex-demo@1.1.0 — the proof-index evidence surface.
 
 Re-verifies every stamped evidence payload in the tree and renders the
 verdicts as one officer-readable board. Same doctrine as every demo
@@ -6,10 +6,12 @@ exporter before it: a demo you cannot reproduce is a claim, not
 evidence — fixed clock, registry order, byte-identical reruns, and a
 sha256 stamp of its own (compact contract).
 
-The drills section proves the gate itself works: four in-memory attacks
-(drift, non-canonical stamp, contract mismatch, absence) each produce
-their named verdict. No tempdir paths enter the payload — drills run
-on in-memory dicts, never the committed files.
+The drills section proves the gate itself works: five attacks (drift,
+non-canonical stamp, contract mismatch, absence, and an unregistered
+stamped payload — the wave-6 blind spot, replayed in a tmpdir) each
+produce their named verdict. No tempdir paths enter the payload —
+drills run on in-memory dicts or throwaway directories, never the
+committed files.
 """
 
 from __future__ import annotations
@@ -22,9 +24,9 @@ import sys
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from proofindex import (CONTRACTS, PAYLOADS, PROOFINDEX_VERSION,
-                        verify_all, verify_dict)
+                        coverage, verify_all, verify_dict)
 
-DEMO_VERSION = "proofindex-demo@1.0.0"
+DEMO_VERSION = "proofindex-demo@1.1.0"
 CLOCK = lambda: "2026-11-10T09:00:00Z"
 
 OUT = os.path.join(os.path.dirname(__file__), "..", "..", "apps",
@@ -96,6 +98,30 @@ def _drills() -> list:
                    "note": "absence is a stated verdict, never a crash, "
                            "never a green"})
 
+    # 5. UNREGISTERED — a stamped payload the registry does not know
+    #    (the wave-6 blind spot: anchorproof.json spent one wave
+    #    stamped but unindexed). Replayed in a throwaway directory;
+    #    its path never enters this payload.
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        os.makedirs(os.path.join(td, "apps", "pwa"))
+        rogue = {"claim": "stamped but never registered"}
+        rogue["sha256"] = CONTRACTS["compact"](rogue)
+        with open(os.path.join(td, "apps", "pwa", "rogue.json"),
+                  "w") as fh:
+            json.dump(rogue, fh)
+        cov = coverage(root=td)
+    drills.append({"attack": "unregistered stamped payload",
+                   "expected": "unregistered",
+                   "verdict": ("unregistered" if cov["unregistered"]
+                               and not cov["complete"]
+                               else "missed"),
+                   "severity": ("red" if cov["unregistered"]
+                                else "green"),
+                   "note": "the scan names every stamped file the "
+                           "registry does not know — a registry that "
+                           "falls behind silently is a blind spot"})
+
     return drills
 
 
@@ -109,6 +135,7 @@ def run_demo():
         "drills": drills,
         "flags": {
             "all_verified": report["summary"]["all_verified"],
+            "coverage_complete": report["coverage"]["complete"],
             "drills_named": all(d["verdict"] == d["expected"]
                                 for d in drills),
         },
@@ -117,7 +144,10 @@ def run_demo():
             "note": "the index cannot stamp its own stamp — this "
                     "payload's sha256 is pinned by TestDemoProofindex "
                     "determinism + stamp-contract tests, and proofindex "
-                    "deliberately does not appear in its own registry",
+                    "is declared in SELF_EXCLUDED as data; the coverage "
+                    "scan must account for every stamped file on disk "
+                    "as registered or self-excluded, never silently "
+                    "skipped",
         },
         "versions": {"proofindex": PROOFINDEX_VERSION,
                      "demo": DEMO_VERSION},

@@ -1,4 +1,4 @@
-"""proofindex@1.0.0 — the meta-layer for "the checksum is the contract".
+"""proofindex@1.1.0 — the meta-layer for "the checksum is the contract".
 
 Every demo surface on the platform carries a sha256 stamp over its own
 canonical body. Until now each board asked the reader to trust that the
@@ -19,6 +19,18 @@ Doctrines enforced here:
   the presented stamp is proven str+ASCII before any comparison.
 - Absence is not a value: a payload that is not on disk is reported
   absent, never treated as verified, never treated as drift.
+- Coverage is a gate, not a hope (row 205 lesson — wave 6 shipped
+  anchorproof.json without registering it here, and for one wave the
+  estate had a stamped payload the index did not know about):
+  scan_stamped() walks the surface directories, and coverage() names
+  every stamped file the registry does NOT know as "unregistered". A
+  registry that can silently fall behind is a blind spot; the scan
+  makes falling behind loud.
+- The self-exclusion is declared data, not a hidden skip:
+  SELF_EXCLUDED names proofindex.json with its reason — the index
+  cannot stamp its own stamp. The coverage report must account for
+  every stamped file on disk as registered OR declared self-excluded;
+  anything else is unregistered, and unregistered is a failure.
 - Two canonicalization contracts exist in the estate, pinned here as
   data, not discovered by accident:
     "compact"      — json.dumps(body, sort_keys=True,
@@ -31,7 +43,7 @@ Doctrines enforced here:
 - The index cannot stamp its own stamp. proofindex.json carries a
   compact-contract stamp over everything except the sha256 key; its
   integrity is pinned by the determinism + stamp-contract tests in
-  test_proofindex.py, and it deliberately does NOT appear in PAYLOADS.
+  test_proofindex.py, and it appears in SELF_EXCLUDED, not PAYLOADS.
 
 Stdlib only (ADR-0005). No clocks are read here — verify_all takes the
 timestamp from its caller.
@@ -44,7 +56,7 @@ import hmac
 import json
 import os
 
-PROOFINDEX_VERSION = "proofindex@1.0.0"
+PROOFINDEX_VERSION = "proofindex@1.1.0"
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -78,6 +90,9 @@ PAYLOADS = [
     {"path": "apps/pwa/deployproof.json", "contract": "compact",
      "exporter": "packages/travelpass/demo_deploy.py",
      "title": "Deployment-seam proof"},
+    {"path": "apps/pwa/anchorproof.json", "contract": "compact",
+     "exporter": "packages/ledgeranchor/demo_ledgeranchor.py",
+     "title": "External notary proof"},
     {"path": "apps/pwa/agentwrite.json", "contract": "compact",
      "exporter": "packages/agentwrite/demo_agentwrite.py",
      "title": "Agent-write stack"},
@@ -127,6 +142,74 @@ PAYLOADS = [
      "exporter": "packages/syncmesh/demo_sync.py",
      "title": "Sync depth (CV)"},
 ]
+
+#: Directories scanned for stamped payloads. Every demo surface lives
+#: under one of these; a new surface directory must be added here or
+#: the coverage gate cannot see it.
+SCAN_DIRS = ("apps/pwa", "apps/patient", "apps/dashboards")
+
+#: Stamped files that are deliberately NOT in PAYLOADS, each with its
+#: stated reason. The only member is the index itself — the index
+#: cannot stamp its own stamp. An exclusion that is not declared here
+#: is not an exclusion; it is an unregistered payload, and the
+#: coverage gate fails on it.
+SELF_EXCLUDED = [
+    {"path": "apps/pwa/proofindex.json",
+     "reason": "the index cannot stamp its own stamp — its sha256 is "
+               "pinned by the determinism + stamp-contract tests in "
+               "test_proofindex.py"},
+]
+
+
+def scan_stamped(*, root: str = ".") -> list:
+    """Every JSON file under SCAN_DIRS whose top-level object carries a
+    string sha256 key, repo-relative, sorted. Never raises: a file that
+    cannot be read or parsed is not a stamped payload (if it is
+    registered, verify_payload gives it its own named verdict)."""
+    found = []
+    for base in SCAN_DIRS:
+        start = os.path.join(root, base)
+        if not os.path.isdir(start):
+            continue
+        for dirpath, _dirs, files in os.walk(start):
+            for name in files:
+                if not name.endswith(".json"):
+                    continue
+                full = os.path.join(dirpath, name)
+                try:
+                    with open(full, encoding="utf-8") as fh:
+                        doc = json.load(fh)
+                except (OSError, UnicodeDecodeError,
+                        json.JSONDecodeError):
+                    continue
+                if (isinstance(doc, dict)
+                        and isinstance(doc.get("sha256"), str)):
+                    found.append(os.path.relpath(full, root))
+    return sorted(found)
+
+
+def coverage(*, root: str = ".") -> dict:
+    """Registry-vs-disk accounting. Every stamped file on disk must be
+    either registered or declared self-excluded; anything else is
+    unregistered, and unregistered is never OK — the gate fails closed
+    on it (the wave-6 lesson: anchorproof.json spent one wave stamped
+    but unindexed)."""
+    on_disk = scan_stamped(root=root)
+    registered = {e["path"] for e in PAYLOADS}
+    excluded = {e["path"] for e in SELF_EXCLUDED}
+    unregistered = [p for p in on_disk
+                    if p not in registered and p not in excluded]
+    return {
+        "stamped_on_disk": len(on_disk),
+        "registered": len(registered),
+        "self_excluded": [
+            {"path": e["path"], "reason": e["reason"]}
+            for e in SELF_EXCLUDED if e["path"] in on_disk
+        ],
+        "unregistered": unregistered,
+        "complete": not unregistered,
+    }
+
 
 _RED = {"drift", "absent", "malformed", "unstamped", "malformed-stamp",
         "non-canonical-stamp", "unreadable"}
@@ -210,11 +293,13 @@ def verify_payload(entry: dict, *, root: str = ".") -> dict:
 
 
 def verify_all(*, root: str = ".", generated_at: str) -> dict:
-    """Verify every registered payload. `generated_at` is injected —
-    this module never reads a clock."""
+    """Verify every registered payload and account for every stamped
+    file on disk. `generated_at` is injected — this module never reads
+    a clock."""
     verdicts = [verify_payload(e, root=root) for e in PAYLOADS]
     reds = [v for v in verdicts if v["severity"] == "red"]
     ambers = [v for v in verdicts if v["severity"] == "amber"]
+    cov = coverage(root=root)
     return {
         "version": PROOFINDEX_VERSION,
         "generated_at": generated_at,
@@ -229,6 +314,7 @@ def verify_all(*, root: str = ".", generated_at: str) -> dict:
             "amber": len(ambers),
             "all_verified": not reds and not ambers,
         },
+        "coverage": cov,
         "contracts": {name: sum(1 for e in PAYLOADS
                                 if e["contract"] == name)
                       for name in CONTRACTS},

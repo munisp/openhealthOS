@@ -22,8 +22,11 @@
       <div class="kpi"><div class="kpi-num" id="k-verified"></div><div class="kpi-label">verified</div></div>
       <div class="kpi"><div class="kpi-num" id="k-drift"></div><div class="kpi-label">drift</div></div>
       <div class="kpi"><div class="kpi-num" id="k-absent"></div><div class="kpi-label">absent</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-ondisk"></div><div class="kpi-label">stamped on disk</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-unreg"></div><div class="kpi-label">unregistered</div></div>
     </div>
     <div class="mono" id="contract-note" style="margin-top:8px"></div>
+    <div class="mono" id="coverage-note" style="margin-top:6px"></div>
   </div>
 
   <div class="card">
@@ -73,14 +76,22 @@ fetch("./proofindex.json", { cache: "no-store" }).then((r) => r.json()).then((p)
   $("k-verified").textContent = s.verified;
   $("k-drift").textContent = s.drift;
   $("k-absent").textContent = s.absent;
+  const cov = p.registry.coverage;
+  $("k-ondisk").textContent = cov.stamped_on_disk;
+  $("k-unreg").textContent = cov.unregistered.length;
   $("contract-note").textContent =
     "two stamp contracts, pinned as data: compact ×" + p.registry.contracts["compact"] +
     " · spaced-utf8 ×" + p.registry.contracts["spaced-utf8"] +
     " — a payload verifying under the wrong one is amber contract-mismatch, stated never silent";
+  $("coverage-note").textContent =
+    "coverage: " + cov.stamped_on_disk + " stamped files on disk = " + cov.registered +
+    " registered + " + cov.self_excluded.length + " declared self-excluded (" +
+    cov.self_excluded.map((e) => e.path).join(", ") +
+    ") + " + cov.unregistered.length + " unregistered — a registry that falls behind silently is a blind spot";
 
   $("registry").innerHTML = p.registry.payloads.map(regRow).join("");
   $("drills").innerHTML = p.drills.map(drillCard).join("") +
-    `<div class="mono" style="margin-top:6px">four attacks, four named verdicts — the committed files are never touched</div>`;
+    `<div class="mono" style="margin-top:6px">five attacks, five named verdicts — the committed files are never touched</div>`;
 
   $("sha").textContent = p.sha256;
   $("self").textContent = p.self_integrity.contract + " — " + p.self_integrity.note;

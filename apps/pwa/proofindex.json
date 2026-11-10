@@ -1,8 +1,8 @@
 {
-  "version": "proofindex-demo@1.0.0",
+  "version": "proofindex-demo@1.1.0",
   "generated_at": "2026-11-10T09:00:00Z",
   "registry": {
-    "version": "proofindex@1.0.0",
+    "version": "proofindex@1.1.0",
     "generated_at": "2026-11-10T09:00:00Z",
     "payloads": [
       {
@@ -26,6 +26,17 @@
         "detail": "sha256 matches the recorded compact contract",
         "presented": "840facbc79abd67224a21ff36ed09e4a619d1f356cd78afa5671b32ec4d2ed93",
         "payload_version": "deployproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/anchorproof.json",
+        "title": "External notary proof",
+        "contract": "compact",
+        "exporter": "packages/ledgeranchor/demo_ledgeranchor.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "3c6b315cbbd1f8a2204b1d04d64f9fd44c5d96cfa44379f61ba84e8ff58dc3e3",
+        "payload_version": "anchorproof-demo@1.0.0"
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -205,16 +216,28 @@
       }
     ],
     "summary": {
-      "total": 18,
-      "verified": 18,
+      "total": 19,
+      "verified": 19,
       "drift": 0,
       "absent": 0,
       "red": 0,
       "amber": 0,
       "all_verified": true
     },
+    "coverage": {
+      "stamped_on_disk": 20,
+      "registered": 19,
+      "self_excluded": [
+        {
+          "path": "apps/pwa/proofindex.json",
+          "reason": "the index cannot stamp its own stamp \u2014 its sha256 is pinned by the determinism + stamp-contract tests in test_proofindex.py"
+        }
+      ],
+      "unregistered": [],
+      "complete": true
+    },
     "contracts": {
-      "compact": 10,
+      "compact": 11,
       "spaced-utf8": 8
     }
   },
@@ -246,19 +269,27 @@
       "verdict": "absent",
       "severity": "red",
       "note": "absence is a stated verdict, never a crash, never a green"
+    },
+    {
+      "attack": "unregistered stamped payload",
+      "expected": "unregistered",
+      "verdict": "unregistered",
+      "severity": "red",
+      "note": "the scan names every stamped file the registry does not know \u2014 a registry that falls behind silently is a blind spot"
     }
   ],
   "flags": {
     "all_verified": true,
+    "coverage_complete": true,
     "drills_named": true
   },
   "self_integrity": {
     "contract": "compact",
-    "note": "the index cannot stamp its own stamp \u2014 this payload's sha256 is pinned by TestDemoProofindex determinism + stamp-contract tests, and proofindex deliberately does not appear in its own registry"
+    "note": "the index cannot stamp its own stamp \u2014 this payload's sha256 is pinned by TestDemoProofindex determinism + stamp-contract tests, and proofindex is declared in SELF_EXCLUDED as data; the coverage scan must account for every stamped file on disk as registered or self-excluded, never silently skipped"
   },
   "versions": {
-    "proofindex": "proofindex@1.0.0",
-    "demo": "proofindex-demo@1.0.0"
+    "proofindex": "proofindex@1.1.0",
+    "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "33bf4fe061f0f14f9b1dd352810977e1d6eaabf69a79376e052da77656eb8e3f"
+  "sha256": "d3d18b7f6c13accc3f30ce26e9f128a558cf3e545f4418e26834dd7b3d75088a"
 }

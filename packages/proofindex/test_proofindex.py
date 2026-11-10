@@ -20,7 +20,8 @@ import tempfile
 import unittest
 
 import proofindex
-from proofindex import (CONTRACTS, PAYLOADS, verify_all, verify_dict,
+from proofindex import (CONTRACTS, PAYLOADS, SELF_EXCLUDED, coverage,
+                        scan_stamped, verify_all, verify_dict,
                         verify_payload)
 import demo_proofindex
 
@@ -104,8 +105,8 @@ class TestVerifyAllRealTree(unittest.TestCase):
 
     def test_every_payload_verified(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
-        self.assertEqual(report["summary"]["total"], 18)
-        self.assertEqual(report["summary"]["verified"], 18)
+        self.assertEqual(report["summary"]["total"], 19)
+        self.assertEqual(report["summary"]["verified"], 19)
         self.assertTrue(report["summary"]["all_verified"])
         for v in report["payloads"]:
             self.assertEqual(v["status"], "verified", v["path"])
@@ -113,7 +114,7 @@ class TestVerifyAllRealTree(unittest.TestCase):
     def test_contract_census(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
         self.assertEqual(report["contracts"],
-                         {"compact": 10, "spaced-utf8": 8})
+                         {"compact": 11, "spaced-utf8": 8})
 
     def test_absent_is_stated_not_raised(self):
         ghost = {"path": "apps/pwa/definitely-not-here.json",
@@ -153,11 +154,13 @@ class TestDemoProofindex(unittest.TestCase):
     def test_payload_shape(self):
         p = demo_proofindex.run_demo()
         self.assertTrue(p["flags"]["all_verified"])
+        self.assertTrue(p["flags"]["coverage_complete"])
         self.assertTrue(p["flags"]["drills_named"])
-        self.assertEqual(len(p["registry"]["payloads"]), 18)
+        self.assertEqual(len(p["registry"]["payloads"]), 19)
         self.assertEqual({d["verdict"] for d in p["drills"]},
                          {"drift", "non-canonical-stamp",
-                          "contract-mismatch", "absent"})
+                          "contract-mismatch", "absent",
+                          "unregistered"})
         self.assertEqual(p["self_integrity"]["contract"], "compact")
 
     def test_file_emission(self):
@@ -168,6 +171,70 @@ class TestDemoProofindex(unittest.TestCase):
         self.assertEqual(back["version"], demo_proofindex.DEMO_VERSION)
         body = {k: v for k, v in back.items() if k != "sha256"}
         self.assertEqual(back["sha256"], _compact(body))
+
+
+class TestCoverage(unittest.TestCase):
+    """Registry-vs-disk accounting — the wave-6 lesson as a gate.
+
+    anchorproof.json spent one wave stamped but unindexed; nothing
+    noticed. scan_stamped + coverage make a falling-behind registry
+    loud: every stamped file on disk is registered or declared
+    self-excluded, and anything else fails the gate.
+    """
+
+    def test_real_tree_coverage_complete(self):
+        cov = coverage(root=REPO_ROOT)
+        self.assertTrue(cov["complete"],
+                        "unregistered stamped payloads: %s"
+                        % cov["unregistered"])
+        self.assertEqual(cov["unregistered"], [])
+        self.assertEqual(cov["stamped_on_disk"],
+                         cov["registered"]
+                         + len(cov["self_excluded"]))
+
+    def test_self_exclusion_is_declared_data(self):
+        self.assertEqual([e["path"] for e in SELF_EXCLUDED],
+                         ["apps/pwa/proofindex.json"])
+        self.assertTrue(SELF_EXCLUDED[0]["reason"])
+        cov = coverage(root=REPO_ROOT)
+        self.assertEqual([e["path"] for e in cov["self_excluded"]],
+                         ["apps/pwa/proofindex.json"])
+        # The exemption is real: the file IS stamped, IS on disk.
+        self.assertIn("apps/pwa/proofindex.json",
+                      scan_stamped(root=REPO_ROOT))
+
+    def test_unregistered_stamped_payload_is_named(self):
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "apps", "pwa"))
+            rogue = {"claim": "stamped but never registered"}
+            rogue["sha256"] = _compact(rogue)
+            with open(os.path.join(td, "apps", "pwa", "rogue.json"),
+                      "w") as fh:
+                json.dump(rogue, fh)
+            cov = coverage(root=td)
+        self.assertFalse(cov["complete"])
+        self.assertEqual(cov["unregistered"],
+                         [os.path.join("apps", "pwa", "rogue.json")])
+
+    def test_unstamped_files_are_not_the_scans_business(self):
+        with tempfile.TemporaryDirectory() as td:
+            os.makedirs(os.path.join(td, "apps", "pwa"))
+            with open(os.path.join(td, "apps", "pwa", "plain.json"),
+                      "w") as fh:
+                json.dump({"no": "stamp here"}, fh)
+            # Malformed JSON in a scan dir is skipped, never raised —
+            # if it were registered, verify_payload would name it.
+            with open(os.path.join(td, "apps", "pwa", "broken.json"),
+                      "w") as fh:
+                fh.write("{not json")
+            cov = coverage(root=td)
+        self.assertTrue(cov["complete"])
+        self.assertEqual(cov["stamped_on_disk"], 0)
+
+    def test_report_carries_coverage(self):
+        report = verify_all(root=REPO_ROOT, generated_at="T")
+        self.assertIn("coverage", report)
+        self.assertTrue(report["coverage"]["complete"])
 
 
 # ---------------------------------------------------------------------------
@@ -193,6 +260,8 @@ EXPORTERS = [
      _MEM % "__import__('demo_deploy').run_demo()"),
     ("tamperproof", "packages/travelpass",
      _MEM % "__import__('demo_tamper').run_demo()"),
+    ("anchorproof", "packages/ledgeranchor",
+     _MEM % "__import__('demo_ledgeranchor').run_demo()"),
     ("portal", "packages/ips",
      _MEM % "__import__('demo_portal').seed_record_payload()"),
     ("dashboards", "packages/travelpass",
