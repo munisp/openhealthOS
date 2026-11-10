@@ -177,7 +177,13 @@ func (f *FleetStore) NearestAvailable(lat, lng float64) (Unit, float64, error) {
 	return best, bestKm, nil
 }
 
-// HaversineKm mirrors the registry's geo.go — great-circle distance.
+// HaversineKm — ADR-0078: one formula estate-wide. This copy used the
+// atan2 form (a local preference, not the contract); it now matches
+// geolock.GEODESY_CONTRACT exactly — asin form, r=6371.0, sqrt argument
+// clamped to 1.0 (the clamp absorbs the antipodal rounding the atan2
+// form avoided; the divergence between the two formulas is measured
+// and stated in the georuntimeproof payload). Go's libm differs from
+// CPython/glibc by ~1 ulp on some inputs — stated, not hidden.
 func HaversineKm(lat1, lng1, lat2, lng2 float64) float64 {
 	const R = 6371.0
 	rad := math.Pi / 180
@@ -185,7 +191,7 @@ func HaversineKm(lat1, lng1, lat2, lng2 float64) float64 {
 	dLng := (lng2 - lng1) * rad
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
 		math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Sin(dLng/2)*math.Sin(dLng/2)
-	return R * 2 * math.Atan2(math.Sqrt(a), math.Sqrt(1-a))
+	return 2 * R * math.Asin(math.Min(1.0, math.Sqrt(a)))
 }
 
 // ETA is honest arithmetic: straight-line distance, inflated by the

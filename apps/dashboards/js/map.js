@@ -7,13 +7,14 @@
 
 /* ---------- pure helpers (node-testable) ---------- */
 
-// haversineKm mirrors the registry's geo.go exactly.
+// ADR-0078: the private IUGG-radius copy (6371.0088, unclamped — the
+// old comment claimed this mirrored the registry's geo.go; both were
+// folklore) is retired. The historic name stays; the arithmetic
+// delegates to the canonical web module.
+import { distanceKm } from "../../pwa/js/geodesy.js";
+
 export function haversineKm(lat1, lng1, lat2, lng2) {
-  const rad = Math.PI / 180, R = 6371.0088;
-  const dLat = (lat2 - lat1) * rad, dLng = (lng2 - lng1) * rad;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
+  return distanceKm(lat1, lng1, lat2, lng2);
 }
 
 // project fits (lat,lng) into a w×h canvas with padding, y-axis flipped.

@@ -90,7 +90,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "bd51e01624b5843af1526a27ef6baebf679a10ef916e9b66e8e86954365240fb",
+        "presented": "ce0f2d72d966107c6d58466ef4f1b40bb5563906d8be508c02d760886fd190b6",
         "payload_version": null
       },
       {
@@ -101,7 +101,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "c84c2ab5dad95ce4f6c9d643f3972f2e542535cf75c8f604d7d27d59e33e6750",
+        "presented": "ee12440a976e51cebbcae1b83cc5d18daa660d5404f3816bfa1458f44afd2295",
         "payload_version": null
       },
       {
@@ -124,6 +124,17 @@
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
         "presented": "c3f5dd9e8824b01de4efb97991321389451883520d8a119d92957ad0d819ac19",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/georuntimeproof.json",
+        "title": "Cross-runtime geodesy proof",
+        "contract": "compact",
+        "exporter": "packages/georuntime/demo_georuntime.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "97db109268e313fb9c21e651736fdd6db24a3e5dd97c294fe960f3c14526d185",
         "payload_version": null
       },
       {
@@ -304,8 +315,8 @@
       }
     ],
     "summary": {
-      "total": 27,
-      "verified": 27,
+      "total": 28,
+      "verified": 28,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -313,8 +324,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 28,
-      "registered": 27,
+      "stamped_on_disk": 29,
+      "registered": 28,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -325,7 +336,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 19,
+      "compact": 20,
       "spaced-utf8": 8
     }
   },
@@ -379,5 +390,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "2e1400e95448239e7b115c840a1dce621d2587fa2e965d0a8db24182fc03ac27"
+  "sha256": "f223fd65e90d20a2e20a9d77bf00c885e9a331c11983b9cbdd442bd1c9e9fe4b"
 }

@@ -41,7 +41,7 @@ import heapq
 import json
 import math
 
-ROUTING_VERSION = "routing@1.1.0"
+ROUTING_VERSION = "routing@1.2.0"
 
 EARTH_KM = 6371.0
 
@@ -75,11 +75,19 @@ def _canon(obj) -> str:
 
 
 def haversine_km(a, b):
+    """Straight-line distance under GEODESY_CONTRACT. routing@1.2.0
+    (ADR-0078): the sqrt argument is clamped to 1.0 — at exactly
+    antipodal points float rounding can push it a hair above 1, and
+    this copy was the estate's last UNCLAMPED Python haversine. The
+    clamp is stated, value-identical everywhere the unclamped formula
+    did not crash, and this function now sits in the geodesyproof
+    convergence matrix — the drift guard pins BEHAVIOR, not just the
+    constants."""
     (lat1, lng1), (lat2, lng2) = a, b
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dp, dl = math.radians(lat2 - lat1), math.radians(lng2 - lng1)
     h = math.sin(dp / 2) ** 2 + math.cos(p1) * math.cos(p2) * math.sin(dl / 2) ** 2
-    return 2 * EARTH_KM * math.asin(math.sqrt(h))
+    return 2 * EARTH_KM * math.asin(min(1.0, math.sqrt(h)))
 
 
 def _check_coordinate(lng, lat):

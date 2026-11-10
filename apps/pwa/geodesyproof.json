@@ -40,7 +40,7 @@
       "true-antipodal"
     ],
     "matrix_agrees_bit_for_bit": true,
-    "matrix_sha256": "0d02c6626640825f000f5bb6b5c93a2a40b4d0efdb135361e702c1deae5005ab",
+    "matrix_sha256": "2520f17cf97a3a3fb52e13760eb12f3a5d2d8177394ac7e2e92b291414ad1205",
     "reference_leg_km": {
       "identical-point": 0.0,
       "kaduna-to-lagos": 630.9185788095126,
@@ -48,12 +48,33 @@
       "one-degree-of-latitude": 111.19492664455873,
       "true-antipodal": 20015.086796020572
     },
+    "runtimes": {
+      "census_scope_wave14": "python-only — the wave-14 census swept one runtime and presented as estate-wide; stated, not hidden",
+      "go": {
+        "conformance": "~1-ulp libm envelope vs CPython/glibc — stated, exact outputs pinned in geo_test.go / fleet_test.go",
+        "private_after": 0,
+        "private_before": 2,
+        "retired": "registry IUGG 6371.0088 unclamped; dispatch atan2-form 6371.0"
+      },
+      "javascript": {
+        "conformance": "bit-identical (apps/pwa/tests/geodesy-conformance.test.mjs)",
+        "private_after": 0,
+        "private_before": 2,
+        "retired": "IUGG 6371.0088 unclamped x2 (dashboards/map.js, patient/geo.js)"
+      },
+      "python": {
+        "conformance": "bit-identical (this matrix)",
+        "private_after": 0,
+        "private_before": 6
+      }
+    },
     "sites": [
       "geolock (owner)",
       "gisexport.distance_km",
       "households.haversine_km",
       "kpiplane._haversine_km",
       "outbreak._km",
+      "routing.haversine_km",
       "visitplan.haversine_km",
       "catchment.haversine_km"
     ]
@@ -122,6 +143,17 @@
         0.0,
         20015.086796020572
       ],
+      "row_sha256": "7beb14f18606846d56723a5619fd8e8eac5a1b2a2a574dd627595c21df533557",
+      "site": "routing.haversine_km"
+    },
+    {
+      "legs_km": [
+        630.9185788095126,
+        816.896710177375,
+        111.19492664455873,
+        0.0,
+        20015.086796020572
+      ],
       "row_sha256": "0ffa78bd62bb41df762c002de5826a5421c5c035da7455c799d115c0655aa5af",
       "site": "visitplan.haversine_km"
     },
@@ -178,6 +210,22 @@
         "detail": "census-miss-stated: gisexport.coverage_gap_layer carried a private 6371.0 closure the wave-14 sweep missed — found in wave-16 recon, retired, and added to this matrix as the seventh row. A census is data; a census that missed is stated, not quietly fixed",
         "outcome": "stated"
       }
+    },
+    {
+      "attack": "drift the drift guard cannot see — pinned data, unpinned arithmetic",
+      "name": "the router's formula is edited, constants untouched",
+      "result": {
+        "detail": "behavior-pinned: routing.haversine_km is matrix row 8 — bit-identity on five legs means a formula edit diverges a row and fails the suite; the guard now covers the arithmetic, not just the constants",
+        "outcome": "refused"
+      }
+    },
+    {
+      "attack": "a Python-only sweep presented as the whole estate",
+      "name": "the wave-14 census is re-read as estate-wide",
+      "result": {
+        "detail": "cross-runtime-census: wave 14 swept Python only. Wave-17 recon found JS x2 (IUGG 6371.0088, unclamped) and Go x2 (registry IUGG; dispatch atan2-form) — all four converged (ADR-0078); JS proven bit-identical in the node suite, Go pinned with a stated ~1-ulp libm envelope in georuntimeproof",
+        "outcome": "stated"
+      }
     }
   ],
   "generated_at": "2026-11-11T16:30:00Z",
@@ -193,17 +241,17 @@
       "IUGG mean 6371.0088 (kpiplane, openhealth_ml.catchment)"
     ]
   },
-  "sha256": "c84c2ab5dad95ce4f6c9d643f3972f2e542535cf75c8f604d7d27d59e33e6750",
+  "sha256": "ee12440a976e51cebbcae1b83cc5d18daa660d5404f3816bfa1458f44afd2295",
   "surface": "geodesyproof",
   "versions": {
     "catchment": "openhealth_ml.catchment (unversioned module — stated, not hidden)",
-    "exporter": "geodesyproof-demo@1.1.0",
+    "exporter": "geodesyproof-demo@1.2.0",
     "geolock": "geolock@1.1.0",
     "gisexport": "gisexport@1.3.0",
     "households": "households@1.2.0",
     "kpiplane": "kpiplane@1.1.0",
     "outbreak": "outbreak@1.1.0",
-    "routing": "routing@1.1.0",
+    "routing": "routing@1.2.0",
     "visitplan": "visitplan@1.1.0"
   }
 }

@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"math"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -163,5 +164,34 @@ func TestETAMath(t *testing.T) {
 	}
 	if how == "" {
 		t.Fatal("assumptions printed")
+	}
+}
+
+// TestHaversineContractConformance (ADR-0078) — the atan2-form variant
+// is retired; this implementation now matches geolock.GEODESY_CONTRACT
+// (asin form, r=6371.0, clamped). Outputs pinned as EXACT literals
+// measured on go1.22.12 linux/amd64; the ~1-ulp libm envelope against
+// the Python vectors is stated in georuntimeproof.json.
+func TestHaversineContractConformance(t *testing.T) {
+	vectors := []struct {
+		name               string
+		lat1, lng1         float64
+		lat2, lng2         float64
+		wantGo, wantPython float64
+	}{
+		{"kaduna-to-lagos", 10.52, 7.44, 6.52, 3.37, 630.91857880951272, 630.9185788095126},
+		{"kano-to-port-harcourt", 12.0022, 8.592, 4.8156, 7.0498, 816.89671017737521, 816.896710177375},
+		{"one-degree-of-latitude", 10.0, 7.0, 11.0, 7.0, 111.19492664455873, 111.19492664455873},
+		{"identical-point", 6.52, 3.37, 6.52, 3.37, 0.0, 0.0},
+		{"true-antipodal", 0.0, 0.0, 0.0, 180.0, 20015.086796020572, 20015.086796020572},
+	}
+	for _, v := range vectors {
+		got := HaversineKm(v.lat1, v.lng1, v.lat2, v.lng2)
+		if got != v.wantGo {
+			t.Fatalf("%s: got %.17g, want pinned Go bytes %.17g", v.name, got, v.wantGo)
+		}
+		if d := math.Abs(got - v.wantPython); d > 1e-9 {
+			t.Fatalf("%s: Go/Python divergence %.3e km exceeds the stated 1e-9 envelope", v.name, d)
+		}
 	}
 }

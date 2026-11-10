@@ -1,0 +1,106 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Georuntimeproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Georuntimeproof — one contract across every runtime</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic coordinates only. The wave-14 geodesy census swept ONE runtime and presented as estate-wide; recon found the estate measured distance four ways across three runtimes — Python, JavaScript (two private IUGG-radius copies, unclamped), Go (one IUGG copy, one atan2-form local preference). All converged on geolock.GEODESY_CONTRACT. The five vectors below are stamped into this payload; the node suite asserts the web tier bit-identical to them, the Go suites pin their own exact bytes with a stated ~1-ulp libm envelope. A claim per runtime, a suite per claim, an envelope where the silicon disagrees.</div>
+
+  <div class="card">
+    <h2>The control — three runtimes, zero private haversines</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-vec"></div><div class="kpi-label">conformance vectors</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-retired"></div><div class="kpi-label">private copies retired</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-env"></div><div class="kpi-label">Go envelope (km)</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The census — scope stated, per runtime</h2>
+    <div id="census"></div>
+  </div>
+
+  <div class="card">
+    <h2>The vectors — the payload IS the conformance gate</h2>
+    <div id="vectors"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — refused or stated; none silent</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Vectors sha256</b><span class="mono" id="vsha"></span></div>
+    <div class="row"><b>Bit identity where true</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Census scope</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./georuntimeproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  const rt = c.runtimes;
+  const retired = rt.python.private_before + rt.javascript.private_before +
+    rt.go.private_before;
+  $("k-vec").textContent = p.conformance_vectors.length;
+  $("k-retired").textContent = retired;
+  $("k-env").textContent = rt.go.libm_envelope.worst_divergence_km.toExponential(1);
+  $("k-drills").textContent = p.drills.length;
+  $("control-note").textContent =
+    "contract radius " + c.contract.radius_km + " km · " + c.contract.model +
+    " · python " + rt.python.private_after + " private · javascript " +
+    rt.javascript.private_after + " private · go " + rt.go.private_after +
+    " private · " + c.census_scope_stated;
+
+  $("census").innerHTML = ["python", "javascript", "go"].map((k) => {
+    const r = rt[k];
+    return `<div class="row"><b>${esc(k)}</b><span class="mono">${esc(
+      r.private_before + " → " + r.private_after + " private · " + r.conformance)}</span></div>`;
+  }).join("") +
+  `<div class="row"><b>census scope</b><span class="mono" style="opacity:.8">${esc(c.census_scope_stated)}</span></div>`;
+
+  $("vectors").innerHTML = p.conformance_vectors.map((v) =>
+    `<div class="row"><b>${esc(v.name)}</b><span class="mono">${esc(
+      v.km + " km · go " + v.go_exact_km + " · Δ " +
+      v.go_vs_python_km.toExponential(1))}</span></div>`).join("");
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const badge = r.outcome === "refused" ? "ok" : "warn";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(r.outcome)}</span>
+     ${r.proof ? `<span class="mono" style="opacity:.7"> · proven by ${esc(r.proof)}</span>` : ""}
+     <br><span style="opacity:.8">${esc(r.detail)}</span></div>`;
+  }).join("");
+
+  $("sha").textContent = p.sha256;
+  $("vsha").textContent = c.vectors_sha256;
+  $("h1").textContent = p.honesty.bit_identity_where_true;
+  $("h2").textContent = p.honesty.census_scope;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

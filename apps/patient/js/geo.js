@@ -8,12 +8,14 @@
  * have"; the OS answers "how do I get there".
  */
 
+/* ADR-0078: the private IUGG-radius copy (6371.0088, unclamped) is
+ * retired. The historic name stays; the arithmetic delegates to the
+ * canonical web module — one contract, one formula, one clamp,
+ * estate-wide. */
+import { distanceKm } from "../../pwa/js/geodesy.js";
+
 export function haversineKm(lat1, lng1, lat2, lng2) {
-  const rad = Math.PI / 180, R = 6371.0088;
-  const dLat = (lat2 - lat1) * rad, dLng = (lng2 - lng1) * rad;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * rad) * Math.cos(lat2 * rad) * Math.sin(dLng / 2) ** 2;
-  return 2 * R * Math.asin(Math.sqrt(a));
+  return distanceKm(lat1, lng1, lat2, lng2);
 }
 
 export function nearest(facilities, lat, lng, limit = 8) {

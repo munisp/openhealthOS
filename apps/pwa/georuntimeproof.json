@@ -1,0 +1,198 @@
+{
+  "banner": "Synthetic coordinates only — every distance below is production code exercising production refusals.",
+  "conformance_vectors": [
+    {
+      "a": [
+        10.52,
+        7.44
+      ],
+      "atan2_vs_contract_km": 0.0,
+      "b": [
+        6.52,
+        3.37
+      ],
+      "go_exact_km": 630.9185788095127,
+      "go_vs_python_km": 1.1368683772161603e-13,
+      "km": 630.9185788095126,
+      "name": "kaduna-to-lagos",
+      "retired_atan2_km": 630.9185788095126
+    },
+    {
+      "a": [
+        12.0022,
+        8.592
+      ],
+      "atan2_vs_contract_km": 2.2737367544323206e-13,
+      "b": [
+        4.8156,
+        7.0498
+      ],
+      "go_exact_km": 816.8967101773752,
+      "go_vs_python_km": 2.2737367544323206e-13,
+      "km": 816.896710177375,
+      "name": "kano-to-port-harcourt",
+      "retired_atan2_km": 816.8967101773752
+    },
+    {
+      "a": [
+        10.0,
+        7.0
+      ],
+      "atan2_vs_contract_km": 0.0,
+      "b": [
+        11.0,
+        7.0
+      ],
+      "go_exact_km": 111.19492664455873,
+      "go_vs_python_km": 0.0,
+      "km": 111.19492664455873,
+      "name": "one-degree-of-latitude",
+      "retired_atan2_km": 111.19492664455873
+    },
+    {
+      "a": [
+        6.52,
+        3.37
+      ],
+      "atan2_vs_contract_km": 0.0,
+      "b": [
+        6.52,
+        3.37
+      ],
+      "go_exact_km": 0.0,
+      "go_vs_python_km": 0.0,
+      "km": 0.0,
+      "name": "identical-point",
+      "retired_atan2_km": 0.0
+    },
+    {
+      "a": [
+        0.0,
+        0.0
+      ],
+      "atan2_vs_contract_km": 0.0,
+      "b": [
+        0.0,
+        180.0
+      ],
+      "go_exact_km": 20015.086796020572,
+      "go_vs_python_km": 0.0,
+      "km": 20015.086796020572,
+      "name": "true-antipodal",
+      "retired_atan2_km": 20015.086796020572
+    }
+  ],
+  "control": {
+    "census_scope_stated": "wave 14 swept Python only; this census swept packages/ ml/ apps/ services/ across .py .js .mjs .go .rs — method: grep for asin|Asin|6371|atan2|Atan2",
+    "contract": {
+      "crs_meaning": "degrees are WGS-84 lng/lat — CRS governance lives in this package",
+      "honest_error": "<=0.3% vs WGS-84 geodesic",
+      "model": "spherical-haversine",
+      "never": "survey-grade — property lines and engineering need a geodesist",
+      "radius_km": 6371.0,
+      "supersedes": "five private haversines, radii 6371.0 and 6371.0088 (ADR-0075)"
+    },
+    "runtimes": {
+      "go": {
+        "conformance": "exact outputs pinned as literals in geo_test.go / fleet_test.go; vs these Python vectors the envelope is stated",
+        "libm_envelope": {
+          "envelope_km": 1e-09,
+          "meaning": "Go's fdlibm-derived libm differs from CPython/glibc by ~1 ulp on some legs — at 630 km that is about a tenth of a micrometre; planning-irrelevant, stated because the checksum is the contract",
+          "worst_divergence_km": 2.2737367544323206e-13
+        },
+        "owner": "registry-service geo.go / dispatch-service fleet.go — contract formula, stated clamp",
+        "private_after": 0,
+        "private_before": 2,
+        "retired": [
+          "registry-service — IUGG 6371.0088, unclamped",
+          "dispatch-service — atan2-form 6371.0 (a local preference, not the contract)"
+        ]
+      },
+      "javascript": {
+        "conformance": "bit-identical — apps/pwa/tests/geodesy-conformance.test.mjs asserts === against these vectors",
+        "owner": "apps/pwa/js/geodesy.js distanceKm",
+        "private_after": 0,
+        "private_before": 2,
+        "retired": [
+          "apps/dashboards/js/map.js — IUGG 6371.0088, unclamped",
+          "apps/patient/js/geo.js — IUGG 6371.0088, unclamped"
+        ]
+      },
+      "python": {
+        "conformance": "bit-identical — the geodesyproof matrix runs eight Python callables on these legs and every row digest verifies",
+        "owner": "geolock.distance_km",
+        "private_after": 0,
+        "private_before": 6
+      }
+    },
+    "vectors_sha256": "9a4b026fa916bd76148b83cb70b1feb52cc5451374ad27a64b98f64ec2fc1437"
+  },
+  "demo": true,
+  "drills": [
+    {
+      "attack": "EPSG:3857 easting as a longitude in the PWA",
+      "name": "a metre-space coordinate is fed to the JS distance",
+      "result": {
+        "detail": "distanceKm throws RangeError naming lng1 376170.8 — the same offender the Python gate names; the web tier fails closed in the same words",
+        "outcome": "refused",
+        "proof": "apps/pwa/tests/geodesy-conformance.test.mjs"
+      }
+    },
+    {
+      "attack": "float rounding past 1.0 — the retired JS copies returned NaN here",
+      "name": "two exactly antipodal points are measured in the PWA",
+      "result": {
+        "detail": "clamp-stated: distanceKm(0,0, 0,180) === 20015.086796020572 — bit-identical to the Python vector, no NaN",
+        "outcome": "stated",
+        "proof": "apps/pwa/tests/geodesy-conformance.test.mjs"
+      }
+    },
+    {
+      "attack": "silent contract drift in the conformance surface",
+      "name": "a reference vector is edited by one digit",
+      "result": {
+        "detail": "the node suite asserts === against this payload's bytes — a tampered vector fails the suite and the tampered payload fails proofindex; two independent gates",
+        "outcome": "refused",
+        "proof": "apps/pwa/tests/geodesy-conformance.test.mjs"
+      }
+    },
+    {
+      "attack": "an overclaim of cross-runtime identity",
+      "name": "Go's outputs are presented as bit-identical to Python's",
+      "result": {
+        "detail": "envelope-stated: Go's libm diverges by up to 2.3e-13 km (~1 ulp) on these vectors — the payload carries go_exact_km per leg and the Go tests pin THOSE bytes; nobody claims the silicon agrees",
+        "outcome": "stated"
+      }
+    },
+    {
+      "attack": "a better-loved local formula over the shared contract",
+      "name": "the dispatch service keeps its atan2 form",
+      "result": {
+        "detail": "retired-measured: the atan2 form diverges from the contract by up to 2.3e-13 km on these vectors (sub-nanometre, absorbed); one formula estate-wide — convergence beats local preference",
+        "outcome": "stated"
+      }
+    },
+    {
+      "attack": "a single-runtime sweep re-presented as complete",
+      "name": "the wave-14 census is quoted as the whole estate",
+      "result": {
+        "detail": "scope-stated: wave 14 swept Python; waves 16/17 closed what it missed (gisexport's closure, then the JS and Go copies). The census now names its method and its runtimes — a census with a stated scope can be audited; one without cannot be trusted",
+        "outcome": "stated"
+      }
+    }
+  ],
+  "generated_at": "2026-11-11T18:00:00Z",
+  "honesty": {
+    "bit_identity_where_true": "Python and JavaScript agree bit-for-bit on these vectors and the node suite pins it; Go's ~1-ulp libm envelope is stated as data instead of claimed away",
+    "census_scope": "every census now states its runtimes and its method; an unscoped census is a claim, not a measurement",
+    "one_contract": "every runtime computes spherical haversine at 6371.0 with the stated clamp — or names why not",
+    "the_payload_is_the_vectors": "the node suite reads THIS payload's bytes — tamper with a vector and both proofindex and the conformance suite go red"
+  },
+  "sha256": "97db109268e313fb9c21e651736fdd6db24a3e5dd97c294fe960f3c14526d185",
+  "surface": "georuntimeproof",
+  "versions": {
+    "exporter": "georuntimeproof-demo@1.0.0",
+    "geolock": "geolock@1.1.0",
+    "go_toolchain": "go1.22.12 linux/amd64 (conformance literals measured there — stated)"
+  }
+}

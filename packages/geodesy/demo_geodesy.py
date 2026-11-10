@@ -26,6 +26,18 @@ delegates via gisexport.distance_km and takes its place as the seventh
 row of the matrix. A census is data, and a census that missed is
 stated — not quietly fixed. Five drills below; the fifth is the miss
 itself.
+
+geodesyproof-demo@1.2.0 (ADR-0078) — the guard pins BEHAVIOR now, and
+the census is cross-runtime. routing.haversine_km joins the matrix as
+the eighth site: the router's duplication is now pinned bit-for-bit on
+the reference legs, so a formula edit (not just a constant edit) fails
+the suite. And the wave-14 census is stated for what it was — a
+PYTHON-ONLY sweep: wave-17 recon found two JavaScript copies (both
+IUGG 6371.0088, unclamped) and two Go copies (registry IUGG unclamped;
+dispatch atan2-form, 6371.0) the sweep never saw. All four converged;
+the JS conformance is bit-identical and pinned in the node suite, the
+Go conformance carries a stated ~1-ulp libm envelope. Seven drills
+below; the last two state what this demo's predecessors could not see.
 """
 
 from __future__ import annotations
@@ -51,7 +63,7 @@ import visitplan  # noqa: E402
 import routing  # noqa: E402
 import catchment  # noqa: E402
 
-DEMO_VERSION = "geodesyproof-demo@1.1.0"
+DEMO_VERSION = "geodesyproof-demo@1.2.0"
 CLOCK = "2026-11-11T16:30:00Z"
 OUT = os.path.join(_HERE, "..", "..", "apps", "pwa", "geodesyproof.json")
 
@@ -103,9 +115,11 @@ def _refusal(fn):
 
 
 def _sites():
-    """The seven callables that must agree bit-for-bit. The seventh —
-    gisexport.distance_km — is the wave-14 census miss: the gate
-    package now computes on the same contract it stamps (ADR-0077)."""
+    """The eight callables that must agree bit-for-bit. The seventh —
+    gisexport.distance_km — is the wave-14 census miss (ADR-0077). The
+    eighth — routing.haversine_km — promotes the drift guard from
+    constants to BEHAVIOR (ADR-0078): a formula edit in the router now
+    fails this matrix, not just a radius edit."""
     return [
         ("geolock (owner)",
          lambda a, b: geolock.distance_km(a[0], a[1], b[0], b[1])),
@@ -118,6 +132,8 @@ def _sites():
         ("outbreak._km",
          lambda a, b: outbreak._km({"lat": a[0], "lng": a[1]},
                                    {"lat": b[0], "lng": b[1]})),
+        ("routing.haversine_km",
+         lambda a, b: routing.haversine_km(a, b)),
         ("visitplan.haversine_km",
          lambda a, b: visitplan.haversine_km(a[0], a[1], b[0], b[1])),
         ("catchment.haversine_km",
@@ -168,6 +184,23 @@ def run_demo():
                        "divergence_ppm": ppm,
                        "honesty_band_ppm": band_ppm,
                        "band_margin_x": band_ppm / ppm},
+        "runtimes": {
+            "census_scope_wave14": "python-only — the wave-14 census "
+                                   "swept one runtime and presented as "
+                                   "estate-wide; stated, not hidden",
+            "python": {"private_before": 6, "private_after": 0,
+                       "conformance": "bit-identical (this matrix)"},
+            "javascript": {"private_before": 2, "private_after": 0,
+                           "retired": "IUGG 6371.0088 unclamped x2 "
+                                      "(dashboards/map.js, patient/geo.js)",
+                           "conformance": "bit-identical (apps/pwa/tests/"
+                                          "geodesy-conformance.test.mjs)"},
+            "go": {"private_before": 2, "private_after": 0,
+                   "retired": "registry IUGG 6371.0088 unclamped; "
+                              "dispatch atan2-form 6371.0",
+                   "conformance": "~1-ulp libm envelope vs CPython/glibc "
+                                  "— stated, exact outputs pinned in "
+                                  "geo_test.go / fleet_test.go"}},
     }
 
     drills = [
@@ -213,6 +246,26 @@ def run_demo():
                               "added to this matrix as the seventh row. "
                               "A census is data; a census that missed "
                               "is stated, not quietly fixed"}},
+        {"name": "the router's formula is edited, constants untouched",
+         "attack": "drift the drift guard cannot see — pinned data, "
+                   "unpinned arithmetic",
+         "result": {"outcome": "refused",
+                    "detail": "behavior-pinned: routing.haversine_km is "
+                              "matrix row 8 — bit-identity on five legs "
+                              "means a formula edit diverges a row and "
+                              "fails the suite; the guard now covers "
+                              "the arithmetic, not just the constants"}},
+        {"name": "the wave-14 census is re-read as estate-wide",
+         "attack": "a Python-only sweep presented as the whole estate",
+         "result": {"outcome": "stated",
+                    "detail": "cross-runtime-census: wave 14 swept "
+                              "Python only. Wave-17 recon found JS x2 "
+                              "(IUGG 6371.0088, unclamped) and Go x2 "
+                              "(registry IUGG; dispatch atan2-form) — "
+                              "all four converged (ADR-0078); JS proven "
+                              "bit-identical in the node suite, Go "
+                              "pinned with a stated ~1-ulp libm envelope "
+                              "in georuntimeproof"}},
     ]
 
     body = {

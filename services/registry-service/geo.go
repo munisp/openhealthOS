@@ -16,17 +16,27 @@ import (
 	"strconv"
 )
 
-// earthRadiusKm — mean radius, haversine.
-const earthRadiusKm = 6371.0088
+// earthRadiusKm — ADR-0078: the estate converges on
+// geolock.GEODESY_CONTRACT (spherical haversine, r=6371.0, ≤0.3% vs
+// WGS-84 stated, never survey-grade). The IUGG mean 6371.0088 this file
+// used is retired — 1.381 ppm from the contract, >2000x inside the
+// stated honesty band, superseded in daylight rather than silently.
+const earthRadiusKm = 6371.0
 
-// HaversineKm is the great-circle distance between two coordinates.
+// HaversineKm is the great-circle distance between two coordinates,
+// under the estate contract. The sqrt argument is clamped to 1.0: at
+// exactly antipodal points float rounding can push it a hair above 1
+// and the unclamped copy would have returned NaN. Go's pure-Go libm
+// (fdlibm-derived) differs from CPython/glibc by ~1 ulp on some
+// inputs — that envelope is stated in the georuntimeproof payload, and
+// geo_test.go pins this implementation's exact outputs as literals.
 func HaversineKm(lat1, lng1, lat2, lng2 float64) float64 {
 	rad := math.Pi / 180
 	dLat := (lat2 - lat1) * rad
 	dLng := (lng2 - lng1) * rad
 	a := math.Sin(dLat/2)*math.Sin(dLat/2) +
 		math.Cos(lat1*rad)*math.Cos(lat2*rad)*math.Sin(dLng/2)*math.Sin(dLng/2)
-	return 2 * earthRadiusKm * math.Asin(math.Sqrt(a))
+	return 2 * earthRadiusKm * math.Asin(math.Min(1.0, math.Sqrt(a)))
 }
 
 // FacilityDistance pairs a facility with its distance from a query point.

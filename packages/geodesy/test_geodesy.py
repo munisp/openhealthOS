@@ -38,7 +38,7 @@ class TestGeodesyProof(unittest.TestCase):
     def test_payload_shape(self):
         body = demo_geodesy.run_demo()
         self.assertEqual(body["surface"], "geodesyproof")
-        self.assertEqual(len(body["convergence_matrix"]), 7)
+        self.assertEqual(len(body["convergence_matrix"]), 8)
         self.assertTrue(body["control"]["matrix_agrees_bit_for_bit"])
         rows = body["convergence_matrix"]
         self.assertEqual(len({tuple(r["legs_km"]) for r in rows}), 1)
@@ -61,14 +61,23 @@ class TestGeodesyProof(unittest.TestCase):
             body["control"]["reference_leg_km"]["true-antipodal"],
             20015.086796, places=4)
         drills = body["drills"]
-        self.assertEqual(len(drills), 5)
-        self.assertTrue(all(d["result"]["outcome"] == "refused"
-                            for d in drills[:2]))
-        self.assertTrue(all(d["result"]["outcome"] == "stated"
-                            for d in drills[2:]))
+        self.assertEqual(len(drills), 7)
+        refused = [0, 1, 5]   # metre-space, radius tamper, formula drift
+        stated = [2, 3, 4, 6]
+        self.assertTrue(all(drills[i]["result"]["outcome"] == "refused"
+                            for i in refused))
+        self.assertTrue(all(drills[i]["result"]["outcome"] == "stated"
+                            for i in stated))
         # the fifth drill states the wave-14 census miss, by name
         self.assertIn("census-miss-stated", drills[4]["result"]["detail"])
         self.assertIn("gisexport", drills[4]["result"]["detail"])
+        # the seventh states the census was Python-only
+        self.assertIn("cross-runtime-census", drills[6]["result"]["detail"])
+        # the runtime census is data on the payload
+        rt = body["control"]["runtimes"]
+        self.assertEqual(rt["python"]["private_after"], 0)
+        self.assertEqual(rt["javascript"]["private_before"], 2)
+        self.assertEqual(rt["go"]["private_before"], 2)
         # the metre-space drill names the offender
         self.assertIn("376170.8", drills[0]["result"]["detail"])
 
