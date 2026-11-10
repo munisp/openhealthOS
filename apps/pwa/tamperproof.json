@@ -1,0 +1,137 @@
+{
+ "version": "tamperproof-demo@1.0.0",
+ "generated_at": "2026-11-10T08:00:00Z",
+ "gate": {
+  "control": {
+   "verdict": "green",
+   "reasons": [],
+   "officer_action": "admit"
+  },
+  "gates": [
+   {
+    "gate": "tail tamper",
+    "presented": "\u20260yZDXnxx",
+    "note": "the last two characters edited \u2014 caught as non-canonical before the checksum",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: non-canonical encoding"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "decode-identical twin",
+    "presented": "\u20260yZDXnUh",
+    "note": "signature decodes to the IDENTICAL 32 bytes \u2014 only the canonical-form gate sees it",
+    "decoded_bytes_identical": true,
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: non-canonical encoding"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "mid-signature forgery",
+    "presented": "\u20260yZDXxUg",
+    "note": "canonical string, wrong bytes \u2014 the HMAC checksum itself refuses",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: bad signature"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "unknown key",
+    "presented": "eyJhbGciOiJIUzI1NiIsImtp\u2026",
+    "note": "well-formed, well-signed \u2014 by a key the scheme never issued",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: unknown key"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "garbage: empty scan",
+    "presented": "(empty)",
+    "note": "refused with named reasons \u2014 a bad QR is a red verdict, not a crash",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: malformed"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "garbage: no segments",
+    "presented": "xyz\u2026",
+    "note": "refused with named reasons \u2014 a bad QR is a red verdict, not a crash",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: malformed"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "garbage: bad alphabet",
+    "presented": "~!~.%\u2026",
+    "note": "refused with named reasons \u2014 a bad QR is a red verdict, not a crash",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: malformed"
+    ],
+    "officer_action": "supervisor"
+   },
+   {
+    "gate": "garbage: padding smuggle",
+    "presented": "eyJhbGciOiJIUzI1\u2026",
+    "note": "refused with named reasons \u2014 a bad QR is a red verdict, not a crash",
+    "verdict": "red",
+    "reasons": [
+     "unverifiable: non-canonical encoding"
+    ],
+    "officer_action": "supervisor"
+   }
+  ],
+  "all_gates_red": true,
+  "control_green": true
+ },
+ "sweep": {
+  "token_length": 242,
+  "tamper": {
+   "cases": 1922,
+   "red": 1922,
+   "raises": 0,
+   "non_red": 0
+  },
+  "garbage": {
+   "cases": 5000,
+   "red": 5000,
+   "raises": 0
+  }
+ },
+ "cross_module": {
+  "evidence": [
+   {
+    "module": "qrtrust",
+    "attack": "non-ASCII scan",
+    "refused_with": "TrustError",
+    "fail_closed": true
+   },
+   {
+    "module": "qrtrust",
+    "attack": "case-twin signature",
+    "refused_with": "TrustError",
+    "fail_closed": true
+   },
+   {
+    "module": "assettag",
+    "attack": "non-ASCII scan",
+    "refused_with": "TagError",
+    "fail_closed": true
+   }
+  ],
+  "all_fail_closed": true
+ },
+ "versions": {
+  "vhcover": "vhcover@1.1.0"
+ },
+ "sha256": "d2a7746106f39448ad68f12e926411210ee98f9312cbd07c079f1e223423f015"
+}

@@ -12,6 +12,7 @@ Doctrines under test:
 - The contract holds across the ENTIRE single-character tamper space,
   not just at one sampled position.
 """
+import json
 import os
 import random
 import string
@@ -177,3 +178,64 @@ class TestGarbageFuzz(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestDemoTamper(unittest.TestCase):
+    """The tamper-gate board reads a deterministic export — a demo you
+    cannot reproduce is a story you cannot audit."""
+
+    def test_deterministic_byte_for_byte(self):
+        import demo_tamper
+        first = demo_tamper.run_demo()
+        second = demo_tamper.run_demo()
+        self.assertEqual(first, second)
+        self.assertEqual(first["sha256"], second["sha256"])
+
+    def test_sha256_stamp_is_the_contract(self):
+        import demo_tamper
+        import hashlib
+        payload = demo_tamper.run_demo()
+        body = {k: v for k, v in payload.items() if k != "sha256"}
+        digest = hashlib.sha256(json.dumps(body, sort_keys=True,
+                                           separators=(",", ":"))
+                                .encode()).hexdigest()
+        self.assertEqual(payload["sha256"], digest)
+
+    def test_payload_shape_and_evidence(self):
+        import demo_tamper
+        p = demo_tamper.run_demo()
+        self.assertEqual(p["version"], "tamperproof-demo@1.0.0")
+        self.assertTrue(p["gate"]["control_green"])
+        self.assertEqual(p["gate"]["control"]["verdict"], "green")
+        self.assertTrue(p["gate"]["all_gates_red"])
+        names = [g["gate"] for g in p["gate"]["gates"]]
+        self.assertEqual(names[:4], ["tail tamper", "decode-identical twin",
+                                     "mid-signature forgery", "unknown key"])
+        twin = p["gate"]["gates"][1]
+        self.assertTrue(twin["decoded_bytes_identical"])
+        self.assertIn("unverifiable: non-canonical encoding",
+                      twin["reasons"])
+        for g in p["gate"]["gates"]:
+            self.assertEqual(g["verdict"], "red", g["gate"])
+            self.assertTrue(g["reasons"], g["gate"])
+        t, g = p["sweep"]["tamper"], p["sweep"]["garbage"]
+        self.assertGreater(t["cases"], 1500)
+        self.assertEqual(t["red"], t["cases"])
+        self.assertEqual(t["raises"], 0)
+        self.assertEqual(t["non_red"], 0)
+        self.assertEqual(g["cases"], 5000)
+        self.assertEqual(g["red"], 5000)
+        self.assertEqual(g["raises"], 0)
+        ev = p["cross_module"]["evidence"]
+        self.assertTrue(p["cross_module"]["all_fail_closed"])
+        self.assertEqual([e["refused_with"] for e in ev],
+                         ["TrustError", "TrustError", "TagError"])
+        self.assertIn("vhcover", p["versions"])
+
+    def test_main_writes_payload_file(self):
+        import demo_tamper
+        self.assertEqual(demo_tamper.main(), 0)
+        with open(os.path.normpath(demo_tamper.OUT),
+                  encoding="utf-8") as fh:
+            on_disk = json.load(fh)
+        self.assertEqual(on_disk["sha256"], demo_tamper.run_demo()["sha256"])

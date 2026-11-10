@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Tamper proof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Tamper proof — the checksum is the contract</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. One fixed token, every gate exercised: the genuine cover admits, and every attack on its string — tail edits, a decode-identical twin, forgeries, unknown keys, garbage — is a red verdict with named reasons, never a crash. The contract covers the STRING presented at the border, not just the bytes it decodes to. Refusals are the feature.</div>
+
+  <div class="card">
+    <h2>The control — a genuine cover admits</h2>
+    <div id="control"></div>
+  </div>
+
+  <div class="card">
+    <h2>The gates — every attack is red, named, and calm</h2>
+    <div id="gates"></div>
+  </div>
+
+  <div class="card">
+    <h2>The sweep — the whole tamper space, not a sample</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-cases"></div><div class="kpi-label">tamper cases</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-red"></div><div class="kpi-label">red verdicts</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-raises"></div><div class="kpi-label">exceptions</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-garbage"></div><div class="kpi-label">garbage red</div></div>
+    </div>
+    <div class="mono" id="sweep-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Fail-closed across the estate — a scan is never a crash</h2>
+    <div id="cross"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function gateCard(g) {
+  const twin = g.decoded_bytes_identical
+    ? ` <span class="badge warn">decoded bytes identical: YES</span>` : "";
+  return `<div class="gate" style="margin:6px 0"><b>${esc(g.gate)}</b>${twin}
+    <br><span class="mono">${esc(g.presented)}</span>
+    <br><b>${esc(g.verdict.toUpperCase())}</b> — ${g.reasons.map(esc).join("; ")}
+    <br><span style="opacity:.8">${esc(g.note)}</span></div>`;
+}
+
+fetch("./tamperproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.gate.control;
+  $("control").innerHTML = `<div class="row"><b>Genuine cover</b>
+    <span><span class="badge ok">${esc(c.verdict)}</span>
+    <span class="mono"> officer action: ${esc(c.officer_action)}</span></span></div>`;
+
+  $("gates").innerHTML = p.gate.gates.map(gateCard).join("");
+
+  const t = p.sweep.tamper, g = p.sweep.garbage;
+  $("k-cases").textContent = t.cases.toLocaleString();
+  $("k-red").textContent = t.red.toLocaleString();
+  $("k-raises").textContent = t.raises;
+  $("k-garbage").textContent = g.red.toLocaleString() + " / " + g.cases.toLocaleString();
+  $("sweep-note").textContent =
+    `every single-character tamper of a ${p.sweep.token_length}-character token: ` +
+    `${t.red}/${t.cases} red, ${t.non_red} escaped, ${t.raises} raised — ` +
+    `plus ${g.red}/${g.cases} seeded garbage strings red, ${g.raises} raised`;
+
+  $("cross").innerHTML = p.cross_module.evidence.map((e) =>
+    `<div class="row"><b>${esc(e.module)}</b>
+     <span><span class="badge ${e.fail_closed ? "ok" : "warn"}">${esc(e.refused_with)}</span>
+     <span class="mono"> ${esc(e.attack)}</span></span></div>`).join("") +
+    `<div class="mono" style="margin-top:6px">every gate refuses with its own named refusal type — never a TypeError at the border</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>
