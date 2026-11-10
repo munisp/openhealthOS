@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Knowledge-graph proof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Knowledge-graph proof — semantics as data, federation fail-closed</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. The concepts below are fixtures, never real clinical content. The machinery exercised — DAG-enforced concept graphs, four-eyes mappings, closed-vocabulary shape validation, ratified federation with injected transports — is the production code. External engines (OxiRS, Jena) are never embedded: they compose as ratified adapters over an injected wire, and an endpoint that errors is stated NOT CHECKED — never an empty result.</div>
+
+  <div class="card">
+    <h2>The control — subsumption, ratified mappings, conforming nodes, live federation</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-concepts"></div><div class="kpi-label">concepts registered</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-mappings"></div><div class="kpi-label">mappings ratified</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-fed"></div><div class="kpi-label">federated query</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The registry — concepts, mappings, shapes, endpoints as data</h2>
+    <div id="registry"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — eight attacks on the semantic seam, eight named outcomes</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Absence is not a value</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Engine never embedded</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./kgproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  $("k-concepts").textContent = p.registry.concepts;
+  $("k-mappings").textContent = p.registry.ratified_mappings + "/" + p.registry.mappings;
+  $("k-drills").textContent = p.drills.length;
+  $("k-fed").textContent = c.ratified_query.status;
+  $("control-note").textContent =
+    "sbp ⊑ vitals panel: " + c.subsumption["sbp-is-vital"] +
+    " · E11.9 ⊑ diabetes: " + c.subsumption["e119-is-diabetes"] +
+    " · sbp ⊑ diabetes: " + c.subsumption["sbp-is-not-diabetes"] +
+    " · conforming node conforms: " + c.conforming_node.conforms +
+    " · federated rows sha256 " + c.ratified_query.rows_sha256.slice(0, 16) + "…";
+
+  $("registry").innerHTML =
+    `<div class="row"><b>graph</b><span class="mono">${esc(p.registry.graph)}@${esc(p.registry.version)}</span></div>` +
+    `<div class="row"><b>concepts</b><span class="mono">${p.registry.concepts} · mappings ${p.registry.mappings} (${p.registry.ratified_mappings} ratified) · shapes ${p.registry.shapes} · endpoints ${p.registry.endpoints}</span></div>` +
+    `<div class="row"><b>traversed mapping</b><span class="mono">${esc(c.ratified_mapping_traverses[0].src)} → ${esc(c.ratified_mapping_traverses[0].dst)} <span class="badge">${esc(c.ratified_mapping_traverses[0].kind)}</span> approved by ${esc(c.ratified_mapping_traverses[0].approved_by.join(" + "))}</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const r = d.result;
+    const outcome = r.outcome || r.status;
+    const badge = (outcome === "refused" || outcome === "not-traversed" || outcome === "named") ? "ok" : "warn";
+    let detail = r.reason || r.detail || "";
+    if (r.validation) {
+      detail = r.validation.violations.map((v) =>
+        v.kind + " @ " + v.path).join(" · ");
+    }
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.name)}</b> <span class="badge ${badge}">${esc(outcome)}</span>
+     <br><span style="opacity:.8">${esc(detail)}</span></div>`;
+  }).join("") +
+  `<div class="mono" style="margin-top:6px">eight attacks on the semantic seam — refused, not-traversed, named, or stated not-checked; none silent</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("h1").textContent = p.honesty.absence_is_not_a_value;
+  $("h2").textContent = p.honesty.engine_never_embedded;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

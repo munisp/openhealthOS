@@ -1,0 +1,173 @@
+{
+  "banner": "Synthetic concepts only — every engine below is production code exercising production refusals.",
+  "control": {
+    "conforming_node": {
+      "conforms": true,
+      "shape": "vitals-panel@1.0.0",
+      "target": "loinc:LP31755-9",
+      "violations": []
+    },
+    "ratified_mapping_traverses": [
+      {
+        "approved_by": [
+          "ada.lovelace",
+          "bola.tinubu"
+        ],
+        "dst": "icd10:I10",
+        "kind": "related",
+        "ratified": true,
+        "src": "loinc:8480-6"
+      }
+    ],
+    "ratified_query": {
+      "endpoint": "oxirs-knowledge-base",
+      "executed_at": "2026-11-11T12:00:00Z",
+      "query_sha256": "3cb78bb209cebc592fefbf834afc787716eb928c5a6315c29557240b7a2cb20d",
+      "row_count": 1,
+      "rows": [
+        {
+          "answer": "synthetic-row",
+          "endpoint": "https://sparql.cooljapan.tech/sparql",
+          "query_sha256": "3cb78bb209cebc592fefbf834afc787716eb928c5a6315c29557240b7a2cb20d"
+        }
+      ],
+      "rows_sha256": "19b6ca8aaa3dd7b455966a7cab869ebcad44529b4f2c3ab652df075ca2249f10",
+      "status": "ok",
+      "url": "https://sparql.cooljapan.tech/sparql"
+    },
+    "subsumption": {
+      "e119-is-diabetes": true,
+      "sbp-is-not-diabetes": false,
+      "sbp-is-vital": true
+    }
+  },
+  "demo": true,
+  "drills": [
+    {
+      "attack": "self-parent concept",
+      "name": "a cycle attempts to construct itself",
+      "result": {
+        "outcome": "refused",
+        "reason": "self-parent 'loinc:X' refused — the hierarchy is a DAG"
+      }
+    },
+    {
+      "attack": "unregistered parent",
+      "name": "a descendant appears before its ancestor",
+      "result": {
+        "outcome": "refused",
+        "reason": "unregistered parent 'loinc:GHOST' — register ancestors before descendants"
+      }
+    },
+    {
+      "attack": "single-approver traversal",
+      "name": "an unratified mapping is asked to carry meaning",
+      "result": {
+        "detail": "the pending E11.9 mapping is absent from traversal — claims need four eyes",
+        "outcome": "not-traversed",
+        "traversed": []
+      }
+    },
+    {
+      "attack": "four violations in one node",
+      "name": "a node smuggles extra semantics past a closed shape",
+      "result": {
+        "outcome": "named",
+        "validation": {
+          "conforms": false,
+          "shape": "vitals-panel@1.0.0",
+          "target": "loinc:LP31755-9",
+          "violations": [
+            {
+              "detail": "required property absent",
+              "kind": "required",
+              "path": "systolic"
+            },
+            {
+              "detail": "5 values, max 4",
+              "kind": "max_count",
+              "path": "tags"
+            },
+            {
+              "detail": "'prone' not in closed vocabulary",
+              "kind": "in",
+              "path": "position"
+            },
+            {
+              "detail": "property not in the closed shape — extra semantics refused",
+              "kind": "closed",
+              "path": "extra_semantics"
+            }
+          ]
+        }
+      }
+    },
+    {
+      "attack": "federation without four eyes",
+      "name": "an unratified endpoint is queried",
+      "result": {
+        "detail": "endpoint is not ratified — four eyes before any federated query runs",
+        "endpoint": "national-terminology",
+        "executed_at": "2026-11-11T12:00:00Z",
+        "query_sha256": "dab3891081bcd39898fa154675c0d147665f9b3a5aae251f3dfa296b697ef999",
+        "status": "refused",
+        "url": "https://terminology.example.gov/sparql"
+      }
+    },
+    {
+      "attack": "missing transport",
+      "name": "a ratified endpoint has no wire",
+      "result": {
+        "detail": "no transport injected — a missing wire is stated, never faked",
+        "endpoint": "oxirs-knowledge-base",
+        "executed_at": "2026-11-11T12:00:00Z",
+        "query_sha256": "3cb78bb209cebc592fefbf834afc787716eb928c5a6315c29557240b7a2cb20d",
+        "status": "not-checked",
+        "url": "https://sparql.cooljapan.tech/sparql"
+      }
+    },
+    {
+      "attack": "transport error",
+      "name": "the wire fails mid-federation",
+      "result": {
+        "detail": "transport error: ConnectionError: simulated wire failure — stated, never swallowed",
+        "endpoint": "oxirs-knowledge-base",
+        "executed_at": "2026-11-11T12:00:00Z",
+        "query_sha256": "3cb78bb209cebc592fefbf834afc787716eb928c5a6315c29557240b7a2cb20d",
+        "status": "not-checked",
+        "url": "https://sparql.cooljapan.tech/sparql"
+      }
+    },
+    {
+      "attack": "jena-fuseki, zero approvers",
+      "name": "a template adapter is used before ratification",
+      "result": {
+        "outcome": "refused",
+        "reason": "adapter 'jena-fuseki' is template — a template adapter carries no clinical query until two named approvers ratify it"
+      }
+    }
+  ],
+  "generated_at": "2026-11-11T12:00:00Z",
+  "honesty": {
+    "absence_is_not_a_value": "a transport error is stated NOT CHECKED — never an empty result",
+    "closed_vocabularies": "unknown mapping kinds and constraint kinds are refused at registration, never guessed at validation",
+    "concepts_as_data": "every concept, mapping, shape and endpoint is a registry entry — no code branches",
+    "engine_never_embedded": "external engines (OxiRS, Jena) compose via ratified adapters + injected transport; nothing is embedded (ADR-0005)",
+    "four_eyes": "mappings and endpoints traverse only after two distinct named approvers"
+  },
+  "registry": {
+    "concepts": 7,
+    "endpoints": 2,
+    "graph": "demo-clinical",
+    "mappings": 2,
+    "ratified_mappings": 1,
+    "shapes": 1,
+    "version": "2026.11.11"
+  },
+  "sha256": "c0792aa89b08cf36426fbf826d230ea9c43ae79023aaa5b0dadc43a02a5932da",
+  "surface": "kgproof",
+  "versions": {
+    "exporter": "kgproof-demo@1.0.0",
+    "kgraph": "kgraph@1.0.0"
+  }
+}

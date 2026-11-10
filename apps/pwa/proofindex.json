@@ -61,6 +61,17 @@
         "payload_version": "inferproof-demo@1.0.0"
       },
       {
+        "path": "apps/pwa/kgproof.json",
+        "title": "Knowledge-graph seam proof",
+        "contract": "compact",
+        "exporter": "packages/kgraph/demo_kgraph.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "c0792aa89b08cf36426fbf826d230ea9c43ae79023aaa5b0dadc43a02a5932da",
+        "payload_version": null
+      },
+      {
         "path": "apps/pwa/agentwrite.json",
         "title": "Agent-write stack",
         "contract": "compact",
@@ -238,8 +249,8 @@
       }
     ],
     "summary": {
-      "total": 21,
-      "verified": 21,
+      "total": 22,
+      "verified": 22,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -247,8 +258,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 22,
-      "registered": 21,
+      "stamped_on_disk": 23,
+      "registered": 22,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -259,7 +270,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 13,
+      "compact": 14,
       "spaced-utf8": 8
     }
   },
@@ -313,5 +324,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "97d67d7bc84b432fbaea9f1ed7b3492075b0f2a5684f16a70ac1079c20f35de8"
+  "sha256": "66c7880a3f746e44aac0314c272ebc8db4d0fc2d7ba90ab836220132655526dc"
 }

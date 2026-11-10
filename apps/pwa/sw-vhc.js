@@ -5,7 +5,7 @@
  * cache-first; payloads are network-first with cache fallback — a
  * stale payload renders with its checksum and a STALE badge, never as
  * if it were fresh. Absence is not a value; staleness is stated. */
-const SHELL = "vhc-shell-v9";
+const SHELL = "vhc-shell-v10";
 const PAYLOADS = "vhc-payloads-v1";
 const SHELL_URLS = [
   "./vhc-verify.html", "./traveler.html", "./dispatch.html",
@@ -24,6 +24,7 @@ const SHELL_URLS = [
   "./anchorproof.html", "./anchorproof.json",
   "./shipproof.html", "./shipproof.json",
   "./inferproof.html", "./inferproof.json",
+  "./kgproof.html", "./kgproof.json",
 ];
 
 self.addEventListener("install", (e) => {
