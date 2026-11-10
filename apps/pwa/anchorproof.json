@@ -1,0 +1,95 @@
+{
+  "version": "anchorproof-demo@1.0.0",
+  "generated_at": "2026-11-10T10:00:00Z",
+  "scenario": {
+    "chain_entries": 5,
+    "genuine_root": "693f96b5bb6e8bec58fcb6e7321d729ffc4febf7bd3b44e0df4c08ae7fa8442e",
+    "rewritten_root": "8425efb86c0d904f75d23651db023216d01e359f64ad65072d775438a54c9273",
+    "external_receipt": {
+      "notary": "file-publication@1.0.0",
+      "root": "693f96b5bb6e8bec58fcb6e7321d729ffc4febf7bd3b44e0df4c08ae7fa8442e",
+      "entries": 5,
+      "ts": "2026-11-10T10:00:00Z",
+      "receipt_sha256": "11837f76013d107d832520977799fed81fb3a0f767426524f01374d2e492dd02"
+    },
+    "rewrite_attack": {
+      "local_verify_after_rewrite": {
+        "passed": true,
+        "message": "1 anchor(s) hold",
+        "note": "the attacker recomputed the local anchors file too \u2014 local verification passes; this is auditlake's own stated residual, demonstrated not asserted"
+      },
+      "external_verdict": {
+        "status": "history-rewritten",
+        "severity": "red",
+        "detail": "external receipt from file-publication@1.0.0 holds a different root \u2014 the chain was rewritten and recomputed after anchoring",
+        "notary": "file-publication@1.0.0",
+        "ts": "2026-11-10T10:00:00Z",
+        "anchored_root": "693f96b5bb6e8bec58fcb6e7321d729ffc4febf7bd3b44e0df4c08ae7fa8442e",
+        "presented_root": "8425efb86c0d904f75d23651db023216d01e359f64ad65072d775438a54c9273"
+      }
+    },
+    "control_genuine": {
+      "status": "externally-anchored",
+      "severity": "green",
+      "detail": "root matches the external receipt from file-publication@1.0.0 at 2026-11-10T10:00:00Z covering 5 entries",
+      "notary": "file-publication@1.0.0",
+      "ts": "2026-11-10T10:00:00Z"
+    },
+    "unanchored": {
+      "status": "unanchored",
+      "severity": "amber",
+      "detail": "no external receipts on record \u2014 absence is stated, never treated as anchored"
+    }
+  },
+  "fabric": {
+    "template_refusal": {
+      "ok": false,
+      "refused": "backend fabric-gateway@1.0.0 is a TEMPLATE \u2014 2 more named approver(s) required before it operates"
+    },
+    "one_approver_still_refused": {
+      "ok": false,
+      "refused": "backend fabric-gateway@1.0.0 is a TEMPLATE \u2014 1 more named approver(s) required before it operates"
+    },
+    "ratified_no_wire_refusal": {
+      "ok": false,
+      "refused": "no transport configured \u2014 a missing wire is stated, never faked"
+    },
+    "ratified_with_wire": {
+      "notary": "fabric-gateway@1.0.0",
+      "root": "693f96b5bb6e8bec58fcb6e7321d729ffc4febf7bd3b44e0df4c08ae7fa8442e",
+      "entries": 5,
+      "ts": "2026-11-10T10:00:00Z",
+      "tx": "SIM-TX-0001",
+      "receipt_sha256": "dfa001da7db421d2b53ef43c9998f8f966ac8476b41d7e6d4e085be053bfb16f"
+    }
+  },
+  "backends": {
+    "file-publication@1.0.0": {
+      "kind": "file",
+      "status": "ratified",
+      "ratified_by": [
+        "platform-architecture",
+        "security-review"
+      ],
+      "description": "append-only anchors file living OFF the audited box \u2014 the formalized version of today's manual practice"
+    },
+    "fabric-gateway@1.0.0": {
+      "kind": "fabric",
+      "status": "template",
+      "ratified_by": [],
+      "description": "Hyperledger Fabric gateway submit(root, entries, ts) on a consortium channel; EXTERNAL network only, never embedded; requires an injected transport after ratification"
+    }
+  },
+  "flags": {
+    "rewrite_passes_local": true,
+    "rewrite_caught_externally": true,
+    "genuine_anchored": true,
+    "unanchored_stated": true,
+    "template_four_eyes": true
+  },
+  "versions": {
+    "ledgeranchor": "ledgeranchor@1.0.0",
+    "demo": "anchorproof-demo@1.0.0"
+  },
+  "sha256": "3c6b315cbbd1f8a2204b1d04d64f9fd44c5d96cfa44379f61ba84e8ff58dc3e3"
+}

@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Anchor proof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Anchor proof — a root you no longer control the history of</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. A real auditlake chain is built, Merkle-anchored to an external notary, then attacked the way auditlake's own comments describe: the attacker rewrites the WHOLE chain and recomputes the local anchors file. Local verification passes — demonstrated, not asserted. The external receipt catches it. No blockchain is embedded; the consortium-ledger backend is a four-eyes-ratified template (ADR-0069). Refusals are the feature.</div>
+
+  <div class="card">
+    <h2>The attack — rewrite everything, keep the receipt</h2>
+    <div id="attack"></div>
+  </div>
+
+  <div class="card">
+    <h2>The controls — genuine anchors green, absence stated</h2>
+    <div id="controls"></div>
+  </div>
+
+  <div class="card">
+    <h2>The consortium seam — Fabric is a ratified template, never embedded</h2>
+    <div id="fabric"></div>
+  </div>
+
+  <div class="card">
+    <h2>Notary backends — the registry read back as data</h2>
+    <div id="backends"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const sevBadge = (sev, text) =>
+  `<span class="badge ${sev === "green" ? "ok" : sev === "amber" ? "warn" : "bad"}">${esc(text)}</span>`;
+
+fetch("./anchorproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const s = p.scenario, atk = s.rewrite_attack;
+  $("attack").innerHTML =
+    `<div class="row"><b>Chain entries</b><span class="mono">${s.chain_entries}</span></div>
+     <div class="row"><b>Genuine Merkle root</b><span class="mono">${esc(s.genuine_root.slice(0, 20))}…</span></div>
+     <div class="row"><b>External receipt</b><span><span class="badge ok">${esc(s.external_receipt.notary)}</span>
+       <span class="mono"> ${esc(s.external_receipt.receipt_sha256.slice(0, 16))}…</span></span></div>
+     <div class="gate" style="margin:8px 0"><b>attacker: whole chain rewritten, local anchors recomputed</b>
+       <br>local verify-anchor: <b>${atk.local_verify_after_rewrite.passed ? "PASSED" : "failed"}</b>
+       <span class="badge warn">the honest gap</span>
+       <br><span style="opacity:.8">${esc(atk.local_verify_after_rewrite.note)}</span></div>
+     <div class="gate" style="margin:8px 0"><b>external verdict: ${esc(atk.external_verdict.status)}</b>
+       ${sevBadge(atk.external_verdict.severity, atk.external_verdict.severity)}
+       <br><span style="opacity:.8">${esc(atk.external_verdict.detail)}</span>
+       <br><span class="mono">anchored ${esc(atk.external_verdict.anchored_root.slice(0, 16))}… ≠ presented ${esc(atk.external_verdict.presented_root.slice(0, 16))}…</span></div>`;
+
+  $("controls").innerHTML =
+    `<div class="row"><b>Genuine chain vs external receipt</b>
+       ${sevBadge(p.scenario.control_genuine.severity, p.scenario.control_genuine.status)}</div>
+     <div class="mono" style="opacity:.7;margin:-4px 0 8px">${esc(p.scenario.control_genuine.detail)}</div>
+     <div class="row"><b>Chain with no receipts</b>
+       ${sevBadge(p.scenario.unanchored.severity, p.scenario.unanchored.status)}</div>
+     <div class="mono" style="opacity:.7">${esc(p.scenario.unanchored.detail)}</div>`;
+
+  const f = p.fabric;
+  const refCard = (title, a) =>
+    `<div class="gate" style="margin:6px 0"><b>${esc(title)}</b>
+       <br><b>REFUSED</b> — ${esc(a.refused)}</div>`;
+  $("fabric").innerHTML =
+    refCard("publish before ratification", f.template_refusal) +
+    refCard("publish after ONE approver", f.one_approver_still_refused) +
+    refCard("publish ratified, no transport", f.ratified_no_wire_refusal) +
+    `<div class="row" style="margin-top:8px"><b>Ratified + injected transport</b>
+       <span><span class="badge ok">anchored</span>
+       <span class="mono"> tx ${esc(f.ratified_with_wire.tx)}</span></span></div>
+     <div class="mono" style="opacity:.7;margin-top:6px">two distinct named approvers, then a wire — a missing transport is stated, never faked</div>`;
+
+  $("backends").innerHTML = Object.entries(p.backends).map(([name, b]) =>
+    `<div class="row"><b>${esc(name)}</b>
+       <span><span class="badge ${b.status === "ratified" ? "ok" : "warn"}">${esc(b.status)}</span>
+       <span class="badge">${esc(b.kind)}</span>
+       <span class="mono"> ${b.ratified_by.length ? esc(b.ratified_by.join(" + ")) : "no approvers yet"}</span></span></div>
+     <div class="mono" style="opacity:.7;margin:-4px 0 8px">${esc(b.description)}</div>`).join("");
+
+  $("sha").textContent = p.sha256;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>
