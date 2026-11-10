@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Inference proof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Inference proof — determinism proven per run, never asserted</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. The case below is a fixture, never a real patient. The machinery exercised — artifact registry, inference contracts, four-digest run records, layer-by-layer rerun verification — is the production code. This gate proves an answer is the <b>same</b>, never that it is <b>right</b>: a deterministically wrong answer is still wrong, and the clinical gate remains writegate plus a named human reviewer.</div>
+
+  <div class="card">
+    <h2>The control — same artifact, same contract, same input, twice</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-artifacts"></div><div class="kpi-label">pinned artifacts</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-control"></div><div class="kpi-label">rerun verdict</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">attacks named</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-layers"></div><div class="kpi-label">drift layers</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The registry — models as data, pinned by checksum</h2>
+    <div id="artifacts"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — every layer attacked, every drift named</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Sameness ≠ correctness</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Proven, not asserted</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+const sevBadge = (sev) => sev === "green" ? "ok" : (sev === "amber" ? "warn" : "bad");
+
+fetch("./inferproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  $("k-artifacts").textContent = p.registry.artifacts.length;
+  $("k-control").textContent = c.status;
+  $("k-drills").textContent = p.drills.length;
+  $("k-layers").textContent = "4";
+  $("control-note").textContent =
+    "run A output " + c.run_a_output_sha256.slice(0, 16) + "… ≡ run B output " +
+    c.run_b_output_sha256.slice(0, 16) + "… — bitwise-identical under pinned artifact " +
+    "and non-sampling contract " + c.contract_sha256.slice(0, 12) + "…";
+
+  $("artifacts").innerHTML = p.registry.artifacts.map((a) =>
+    `<div class="row"><b>${esc(a.model_id)}@${esc(a.version)}</b>
+     <span><span class="badge">${esc(a.fmt)}</span> <span class="badge">${esc(a.licence_class)}</span></span></div>
+     <div class="mono" style="opacity:.7;margin:-4px 0 4px">sha256 ${esc(a.sha256.slice(0, 24))}… · ${(a.size_bytes / 1e9).toFixed(2)} GB · evidence: ${esc(a.evidence_ref)}</div>`
+  ).join("");
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+     <br><b>${esc(d.verdict)}</b> <span class="badge ${sevBadge(d.severity)}">${esc(d.severity)}</span>` +
+     (d.layer ? ` <span class="badge bad">layer: ${esc(d.layer)}</span>` : "") +
+     `<br><span style="opacity:.8">${esc(d.note)}</span></div>`
+  ).join("") +
+  `<div class="mono" style="margin-top:6px">six attacks on the inference gate, six named verdicts — four drift layers, one sampling refusal, one registration refusal</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("h1").textContent = p.honesty.sameness_not_correctness;
+  $("h2").textContent = p.honesty.proven_not_asserted;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

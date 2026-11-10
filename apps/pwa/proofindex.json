@@ -50,6 +50,17 @@
         "payload_version": "shipproof-demo@1.1.0"
       },
       {
+        "path": "apps/pwa/inferproof.json",
+        "title": "Deterministic-inference proof",
+        "contract": "compact",
+        "exporter": "packages/inferlock/demo_inferlock.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "a27cbaf2fa78518ac5dd073ec71c21ebde1e949fde0a32b73bcb79f80d2a11c3",
+        "payload_version": "inferproof-demo@1.0.0"
+      },
+      {
         "path": "apps/pwa/agentwrite.json",
         "title": "Agent-write stack",
         "contract": "compact",
@@ -227,8 +238,8 @@
       }
     ],
     "summary": {
-      "total": 20,
-      "verified": 20,
+      "total": 21,
+      "verified": 21,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -236,8 +247,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 21,
-      "registered": 20,
+      "stamped_on_disk": 22,
+      "registered": 21,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -248,7 +259,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 12,
+      "compact": 13,
       "spaced-utf8": 8
     }
   },
@@ -302,5 +313,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "6d3d2e93d182396236e3ba1463ea7afc667ba911d5dfbbd0698b2b1ee58aaaae"
+  "sha256": "97d67d7bc84b432fbaea9f1ed7b3492075b0f2a5684f16a70ac1079c20f35de8"
 }

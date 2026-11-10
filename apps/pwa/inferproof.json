@@ -1,0 +1,92 @@
+{
+  "version": "inferproof-demo@1.0.0",
+  "generated_at": "2026-11-10T12:00:00Z",
+  "registry": {
+    "artifacts": [
+      {
+        "model_id": "synthetic-triage",
+        "version": "1.0.0",
+        "fmt": "gguf",
+        "sha256": "1d9f7a521b4cd7122a86b01d4ef301f69096de2389c653c8ab889269880cc70e",
+        "size_bytes": 4100000000,
+        "licence_class": "embed-clean",
+        "evidence_ref": "demo fixture \u2014 registration contract only"
+      },
+      {
+        "model_id": "synthetic-segmentation",
+        "version": "2.1.0",
+        "fmt": "onnx",
+        "sha256": "21882a90293ef81c1b74740f44a0c0536cb759fbc27f54624eda879c00839ee7",
+        "size_bytes": 180000000,
+        "licence_class": "embed-clean",
+        "evidence_ref": "demo fixture \u2014 registration contract only"
+      }
+    ]
+  },
+  "control": {
+    "status": "deterministic",
+    "severity": "green",
+    "run_a_output_sha256": "31ee989f16163d7a52ac942c7c552466195cb2aeb87a07bf08c0e32d3aa5cd5d",
+    "run_b_output_sha256": "31ee989f16163d7a52ac942c7c552466195cb2aeb87a07bf08c0e32d3aa5cd5d",
+    "contract_sha256": "bb4713cc0e5f74e9a8a1218273396500606cf371f4befed26d83710855536dd6",
+    "sampling": false
+  },
+  "drills": [
+    {
+      "attack": "model artifact swapped between runs",
+      "verdict": "drift",
+      "severity": "red",
+      "layer": "artifact",
+      "note": "the layer is named: artifact \u2014 the weights you audited are not the weights that ran"
+    },
+    {
+      "attack": "seed changed between runs",
+      "verdict": "drift",
+      "severity": "red",
+      "layer": "config",
+      "note": "the layer is named: config \u2014 a different seed is a different run, stated not merged"
+    },
+    {
+      "attack": "input changed between runs",
+      "verdict": "drift",
+      "severity": "red",
+      "layer": "input",
+      "note": "the layer is named: input \u2014 runs over different patients are not comparable"
+    },
+    {
+      "attack": "floating-point drift across a hybrid handoff",
+      "verdict": "drift",
+      "severity": "red",
+      "layer": "runtime",
+      "note": "same artifact, contract and input, different output \u2014 the gate names runtime drift instead of asserting a framework made it impossible"
+    },
+    {
+      "attack": "temperature 0.7 presented as deterministic",
+      "verdict": "sampling-config",
+      "severity": "amber",
+      "layer": null,
+      "note": "outputs matched by luck under sampling \u2014 amber, never green"
+    },
+    {
+      "attack": "model with no checksum tries to register",
+      "verdict": "refused",
+      "severity": "red",
+      "layer": null,
+      "note": "artifact sha256 must be 64 lowercase hex \u2014 an unpinnable artifact is unauditable"
+    }
+  ],
+  "flags": {
+    "control_deterministic": true,
+    "drills_named": true
+  },
+  "honesty": {
+    "sameness_not_correctness": "determinism proves the answer is the SAME, not that it is RIGHT \u2014 a deterministically wrong answer is still wrong; the clinical gate remains writegate plus a named human reviewer",
+    "proven_not_asserted": "this platform does not claim a mathematical framework that eliminates drift by construction; it proves bitwise equality per run and names the layer that moved when equality breaks",
+    "executor_seam": "the demo's model is a pure function; production injects an external runtime through the same seam \u2014 no runtime is ever embedded (ADR-0005)"
+  },
+  "versions": {
+    "inferlock": "inferlock@1.0.0",
+    "demo": "inferproof-demo@1.0.0"
+  },
+  "sha256": "a27cbaf2fa78518ac5dd073ec71c21ebde1e949fde0a32b73bcb79f80d2a11c3"
+}
