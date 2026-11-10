@@ -73,7 +73,11 @@ export async function verifyPayload(tag, keyring, { revoked = new Set(), nowMs =
   const kid = spec.keyInPayload ? fields.kid : "k0";
   const secret = keyring[kid];
   if (!secret) return fail(`unknown key id "${kid}" — key retired, unprovisioned, or forged`, { kind, fields });
-  if ((await hmac16(secret, body)) !== sig.toLowerCase()) {
+  /* The checksum is the contract over the STRING presented: the issuer
+   * emits lowercase hex and the Python/Go verifiers compare strings
+   * as-is — normalising case here would let a case-twin verify in the
+   * PWA while the engine refuses it. Verdicts must agree. */
+  if ((await hmac16(secret, body)) !== sig) {
     return fail("bad signature — photocopy or forgery", { kind, fields });
   }
   if (revoked.has(body)) {

@@ -120,3 +120,22 @@ class TestAgents(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFailClosedSignature(unittest.TestCase):
+    """A draft arriving over the wire can carry any JSON value as sig —
+    non-ASCII or non-str is draft-tampered, never a TypeError crash."""
+
+    def test_non_ascii_sig_is_tampered_not_crash(self):
+        d = Summariser(KEY).summarise("p1", HIST)
+        d["sig"] = "é" * 64
+        r = Summariser(KEY).confirm(d, "nurse-a", {"chart:read"})
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["reason"], "draft-tampered")
+
+    def test_non_str_sig_is_tampered_not_crash(self):
+        d = Summariser(KEY).summarise("p1", HIST)
+        d["sig"] = {"forged": True}
+        r = Summariser(KEY).confirm(d, "nurse-a", {"chart:read"})
+        self.assertFalse(r["ok"])
+        self.assertEqual(r["reason"], "draft-tampered")

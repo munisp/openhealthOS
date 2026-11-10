@@ -68,7 +68,10 @@ def verify(tag: str, secret: bytes, now: int | None = None) -> dict:
     if len(parts) != 5 or parts[0] != PREFIX:
         raise TagError("malformed tag (want OHAST1.<facility>.<asset>.<issued>.<sig>)")
     body = ".".join(parts[:4])
-    if not hmac.compare_digest(_sig(secret, body), parts[4]):
+    # fail-closed: scanned tags can carry non-ASCII; compare_digest
+    # raises TypeError on them — a bad tag is a refusal, never a crash
+    if (not parts[4].isascii()
+            or not hmac.compare_digest(_sig(secret, body), parts[4])):
         raise TagError("bad signature — tag rejected")
     try:
         issued = int(parts[3])

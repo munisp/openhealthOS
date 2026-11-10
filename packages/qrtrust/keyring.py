@@ -79,7 +79,11 @@ def verify_with_ring(tag: str, ring: dict[str, bytes], expect_prefix: str,
     if secret is None:
         raise TrustError(f"unknown key id {kid!r} — key retired or tag forged")
     body = ".".join(parts[:-1])
-    if not hmac.compare_digest(sign(secret, body), parts[-1]):
+    # fail-closed: a scanned tag can carry non-ASCII bytes; compare_digest
+    # raises TypeError on them — a bad tag is a refusal, never a crash
+    presented = parts[-1]
+    if (not presented.isascii()
+            or not hmac.compare_digest(sign(secret, body), presented)):
         raise TrustError("bad signature — tag rejected")
     if revoked and body in revoked:
         raise RevokedError("tag revoked — key sheet leaked or asset decommissioned")

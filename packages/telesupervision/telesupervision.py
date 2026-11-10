@@ -28,6 +28,11 @@ def _sign(body, key):
 
 
 def _verify(body, sig, key):
+    # fail-closed: a sig arriving over the wire can be any JSON value;
+    # compare_digest raises TypeError on non-ASCII str — a bad sig is a
+    # failed verification, never a crash
+    if not isinstance(sig, str) or not sig.isascii():
+        return False
     return hmac.compare_digest(_sign(body, key), sig)
 
 

@@ -57,3 +57,25 @@ class TestTags(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFailClosedSignature(unittest.TestCase):
+    """Scanned tags can carry any bytes — a non-ASCII sig must be a
+    TagError refusal, never a TypeError crash at the gate."""
+
+    def setUp(self):
+        self.secret = os.environ["OH_ASSET_SECRET"].encode()
+
+    def test_non_ascii_signature_refuses_not_crashes(self):
+        tag = assettag.mint("KDH-01", "MRI-03", self.secret,
+                            issued=1761000000)
+        evil = tag.rsplit(".", 1)[0] + ".é234567890abcdef"
+        with self.assertRaises(assettag.TagError):
+            assettag.verify(evil, self.secret)
+
+    def test_canonical_tag_still_verifies(self):
+        tag = assettag.mint("KDH-01", "MRI-03", self.secret,
+                            issued=1761000000)
+        self.assertEqual(assettag.verify(tag, self.secret,
+                                         now=1761000100)["asset"],
+                         "MRI-03")

@@ -88,3 +88,17 @@ test("stale asset tag warns", async () => {
   assert.equal(v.ok, true);
   assert.match(v.warnings[0], /STALE/);
 });
+
+test("case-twin signature rejected — the checksum is the contract over the string", async () => {
+  // The issuer emits lowercase hex; the Python/Go verifiers compare the
+  // string as-is. An uppercased twin must fail here too — a scanner
+  // verdict that disagrees with the engine is a finding, not a feature.
+  const tag = await mint("OHMEM1.k2026.NG-0001.BHCPF-VUL.20270331", RING.k2026);
+  const cut = tag.lastIndexOf(".");
+  const twin = tag.slice(0, cut + 1) + tag.slice(cut + 1).toUpperCase();
+  const v = await verifyPayload(twin, RING, { nowMs: NOW });
+  assert.equal(v.ok, false);
+  assert.match(v.reason, /bad signature/);
+  // and the genuine tag still verifies
+  assert.equal((await verifyPayload(tag, RING, { nowMs: NOW })).ok, true);
+});

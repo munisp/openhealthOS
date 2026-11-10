@@ -65,7 +65,12 @@ class Agent:
         if draft.get("confirmed"):
             return {"ok": False, "reason": "already-confirmed"}
         body = {k: v for k, v in draft.items() if k not in ("sig", "confirmed")}
-        if not hmac.compare_digest(_sign(body, self.key), draft.get("sig", "")):
+        # fail-closed: a draft arriving over the wire can carry any JSON
+        # value as sig; compare_digest raises TypeError on non-ASCII —
+        # a bad sig means draft-tampered, never a crash
+        presented = draft.get("sig", "")
+        if (not isinstance(presented, str) or not presented.isascii()
+                or not hmac.compare_digest(_sign(body, self.key), presented)):
             return {"ok": False, "reason": "draft-tampered"}
         if self.REQUIRES_HUMAN_SCOPE and self.REQUIRES_HUMAN_SCOPE not in human_scopes:
             return {"ok": False, "reason": "human-scope-insufficient"}

@@ -94,3 +94,25 @@ class TestBudget(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFailClosedSignatures(unittest.TestCase):
+    """A scanner can present ANY bytes. Non-ASCII signature strings must
+    refuse with TrustError — compare_digest raises TypeError on them, and
+    a crash at the gate is never the verdict."""
+
+    RING_BYTES = {"k2026": b"new-secret-0000000002"}
+
+    def test_non_ascii_signature_refuses_not_crashes(self):
+        body = "OHAST2.k2026.clinic-1.oxygen-plant.1761000000"
+        tag = body + "." + sign(self.RING_BYTES["k2026"], body)
+        evil = body + ".é" + tag.rsplit(".", 1)[1][1:]
+        with self.assertRaises(TrustError):
+            verify_with_ring(evil, self.RING_BYTES, "OHAST2", 3)
+
+    def test_canonical_tag_still_verifies(self):
+        body = "OHAST2.k2026.clinic-1.oxygen-plant.1761000000"
+        tag = body + "." + sign(self.RING_BYTES["k2026"], body)
+        self.assertEqual(verify_with_ring(tag, self.RING_BYTES,
+                                          "OHAST2", 3),
+                         ["clinic-1", "oxygen-plant", "1761000000"])

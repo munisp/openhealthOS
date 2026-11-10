@@ -32,3 +32,18 @@ class TestCaseBundle(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestFailClosedSignature(unittest.TestCase):
+    """A bundle arriving over the wire can carry any JSON value as sig —
+    non-ASCII or non-str must fail verification, never raise."""
+
+    def test_non_ascii_sig_fails_closed(self):
+        b = CaseBundle.create("chw-7", "pat-pseudo-1", {}, KEY, now=1)
+        b["sig"] = "é" * 64
+        self.assertFalse(CaseBundle.verify(b, KEY))
+
+    def test_non_str_sig_fails_closed(self):
+        b = CaseBundle.create("chw-7", "pat-pseudo-1", {}, KEY, now=1)
+        b["sig"] = 12345
+        self.assertFalse(CaseBundle.verify(b, KEY))
