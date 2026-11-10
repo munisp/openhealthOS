@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Proof index — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Proof index — every evidence payload, re-verified</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic demo data — deterministic seed. Every stamped evidence payload in the tree is re-read and its sha256 recomputed: green means the bytes still match the stamp, anything else is a named verdict — drift, absent, malformed, non-canonical stamp. One page answers "is the evidence still the evidence?" The checksum is the contract.</div>
+
+  <div class="card">
+    <h2>The registry — the whole estate, not a sample</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-total"></div><div class="kpi-label">payloads</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-verified"></div><div class="kpi-label">verified</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drift"></div><div class="kpi-label">drift</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-absent"></div><div class="kpi-label">absent</div></div>
+    </div>
+    <div class="mono" id="contract-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Every payload, every stamp, every verdict</h2>
+    <div id="registry"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — the gate itself, attacked in memory</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Self-integrity</b><span class="mono" id="self"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+function regRow(v) {
+  const badge = v.severity === "green" ? "ok" : (v.severity === "amber" ? "warn" : "bad");
+  return `<div class="row"><b>${esc(v.title)}</b>
+    <span><span class="badge ${badge}">${esc(v.status)}</span>
+    <span class="badge">${esc(v.contract)}</span>
+    <span class="mono"> ${esc(v.presented ? v.presented.slice(0, 12) + "…" : "—")}</span></span></div>
+    <div class="mono" style="opacity:.7;margin:-4px 0 8px">${esc(v.path)} · ${esc(v.exporter)}${v.payload_version ? " · " + esc(v.payload_version) : ""}</div>`;
+}
+
+function drillCard(d) {
+  const badge = d.severity === "green" ? "ok" : (d.severity === "amber" ? "warn" : "bad");
+  return `<div class="gate" style="margin:6px 0"><b>${esc(d.attack)}</b>
+    <br><b>${esc(d.verdict)}</b> <span class="badge ${badge}">${esc(d.severity)}</span>
+    <br><span style="opacity:.8">${esc(d.note)}</span></div>`;
+}
+
+fetch("./proofindex.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const s = p.registry.summary;
+  $("k-total").textContent = s.total;
+  $("k-verified").textContent = s.verified;
+  $("k-drift").textContent = s.drift;
+  $("k-absent").textContent = s.absent;
+  $("contract-note").textContent =
+    "two stamp contracts, pinned as data: compact ×" + p.registry.contracts["compact"] +
+    " · spaced-utf8 ×" + p.registry.contracts["spaced-utf8"] +
+    " — a payload verifying under the wrong one is amber contract-mismatch, stated never silent";
+
+  $("registry").innerHTML = p.registry.payloads.map(regRow).join("");
+  $("drills").innerHTML = p.drills.map(drillCard).join("") +
+    `<div class="mono" style="margin-top:6px">four attacks, four named verdicts — the committed files are never touched</div>`;
+
+  $("sha").textContent = p.sha256;
+  $("self").textContent = p.self_integrity.contract + " — " + p.self_integrity.note;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

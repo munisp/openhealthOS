@@ -59,7 +59,12 @@ def seed_pilot(*, seed=42, days=14, arrivals_per_day=(18, 30),
                             salt=salt)
     providers = ProviderRegistry()
     partners = PartnerRegistry()
-    desk = Helpdesk(rules_version="vhc-support@1.0.0")
+    # Deterministic ticket IDs: the pilot is a reproducibility artifact,
+    # so its helpdesk injects a seeded counter id_fn (the engine default
+    # stays secrets-unique — see vhsupport.Helpdesk).
+    _ticket_seq = iter(range(1, 10_000))
+    desk = Helpdesk(rules_version="vhc-support@1.0.0",
+                    id_fn=lambda: "SIM%04X" % next(_ticket_seq))
     book = TariffBook(book_id="cv")
     content = ContentLayer()
 

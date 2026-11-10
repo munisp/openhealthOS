@@ -1,0 +1,264 @@
+{
+  "version": "proofindex-demo@1.0.0",
+  "generated_at": "2026-11-10T09:00:00Z",
+  "registry": {
+    "version": "proofindex@1.0.0",
+    "generated_at": "2026-11-10T09:00:00Z",
+    "payloads": [
+      {
+        "path": "apps/pwa/tamperproof.json",
+        "title": "Tamper-gate evidence",
+        "contract": "compact",
+        "exporter": "packages/travelpass/demo_tamper.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "d2a7746106f39448ad68f12e926411210ee98f9312cbd07c079f1e223423f015",
+        "payload_version": "tamperproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/deployproof.json",
+        "title": "Deployment-seam proof",
+        "contract": "compact",
+        "exporter": "packages/travelpass/demo_deploy.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "840facbc79abd67224a21ff36ed09e4a619d1f356cd78afa5671b32ec4d2ed93",
+        "payload_version": "deployproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/agentwrite.json",
+        "title": "Agent-write stack",
+        "contract": "compact",
+        "exporter": "packages/agentwrite/demo_agentwrite.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "b6a3f35afaff870e7e7ffc09e276b64625173f94686cb5e9fa728d630ce64531",
+        "payload_version": "agentwrite-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/appmarket.json",
+        "title": "App marketplace",
+        "contract": "compact",
+        "exporter": "packages/appmarket/demo_appmarket.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "1f6376ad09973c333441660cc0d4e7892345a393013aaa3fd5c24fcd46765f5a",
+        "payload_version": "appmarket-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/charting.json",
+        "title": "Clinical charting",
+        "contract": "compact",
+        "exporter": "packages/charting/demo_charting.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "0bb6a6d7a8bb6c55696caeed9fd27892f5a90c2c97514a125e128bc86a97592d",
+        "payload_version": "charting-demo@1.0.0"
+      },
+      {
+        "path": "apps/patient/record.json",
+        "title": "Patient record portal",
+        "contract": "compact",
+        "exporter": "packages/ips/demo_portal.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "7b175dfe6bccf27d10eed149129ca5f3c20635d24da92906fd6d829f8dca1af3",
+        "payload_version": "chart-portal@1.0.0"
+      },
+      {
+        "path": "apps/pwa/vhc-br10.json",
+        "title": "BR-10 gate dashboard",
+        "contract": "compact",
+        "exporter": "packages/travelpass/vhdash.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "953e4b8a818e720131c45584920ab8a8cc3181ba229afaa64fe31137ad65c29c",
+        "payload_version": "vhc-dash@1.0.0"
+      },
+      {
+        "path": "apps/pwa/vhc-fund.json",
+        "title": "Fund dashboard",
+        "contract": "compact",
+        "exporter": "packages/travelpass/vhdash.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "c92aa4d1cf76e592321c3f790c47df95669d478dc836accede1e3a81fa6f3e54",
+        "payload_version": "vhc-dash@1.0.0"
+      },
+      {
+        "path": "apps/pwa/vhc-helpdesk.json",
+        "title": "Helpdesk dashboard",
+        "contract": "compact",
+        "exporter": "packages/travelpass/vhdash.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "e85c6fbc1ba24bcfdd1dd5ad05e5cc263e2dc827f61fd0ff0f9aa7dbed7bb4d9",
+        "payload_version": "vhc-dash@1.0.0"
+      },
+      {
+        "path": "apps/pwa/vhc-growth.json",
+        "title": "Growth book",
+        "contract": "compact",
+        "exporter": "packages/travelpass/vhdashx.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "47f51a697c9d7aad56b48a324117a4934c7a42a67aa37c29919994b66d268c2e",
+        "payload_version": "vhc-growth@1.0.0"
+      },
+      {
+        "path": "apps/pwa/inpatient.ng.json",
+        "title": "Inpatient depth (NG)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/emrdemo/demo_emr.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "0febda7a52472391072cc0eb3a8491c6a0f5d050e34e9391cba5a906c69171a5",
+        "payload_version": "emr-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/inpatient.cv.json",
+        "title": "Inpatient depth (CV)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/emrdemo/demo_emr.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "1bbc282216b2db68130b8699829222240916c9fc4c57e08a7951cd6a904af93e",
+        "payload_version": "emr-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/specialty.ng.json",
+        "title": "Specialty depth (NG)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/emrdemo/demo_emr.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "93001efa54af0f6260635b221eb003e13aa415e71efbf45ff0f62ad3d702bc7b",
+        "payload_version": "emr-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/specialty.cv.json",
+        "title": "Specialty depth (CV)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/emrdemo/demo_emr.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "1e2f344295cc039cf000cf6b144a9f121f95c0e6fb538bca0f1bc176e610d66a",
+        "payload_version": "emr-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/national.ng.json",
+        "title": "National rails (NG)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/natdemo/demo_national.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "cfeae0e6f2b55e2b44f73a85122e4be29cb2c4307a45659258ada8af1db85290",
+        "payload_version": "natdemo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/national.cv.json",
+        "title": "National rails (CV)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/natdemo/demo_national.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "e68078fa6099c65a40c8dea7b1a41b7544317ee6b7c95e64dca6d8c628f45723",
+        "payload_version": "natdemo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/sync.ng.json",
+        "title": "Sync depth (NG)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/syncmesh/demo_sync.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "8f45ddeccf7c413ac6a43e2218455246e8ab2a82a62f639197592719ce51f40a",
+        "payload_version": "syncdemo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/sync.cv.json",
+        "title": "Sync depth (CV)",
+        "contract": "spaced-utf8",
+        "exporter": "packages/syncmesh/demo_sync.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded spaced-utf8 contract",
+        "presented": "03a57d59e59aaeab6af2ebf9a148d651ebb1dc534074235b94afa980de870945",
+        "payload_version": "syncdemo@1.0.0"
+      }
+    ],
+    "summary": {
+      "total": 18,
+      "verified": 18,
+      "drift": 0,
+      "absent": 0,
+      "red": 0,
+      "amber": 0,
+      "all_verified": true
+    },
+    "contracts": {
+      "compact": 10,
+      "spaced-utf8": 8
+    }
+  },
+  "drills": [
+    {
+      "attack": "content drift",
+      "expected": "drift",
+      "verdict": "drift",
+      "severity": "red",
+      "note": "one key added after stamping \u2014 recomputed digest matches neither contract"
+    },
+    {
+      "attack": "uppercase stamp",
+      "expected": "non-canonical-stamp",
+      "verdict": "non-canonical-stamp",
+      "severity": "red",
+      "note": "same hex, wrong STRING \u2014 the string is the contract (row 201 at the meta layer)"
+    },
+    {
+      "attack": "foreign-contract stamp",
+      "expected": "contract-mismatch",
+      "verdict": "contract-mismatch",
+      "severity": "amber",
+      "note": "evidence intact under spaced-utf8 but the registry records compact \u2014 amber, stated"
+    },
+    {
+      "attack": "missing file",
+      "expected": "absent",
+      "verdict": "absent",
+      "severity": "red",
+      "note": "absence is a stated verdict, never a crash, never a green"
+    }
+  ],
+  "flags": {
+    "all_verified": true,
+    "drills_named": true
+  },
+  "self_integrity": {
+    "contract": "compact",
+    "note": "the index cannot stamp its own stamp \u2014 this payload's sha256 is pinned by TestDemoProofindex determinism + stamp-contract tests, and proofindex deliberately does not appear in its own registry"
+  },
+  "versions": {
+    "proofindex": "proofindex@1.0.0",
+    "demo": "proofindex-demo@1.0.0"
+  },
+  "sha256": "33bf4fe061f0f14f9b1dd352810977e1d6eaabf69a79376e052da77656eb8e3f"
+}

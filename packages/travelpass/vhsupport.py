@@ -47,10 +47,15 @@ def _refuse(msg):
 
 
 class Helpdesk:
-    def __init__(self, *, rules_version="vhc-support@1.0.0"):
+    def __init__(self, *, rules_version="vhc-support@1.0.0", id_fn=None):
         if rules_version not in HELP_RULES:
             _refuse("unknown helpdesk rules version")
         self.rules = dict(HELP_RULES[rules_version])
+        # Ticket IDs are deliberately unique in production (secrets).
+        # Like the injectable clocks elsewhere, the ID source is an
+        # injectable seam: demos and reproducibility harnesses pass a
+        # deterministic id_fn; production never does.
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4).upper())
         self.tickets = {}
         self.audit = []
 
@@ -65,7 +70,9 @@ class Helpdesk:
         if not subject:
             _refuse("a ticket without a subject is a shrug with a "
                     "timestamp")
-        tid = "HLP-" + secrets.token_hex(4).upper()
+        tid = "HLP-" + self._id_fn()
+        if tid in self.tickets:
+            _refuse("ticket id collision — the id source must be unique")
         self.tickets[tid] = {
             "ticket_id": tid, "channel": channel, "category": category,
             "priority": priority, "subject": subject,
