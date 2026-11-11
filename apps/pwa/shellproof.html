@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Shellproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Shellproof — the offline guarantee, gated</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic fixture drills; the audit reads the REAL service workers. Wave-21 recon found the vhc shell had been caching <span class="mono">./design-tokens.css</span> — a file that lives one level up. <b>cache.addAll rejects on any 404, so the entire 59-URL vhc shell never installed:</b> every board's offline guarantee was silently absent, while every online demo stayed green. And ten registered payloads — including the data behind four cached boards — were in no shell at all, so those boards would render "loading…" forever offline. This wave fixes both and adds the <b>shell gate</b> (shellproof@1.0.0, ADR-0082): every shell entry must resolve, every payload and board must be cached or stated-excluded.</div>
+
+  <div class="card">
+    <h2>What the recon census found — all fixed in this wave</h2>
+    <div id="pre"></div>
+  </div>
+
+  <div class="card">
+    <h2>Live audit — the real tree, right now</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-shells"></div><div class="kpi-label">service workers</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-entries"></div><div class="kpi-label">shell entries</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-targets"></div><div class="kpi-label">targets covered</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-killers"></div><div class="kpi-label">install-killers</div></div>
+    </div>
+    <div id="live" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The gate — four fates, every one named</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Gate</b><span class="mono" id="gate"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./shellproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const pre = p.pre_wave_findings;
+  $("pre").innerHTML =
+    `<div class="row"><b>install-killer</b><span class="badge bad">${esc(pre.install_killers[0].path)}</span></div>` +
+    `<div class="row"><span style="opacity:.8">${esc(pre.install_killers[0].detail)}</span></div>` +
+    `<div class="row"><b>uncached targets</b><span class="badge bad">${pre.uncached.length}</span></div>` +
+    `<div class="row"><span class="mono" style="opacity:.75">${esc(pre.uncached.join(", "))}</span></div>` +
+    `<div class="row"><b>pages with no service worker</b><span class="badge bad">${pre.unregistered_pages.length}</span></div>` +
+    pre.unregistered_pages.map((u) =>
+      `<div class="row"><span style="opacity:.8">${esc(u.page)} — ${esc(u.detail)}</span></div>`).join("") +
+    `<div class="row"><b>resolution</b><span>${esc(pre.resolution)}</span></div>`;
+
+  const s = p.live_audit.summary;
+  $("k-shells").textContent = s.shells;
+  $("k-entries").textContent = s.shell_entries;
+  $("k-targets").textContent = s.cached_targets + "/" + s.targets;
+  $("k-killers").textContent = s.install_killers;
+  $("live").innerHTML =
+    `<div class="row"><b>all installable</b><span class="badge ${s.all_installable ? "ok" : "bad"}">${s.all_installable}</span></div>` +
+    `<div class="row"><b>full coverage</b><span class="badge ${s.full_coverage ? "ok" : "bad"}">${s.full_coverage}</span></div>` +
+    p.live_audit.excluded.map((e) =>
+      `<div class="row"><b>stated exclusion</b><span class="badge warn">${esc(e.path)}</span></div>` +
+      `<div class="row"><span style="opacity:.8">${esc(e.reason)}</span></div>`).join("");
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    `<div class="row"><b>${esc(d.drill)}</b>` +
+    `<span class="badge ${badge(d.severity)}">${esc(d.verdict)}</span></div>`).join("");
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    `<div class="row"><span>${esc(d)}</span></div>`).join("");
+
+  $("sha").textContent = p.sha256;
+  $("gate").textContent = p.gate.library + " · " + p.gate.shells.join(" + ") +
+    " · injected tree readers";
+});
+</script>
+</body>
+</html>

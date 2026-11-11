@@ -30,9 +30,9 @@ class TestRefreshProof(unittest.TestCase):
     def test_payload_shape(self):
         p = demo_refreshproof.run_demo()
         self.assertEqual(p["version"], "refreshproof-demo@1.0.0")
-        self.assertEqual(p["census"]["payloads"], 31)
-        self.assertEqual(p["census"]["recipes"], 24)
-        self.assertEqual(p["census"]["file_kind"], 19)
+        self.assertEqual(p["census"]["payloads"], 32)
+        self.assertEqual(p["census"]["recipes"], 25)
+        self.assertEqual(p["census"]["file_kind"], 20)
         self.assertEqual(p["census"]["hash_kind"], 5)
         self.assertEqual(p["census"]["hash_kind_payloads"], 12)
         self.assertEqual([d["verdict"] for d in p["drills"]],

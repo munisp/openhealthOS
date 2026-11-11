@@ -1,0 +1,100 @@
+{
+ "version": "shellproof-demo@1.0.0",
+ "generated_at": "2026-11-11T20:30:00Z",
+ "gate": {
+  "library": "packages/shellproof/shellproof.py shellproof@1.0.0",
+  "seam": "audit(root, payloads=..., exists/listdir/read INJECTED) — the gate test passes the live registry; demos and unit tests pass fixtures",
+  "shells": [
+   "apps/pwa/sw.js",
+   "apps/pwa/sw-vhc.js"
+  ]
+ },
+ "pre_wave_findings": {
+  "install_killers": [
+   {
+    "path": "apps/pwa/design-tokens.css",
+    "detail": "sw-vhc.js cached \"./design-tokens.css\" — the file lives one level up at apps/design-tokens.css; cache.addAll rejects on any 404, so the ENTIRE vhc shell (59 URLs) never installed. Every board page's offline guarantee was silently absent."
+   }
+  ],
+  "uncached": [
+   "apps/pwa/appmarket.json",
+   "apps/pwa/charting.json",
+   "apps/pwa/emergency.html",
+   "apps/pwa/inpatient.cv.json",
+   "apps/pwa/inpatient.ng.json",
+   "apps/pwa/radiology.html",
+   "apps/pwa/specialty.cv.json",
+   "apps/pwa/specialty.ng.json",
+   "apps/pwa/vhc-br10.json",
+   "apps/pwa/vhc-fund.json",
+   "apps/pwa/vhc-growth.json",
+   "apps/pwa/vhc-helpdesk.json",
+   "apps/pwa/viewer.html"
+  ],
+  "unregistered_pages": [
+   {
+    "page": "apps/pwa/emergency.html",
+    "detail": "the break-glass emergency-access page registered NO service worker — the one page that must work offline above all others"
+   },
+   {
+    "page": "apps/pwa/radiology.html",
+    "detail": "reading worklist — no service worker"
+   },
+   {
+    "page": "apps/pwa/viewer.html",
+    "detail": "diagnostic viewer — no service worker"
+   }
+  ],
+  "resolution": "path fixed to ../design-tokens.css; 10 payloads added to the vhc shell; 3 pages added to the app shell and gained sw.js registration; probe.html is a stated exclusion (diagnostic probe, run online by hand)"
+ },
+ "live_audit": {
+  "summary": {
+   "shells": 2,
+   "shell_entries": 96,
+   "targets": 70,
+   "cached_targets": 69,
+   "install_killers": 0,
+   "uncached": 0,
+   "excluded": 1,
+   "all_installable": true,
+   "full_coverage": true
+  },
+  "install_killers": [],
+  "uncached": [],
+  "excluded": [
+   {
+    "path": "apps/pwa/probe.html",
+    "reason": "IndexedDB/module diagnostic probe — run online, by hand, during support; caching it would pretend it is a product page"
+   }
+  ]
+ },
+ "drills": [
+  {
+   "drill": "all cached, all resolvable — the honest steady state",
+   "verdict": "green",
+   "severity": "green"
+  },
+  {
+   "drill": "one shell entry 404s — addAll rejects, the WHOLE shell never installs; killer named",
+   "verdict": "install-killer: apps/tokens.css",
+   "severity": "red"
+  },
+  {
+   "drill": "a registered payload in no shell — invisible offline; gap named",
+   "verdict": "uncached: apps/pwa/ghost.json",
+   "severity": "red"
+  },
+  {
+   "drill": "diagnostic page deliberately uncached — exclusion is stated data with a reason",
+   "verdict": "excluded: apps/pwa/probe.html",
+   "severity": "amber"
+  }
+ ],
+ "doctrine": [
+  "cache.addAll rejects wholesale: ONE bad path uninstalls the entire offline guarantee — a manifest entry is a promise, and promises are gated.",
+  "A board cached without its payload renders 'loading…' forever offline — coverage is per-target, not per-page.",
+  "Exclusions are stated data with reasons; silence is not an exclusion.",
+  "The audit reads the real shells at export: if the estate drifts, this payload goes stale and the freshness gate names it."
+ ],
+ "sha256": "90cd9e516fbf49ac5abc48e1714d88c32a1f6c7d8208d726a029b769861e97c0"
+}

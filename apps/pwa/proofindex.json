@@ -167,8 +167,19 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "b313f913b1d2283e79e97035a6c4765fd986d7d80f617eeeef64ad6944c3bee7",
+        "presented": "1034ba8c73613741d764e609b8c7a456259958541dd59dca558e95c9eb37db94",
         "payload_version": "refreshproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/shellproof.json",
+        "title": "Shell-gate proof",
+        "contract": "compact",
+        "exporter": "packages/shellproof/demo_shellproof.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "90cd9e516fbf49ac5abc48e1714d88c32a1f6c7d8208d726a029b769861e97c0",
+        "payload_version": "shellproof-demo@1.0.0"
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -348,8 +359,8 @@
       }
     ],
     "summary": {
-      "total": 31,
-      "verified": 31,
+      "total": 32,
+      "verified": 32,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -357,8 +368,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 32,
-      "registered": 31,
+      "stamped_on_disk": 33,
+      "registered": 32,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -369,7 +380,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 23,
+      "compact": 24,
       "spaced-utf8": 8
     }
   },
@@ -423,5 +434,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "c99ecbb84f5c994e3c791ca36cf9dd87ed3e6b224d5bdb29695dbcf02789ada8"
+  "sha256": "41c8b5c6c6c660a199a22c239c642798d68dd193907988cb7465a1b95b444588"
 }

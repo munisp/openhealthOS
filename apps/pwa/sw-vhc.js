@@ -5,7 +5,7 @@
  * cache-first; payloads are network-first with cache fallback — a
  * stale payload renders with its checksum and a STALE badge, never as
  * if it were fresh. Absence is not a value; staleness is stated. */
-const SHELL = "vhc-shell-v19";
+const SHELL = "vhc-shell-v20";
 const PAYLOADS = "vhc-payloads-v1";
 const SHELL_URLS = [
   "./vhc-verify.html", "./traveler.html", "./dispatch.html",
@@ -16,7 +16,7 @@ const SHELL_URLS = [
   "./sync-depth.html", "./sync.ng.json", "./sync.cv.json",
   "./css/depth-theme.css", "./css/brand.ng.css", "./css/brand.cv.css",
   "./js/depth-strings.json", "./js/depth-i18n.js",
-  "./specialty-depth.html", "./design-tokens.css",
+  "./specialty-depth.html", "../design-tokens.css",
   "./agentwrite.html", "./agentwrite.json",
   "./deployproof.html", "./deployproof.json",
   "./tamperproof.html", "./tamperproof.json",
@@ -34,6 +34,12 @@ const SHELL_URLS = [
   "./idseamproof.html", "./idseamproof.json",
   "./freshproof.html", "./freshproof.json",
   "./refreshproof.html", "./refreshproof.json",
+  "./shellproof.html", "./shellproof.json",
+  "./appmarket.json", "./charting.json",
+  "./inpatient.ng.json", "./inpatient.cv.json",
+  "./specialty.ng.json", "./specialty.cv.json",
+  "./vhc-br10.json", "./vhc-fund.json",
+  "./vhc-growth.json", "./vhc-helpdesk.json",
   "./js/geodesy.js",
 ];
 

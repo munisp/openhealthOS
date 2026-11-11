@@ -97,5 +97,6 @@ function openArtifact(){
 $("open").onclick = openArtifact;
 if (q.get("study") || q.get("slide")) openArtifact();
 </script>
+<script>if("serviceWorker" in navigator){navigator.serviceWorker.register("sw.js").catch(()=>{});}</script>
 </body>
 </html>

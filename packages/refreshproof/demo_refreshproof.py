@@ -37,14 +37,14 @@ OUT = os.path.join(_HERE, "..", "..", "apps", "pwa",
 
 # The wave-20 state of the real tree, as data.
 CENSUS = {
-    "scope": ("all 31 proofindex-registered payloads via 24 recipes "
-              "(19 file-kind, 5 hash-kind covering 12 payloads)"),
+    "scope": ("all 32 proofindex-registered payloads via 25 recipes "
+              "(20 file-kind, 5 hash-kind covering 12 payloads)"),
     "method": ("gate and rail read ONE recipe book (recipes.py); "
                "hash-family probe snippets are byte-identical to the "
                "determinism gate's — pinned by cross-check test"),
-    "payloads": 31,
-    "recipes": 24,
-    "file_kind": 19,
+    "payloads": 32,
+    "recipes": 25,
+    "file_kind": 20,
     "hash_kind": 5,
     "hash_kind_payloads": 12,
     "recipe_less_payloads": ("none — the coverage pin fails the suite "
