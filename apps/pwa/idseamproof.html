@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Idseamproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Idseamproof — determinism walks the real flow</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic fixtures only; production machinery. Wave 5's meta gate caught one package minting random IDs into a committed payload; this wave's census found the same pattern at <b>25 sites</b> — 23 with no seam, so demos had to sidestep the real flows they demonstrate. Every one of the 23 now takes an injectable <span class="mono">id_fn</span> (a seed for surveillance's DP noise); production defaults stay secrets-unique. One site was <b>refused</b> a seam: ips/shl.py's key mint — deterministic keys are a forgery kit. The control below replays the real quote→purchase→signed-QR flow byte-identically.</div>
+
+  <div class="card">
+    <h2>The control — the real flow, replayed</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-sites"></div><div class="kpi-label">mint sites found</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-seamed"></div><div class="kpi-label">seamed this wave</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-refused"></div><div class="kpi-label">seams refused</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">drills named</div></div>
+    </div>
+    <div class="mono" id="control-note" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The seam sweep — one deterministic mint per site, via the real entry point</h2>
+    <div id="sweep"></div>
+  </div>
+
+  <div class="card">
+    <h2>The census — scope and method stated</h2>
+    <div id="census"></div>
+  </div>
+
+  <div class="card">
+    <h2>The drills — refused or stated; none silent</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Flow sha256</b><span class="mono" id="fsha"></span></div>
+    <div class="row"><b>The checksum is the contract</b><span class="mono" id="h1"></span></div>
+    <div class="row"><b>Production stays secrets</b><span class="mono" id="h2"></span></div>
+    <div class="row"><b>Versions</b><span class="mono" id="versions"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+
+fetch("./idseamproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.versions.exporter + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.control;
+  $("k-sites").textContent = c.census.sites_found;
+  $("k-seamed").textContent = c.census.seamed_this_wave;
+  $("k-refused").textContent = c.census.refused.length;
+  $("k-drills").textContent = p.drills.length;
+  $("control-note").textContent =
+    "cover flow: " + c.cover_flow.quote_id + " → " + c.cover_flow.ref +
+    " · replayed byte-identical · production defaults distinct: " +
+    c.production_defaults.distinct_refs + " · surveillance seed " +
+    c.surveillance_noise.seed + " replayed identical";
+
+  $("sweep").innerHTML = Object.entries(c.seam_sweep.sites).map(([k, v]) =>
+    `<div class="row"><b>${esc(k)}</b><span class="mono">${esc(v)}</span></div>`).join("");
+
+  $("census").innerHTML =
+    `<div class="row"><b>scope</b><span class="mono">${esc(c.census.scope)}</span></div>` +
+    `<div class="row"><b>pre-existing seam</b><span class="mono">${esc(c.census.pre_existing_seam[0])}</span></div>` +
+    `<div class="row"><b>refused</b><span class="mono">${esc(c.census.refused[0].site + " — " + c.census.refused[0].reason)}</span></div>` +
+    `<div class="row"><b>out of scope, stated</b><span class="mono" style="opacity:.8">${esc(c.census.out_of_scope_stated)}</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) => {
+    const badge = d.outcome === "refused" ? "ok" : "warn";
+    return `<div class="gate" style="margin:6px 0"><b>${esc(d.name)}</b>
+     <span class="badge ${badge}">${esc(d.outcome)}</span>
+     <br><span style="opacity:.8">${esc(d.detail)}</span></div>`;
+  }).join("");
+
+  $("sha").textContent = p.sha256;
+  $("fsha").textContent = c.cover_flow.flow_sha256;
+  $("h1").textContent = p.honesty.the_checksum_is_the_contract;
+  $("h2").textContent = p.honesty.production_stays_secrets;
+  $("versions").textContent = Object.entries(p.versions)
+    .map(([k, v]) => k + " " + v).join(" · ");
+}).catch((e) => { $("hdr").textContent = "payload unavailable: " + e.message; });
+</script>
+</body>
+</html>

@@ -67,7 +67,7 @@ def _filter_currency(rows, currency, *, side):
     return list(rows)
 
 
-def settlement_file(txns, *, day, psp, currency=None):
+def settlement_file(txns, *, day, psp, currency=None, id_fn=None):
     """The daily file for one PSP: rows, totals, checksum. `txns` are
     the platform's ledger rows: {ref, amount_minor, psp, day,
     currency?}. The file is per currency — a mixed-currency sum is
@@ -80,8 +80,9 @@ def settlement_file(txns, *, day, psp, currency=None):
                   key=lambda r: r["ref"])
     currencies = sorted({_row_currency(t) for t in mine
                          if _row_currency(t)})
+    _id = id_fn or (lambda: secrets.token_hex(3))
     body = {"file_id": "STL-%s-%d-%s" % (psp, day,
-                                         secrets.token_hex(3).upper()),
+                                         _id().upper()),
             "psp": psp, "day": day,
             "currency": currency or (currencies[0]
                                      if currencies else None),
@@ -144,7 +145,8 @@ def reconcile(txns, *, day, psp, psp_rows, currency=None,
 
 
 def auto_refund_duplicates(txns, *, day, window_days=None,
-                           rules_version="vhc-settle@1.0.0"):
+                           rules_version="vhc-settle@1.0.0",
+                           id_fn=None):
     """S-008: the same payer charged the same amount twice inside the
     window is a duplicate — keep the first, refund the rest, each
     refund carrying the evidence. Idempotency prevents the race; this
@@ -163,7 +165,7 @@ def auto_refund_duplicates(txns, *, day, window_days=None,
         first = seen.get(key)
         if first is not None and t["day"] - first["day"] <= window:
             refunds.append({
-                "refund_ref": "ARF-" + secrets.token_hex(4).upper(),
+                "refund_ref": "ARF-" + (id_fn or (lambda: secrets.token_hex(4)))().upper(),
                 "duplicate_ref": t["ref"], "kept_ref": first["ref"],
                 "amount_minor": t["amount_minor"], "day": day,
                 "reason": "duplicate charge — same payer, same amount, "

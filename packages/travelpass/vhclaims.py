@@ -98,7 +98,8 @@ def tariff_for(tariff_set, code, *, day):
 
 class ClaimsRegistry:
     def __init__(self, *, rules_version="vhc-claims@1.0.0",
-                 tariff_set="cv-tariffs", tariff_book=None):
+                 tariff_set="cv-tariffs", tariff_book=None,
+                 id_fn=None):
         if rules_version not in CLAIMS_RULES:
             _refuse("unknown claims rules version")
         self.rules = dict(CLAIMS_RULES[rules_version])
@@ -107,6 +108,11 @@ class ClaimsRegistry:
         # when a governed TariffBook is wired, it is the price source;
         # the static table is the bootstrap fallback
         self.tariff_book = tariff_book
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.cases = {}
         self.audit = []
 
@@ -141,7 +147,7 @@ class ClaimsRegistry:
              if c["cover_ref"] == cover_ref
              and c["claimant_name"] == claimant_name
              and _open(c)), None)
-        case_id = "CLM-" + secrets.token_hex(4).upper()
+        case_id = "CLM-" + self._id_fn().upper()
         self.cases[case_id] = {
             "case_id": case_id, "cover_ref": cover_ref,
             "claimant_name": claimant_name, "summary": summary,
@@ -173,7 +179,7 @@ class ClaimsRegistry:
             case["breaches"].append(
                 {"clock": "gop", "elapsed_hours": elapsed,
                  "budget_hours": self.rules["gop_sla_hours"]})
-        case["gop"] = {"gop_ref": "GOP-" + secrets.token_hex(4).upper(),
+        case["gop"] = {"gop_ref": "GOP-" + self._id_fn().upper(),
                        "provider_ref": provider_ref,
                        "limit_minor": limit_minor,
                        "issued_h": now_h, "sla_breach": breach,
@@ -280,7 +286,7 @@ class ClaimsRegistry:
                     {"clock": "payment", "elapsed_days": elapsed,
                      "budget_days": self.rules["payment_sla_days"]})
             remit = {"remittance_ref": "REM-" +
-                     secrets.token_hex(4).upper(),
+                     self._id_fn().upper(),
                      "case": case["case_id"],
                      "net_minor": adj["approved_minor"],
                      "glosa_total_minor": sum(

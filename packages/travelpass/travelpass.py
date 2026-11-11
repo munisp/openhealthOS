@@ -75,11 +75,16 @@ def quote_premium(entry_day, exit_day):
 
 
 class TravelPassRegistry:
-    def __init__(self, country_code):
+    def __init__(self, country_code, *, id_fn=None):
         if not country_code:
             raise TravelPassError("the issuing authority is part of "
                                   "every token's provenance")
         self.country = country_code
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_urlsafe(24))
         self.travelers = {}     # traveler_id -> record
         self.payments = []      # append-only ledger
         self.tokens = {}        # token_hash -> traveler_id
@@ -171,7 +176,7 @@ class TravelPassRegistry:
         t = self._t(traveler_id)
         if t["revoked"]:
             raise TravelPassError("traveler record revoked")
-        token = f"tp_{secrets.token_urlsafe(24)}"
+        token = f"tp_{self._id_fn()}"
         h = hashlib.sha256(token.encode()).hexdigest()
         self.tokens[h] = traveler_id
         return {"traveler_id": traveler_id, "token": token,

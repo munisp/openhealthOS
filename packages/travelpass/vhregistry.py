@@ -64,7 +64,7 @@ def _quarter(day):
 
 class IncidentRegistry:
     def __init__(self, *, rules_version="visitor-incidents@1.0.0",
-                 salt):
+                 salt, id_fn=None):
         if rules_version not in INCIDENT_RULES:
             _refuse("unknown incident rules version")
         self.rules = dict(INCIDENT_RULES[rules_version])
@@ -73,6 +73,11 @@ class IncidentRegistry:
             _refuse("the pseudonym salt is mandatory — an unsalted "
                     "registry is a name list with extra steps")
         self._salt = salt
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.incidents = {}
         self.alerts = {}
         self.acks = []           # append-only acknowledgement trail
@@ -98,7 +103,7 @@ class IncidentRegistry:
         if cost_minor is None or cost_minor < 0:
             _refuse("an incident carries its cost — 0 is a fact, "
                     "None is a hole")
-        inc_id = "INC-" + secrets.token_hex(4).upper()
+        inc_id = "INC-" + self._id_fn().upper()
         self.incidents[inc_id] = {
             "incident_id": inc_id,
             "traveler_pseudo": self._pseudo(traveler_key),

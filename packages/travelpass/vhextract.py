@@ -53,7 +53,12 @@ def k_floor(rows):
 
 
 class ExtractDesk:
-    def __init__(self):
+    def __init__(self, *, id_fn=None):
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(12))
         self.licenses = {}        # token -> license record
         self.sales = []
 
@@ -64,7 +69,7 @@ class ExtractDesk:
                     "the shelf")
         if not buyer or not payment_ref:
             _refuse("a sale names the buyer and the money")
-        token = "ext_" + secrets.token_hex(12)
+        token = "ext_" + self._id_fn()
         lic = {"token_sha256": hashlib.sha256(token.encode()).hexdigest(),
                "extract": extract_id, "buyer": buyer, "day": day,
                "payment_ref": payment_ref}

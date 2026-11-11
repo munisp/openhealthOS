@@ -49,11 +49,17 @@ class RescueRegistry:
     """FR-CLM-06: medevac orchestration + repatriation of remains.
     The timeline is append-only; every transition stamps itself."""
 
-    def __init__(self, *, rules_version="vhc-rescue@1.0.0"):
+    def __init__(self, *, rules_version="vhc-rescue@1.0.0",
+                 id_fn=None):
         if rules_version not in RESCUE_RULES:
             _refuse("unknown rescue rules version")
         self.rules = dict(RESCUE_RULES[rules_version])
         self.rules_version = rules_version
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.missions = {}
         self.audit = []
 
@@ -65,7 +71,7 @@ class RescueRegistry:
                     "taxi ride")
         if not from_facility or not to_destination or not requested_by:
             _refuse("a mission names from, to, and who asked")
-        mission_id = "MED-" + secrets.token_hex(4).upper()
+        mission_id = "MED-" + self._id_fn().upper()
         self.missions[mission_id] = {
             "mission_id": mission_id, "case_id": case_id,
             "kind": "medevac", "state": "requested",
@@ -147,7 +153,7 @@ class RescueRegistry:
         if not note:
             _refuse("the record states the circumstance, respectfully "
                     "and completely")
-        mission_id = "REP-" + secrets.token_hex(4).upper()
+        mission_id = "REP-" + self._id_fn().upper()
         self.missions[mission_id] = {
             "mission_id": mission_id, "case_id": case_id,
             "kind": "repatriation-of-remains", "state": "closed",
@@ -184,7 +190,12 @@ class UninsuredFund:
     uncovered is posted — amount, provider, reason — and recovered
     against. Append-only; a silent write-off is a leak with a smile."""
 
-    def __init__(self):
+    def __init__(self, *, id_fn=None):
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.entries = []      # append-only posts and recoveries
         self.audit = []
 
@@ -194,7 +205,7 @@ class UninsuredFund:
         if not provider_ref or not reason:
             _refuse("charity care names the provider and the reason — "
                     "absorbed silently is not a policy, it is a leak")
-        entry = {"entry_id": "UEF-" + secrets.token_hex(4).upper(),
+        entry = {"entry_id": "UEF-" + self._id_fn().upper(),
                  "kind": "post", "case_ref": case_ref,
                  "provider_ref": provider_ref,
                  "amount_minor": amount_minor, "day": day,
@@ -242,7 +253,12 @@ class SubrogationRegistry:
     identified → demanded → recovered / written-off. Recovery posts
     back to the fund; a write-off needs an approver and a reason."""
 
-    def __init__(self, *, fund=None):
+    def __init__(self, *, fund=None, id_fn=None):
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.claims = {}
         self.fund = fund      # recovered money posts back here
         self.audit = []
@@ -251,7 +267,7 @@ class SubrogationRegistry:
         if not third_party or not basis:
             _refuse("subrogation names the liable party and the legal "
                     "basis — a suspicion is not a claim")
-        sub_id = "SUB-" + secrets.token_hex(4).upper()
+        sub_id = "SUB-" + self._id_fn().upper()
         self.claims[sub_id] = {
             "sub_id": sub_id, "case_id": case_id,
             "third_party": third_party, "basis": basis,

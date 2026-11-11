@@ -25,10 +25,15 @@ def _refuse(msg):
 
 
 class WidgetRegistry:
-    def __init__(self, partners):
+    def __init__(self, partners, *, id_fn=None):
         """partners: the vhsales PartnerRegistry — the widget never
         bypasses the partner door."""
         self.partners = partners
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(16))
         self.tokens = {}          # token -> record
         self.audit = []
 
@@ -42,7 +47,7 @@ class WidgetRegistry:
             _refuse("the widget rides TLS or it does not ride")
         if not (0 < revenue_share_bps <= 3000):
             _refuse("revenue share outside 0-30% — the band is the mandate")
-        token = "wgt_" + secrets.token_hex(16)
+        token = "wgt_" + self._id_fn()
         self.tokens[token] = {
             "partner_id": partner_id, "origin": origin,
             "revenue_share_bps": revenue_share_bps,

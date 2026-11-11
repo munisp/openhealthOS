@@ -138,6 +138,17 @@
         "payload_version": null
       },
       {
+        "path": "apps/pwa/idseamproof.json",
+        "title": "Identity-seam proof",
+        "contract": "compact",
+        "exporter": "packages/idseam/demo_idseam.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "445f92f8b55611ae4b5b680007f36b09027ee5d8698cdc9a6613a0e9f288176a",
+        "payload_version": null
+      },
+      {
         "path": "apps/pwa/agentwrite.json",
         "title": "Agent-write stack",
         "contract": "compact",
@@ -315,8 +326,8 @@
       }
     ],
     "summary": {
-      "total": 28,
-      "verified": 28,
+      "total": 29,
+      "verified": 29,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -324,8 +335,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 29,
-      "registered": 28,
+      "stamped_on_disk": 30,
+      "registered": 29,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -336,7 +347,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 20,
+      "compact": 21,
       "spaced-utf8": 8
     }
   },
@@ -390,5 +401,5 @@
     "proofindex": "proofindex@1.1.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "f223fd65e90d20a2e20a9d77bf00c885e9a331c11983b9cbdd442bd1c9e9fe4b"
+  "sha256": "7a11f3e35915d55fc3169bfce28c9fd41e545a038a181c782d770c08bb4e5ead"
 }

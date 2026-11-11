@@ -405,13 +405,19 @@ class VHCCoverRegistry:
     """Quote → purchase → signed QR → verify/extend/revoke, all under one
     country profile. Ledgers are append-only; verdicts name reasons."""
 
-    def __init__(self, *, profile_version, key_ring, issuer):
+    def __init__(self, *, profile_version, key_ring, issuer,
+                 id_fn=None):
         if profile_version not in VHC_PROFILES:
             _refuse("unknown country profile: %s" % profile_version)
         self.profile_version = profile_version
         self.profile = dict(VHC_PROFILES[profile_version])
         self.key_ring = key_ring
         self.issuer = issuer
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.quotes = {}
         self.covers = {}
         self.exemptions = {}        # ref -> exemption record
@@ -424,7 +430,7 @@ class VHCCoverRegistry:
     def quote(self, *, days, age_years, day):
         total, units = price_cover(self.profile, days=days,
                                    age_years=age_years)
-        quote_id = "Q-" + secrets.token_hex(4)
+        quote_id = "Q-" + self._id_fn()
         self.quotes[quote_id] = {
             "quote_id": quote_id, "days": days, "age_years": age_years,
             "total_minor": total, "units": units,
@@ -444,7 +450,7 @@ class VHCCoverRegistry:
             _refuse("quote expired — re-quote at the counter")
         if not passport_ref or not full_name:
             _refuse("cover binds to a passport and a name")
-        ref = "VHC-" + secrets.token_hex(4).upper()
+        ref = "VHC-" + self._id_fn().upper()
         window = {"from": entry_day, "to": entry_day + q["days"] - 1}
         cover = {
             "ref": ref, "passport_sha256": hashlib.sha256(
@@ -547,7 +553,7 @@ class VHCCoverRegistry:
             if foreign_cover_minor is None or foreign_cover_minor < floor:
                 _refuse("foreign-policy cover below the floor is not "
                         "cover — top up or buy the scheme")
-        ref = "EXM-" + secrets.token_hex(4).upper()
+        ref = "EXM-" + self._id_fn().upper()
         ex = {
             "ref": ref, "kind": "exemption",
             "passport_sha256": hashlib.sha256(
@@ -652,7 +658,7 @@ class VHCCoverRegistry:
                     "auto-issue without a manifest is a favour")
         if not passport_ref or not full_name:
             _refuse("a rider binds to a passport and a name")
-        ref = "CRT-" + secrets.token_hex(4).upper()
+        ref = "CRT-" + self._id_fn().upper()
         window = {"from": day,
                   "to": day + self.profile["courtesy_rider_days"]}
         cover = {
@@ -923,8 +929,13 @@ class RefundExceptionQueue:
     ledger with its basis stated. One reasoned rejection kills the
     request."""
 
-    def __init__(self, registry):
+    def __init__(self, registry, *, id_fn=None):
         self.registry = registry     # the VHCCoverRegistry it posts to
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.requests = {}
         self.audit = []
 
@@ -938,7 +949,7 @@ class RefundExceptionQueue:
         if not instrument:
             _refuse("an exception states its instrument — the money "
                     "always has a destination")
-        req_id = "RFX-" + secrets.token_hex(4).upper()
+        req_id = "RFX-" + self._id_fn().upper()
         self.requests[req_id] = {
             "req_id": req_id, "ref": ref, "reason": reason,
             "amount_minor": amount_minor, "instrument": instrument,

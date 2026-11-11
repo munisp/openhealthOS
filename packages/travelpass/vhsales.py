@@ -39,7 +39,7 @@ def _refuse(msg):
 
 
 def purchase_group(vhc, *, payer_ref, travelers, entry_day, day,
-                   key_id):
+                   key_id, id_fn=None):
     """FR-SAL-03: one payer, N travelers, per-pax pricing from the
     country profile. Validation is all-or-nothing — every row names
     its own error before a cent moves."""
@@ -56,7 +56,8 @@ def purchase_group(vhc, *, payer_ref, travelers, entry_day, day,
                           "discount" % i)
     if errors:
         _refuse("manifest refused, nobody charged: " + "; ".join(errors))
-    group_ref = "GRP-" + secrets.token_hex(4).upper()
+    _id = id_fn or (lambda: secrets.token_hex(4))
+    group_ref = "GRP-" + _id().upper()
     covers, total = [], 0
     for t in travelers:
         q = vhc.quote(days=t.get("days", 30), age_years=t["age_years"],

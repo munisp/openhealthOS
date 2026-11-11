@@ -105,8 +105,8 @@ class TestVerifyAllRealTree(unittest.TestCase):
 
     def test_every_payload_verified(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
-        self.assertEqual(report["summary"]["total"], 28)
-        self.assertEqual(report["summary"]["verified"], 28)
+        self.assertEqual(report["summary"]["total"], 29)
+        self.assertEqual(report["summary"]["verified"], 29)
         self.assertTrue(report["summary"]["all_verified"])
         for v in report["payloads"]:
             self.assertEqual(v["status"], "verified", v["path"])
@@ -114,7 +114,7 @@ class TestVerifyAllRealTree(unittest.TestCase):
     def test_contract_census(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
         self.assertEqual(report["contracts"],
-                         {"compact": 20, "spaced-utf8": 8})
+                         {"compact": 21, "spaced-utf8": 8})
 
     def test_absent_is_stated_not_raised(self):
         ghost = {"path": "apps/pwa/definitely-not-here.json",
@@ -156,7 +156,7 @@ class TestDemoProofindex(unittest.TestCase):
         self.assertTrue(p["flags"]["all_verified"])
         self.assertTrue(p["flags"]["coverage_complete"])
         self.assertTrue(p["flags"]["drills_named"])
-        self.assertEqual(len(p["registry"]["payloads"]), 28)
+        self.assertEqual(len(p["registry"]["payloads"]), 29)
         self.assertEqual({d["verdict"] for d in p["drills"]},
                          {"drift", "non-canonical-stamp",
                           "contract-mismatch", "absent",
@@ -280,6 +280,8 @@ EXPORTERS = [
      _MEM % "__import__('demo_geostructure').run_demo()"),
     ("georuntimeproof", "packages/georuntime",
      _MEM % "__import__('demo_georuntime').run_demo()"),
+    ("idseamproof", "packages/idseam",
+     _MEM % "__import__('demo_idseam').run_demo()"),
     ("portal", "packages/ips",
      _MEM % "__import__('demo_portal').seed_record_payload()"),
     ("dashboards", "packages/travelpass",

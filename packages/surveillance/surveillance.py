@@ -56,8 +56,16 @@ class Surveillance:
     """Ingests triage events, emits alerts. Stateless across windows:
     callers feed it events; it keeps per-(syndrome, area) day buckets."""
     dp_epsilon: float = 0.0   # 0 = exact counts; >0 = Laplace noise
+    # DP noise is random in production; demos/reproducibility pass a
+    # seed and the noise becomes replayable (ADR-0079).
+    seed: int | None = None
+    _rng: object = field(default=None, compare=False, repr=False)
     buckets: dict = field(default_factory=lambda: defaultdict(lambda: defaultdict(int)))
     alerted: set = field(default_factory=set)
+
+    def __post_init__(self):
+        self._rng = (random.Random(self.seed)
+                     if self.seed is not None else random)
 
     def ingest(self, events: list[dict], today: datetime) -> list[Alert]:
         """events: [{syndrome, area, ts}] — from triage package output."""
@@ -148,7 +156,7 @@ class Surveillance:
         if self.dp_epsilon <= 0:
             return count
         scale = 1.0 / self.dp_epsilon
-        noise = -scale * math.copysign(1, random.random() - 0.5) * math.log(1 - 2 * abs(random.random() - 0.5))
+        noise = -scale * math.copysign(1, self._rng.random() - 0.5) * math.log(1 - 2 * abs(self._rng.random() - 0.5))
         return max(0, round(count + noise))
 
 

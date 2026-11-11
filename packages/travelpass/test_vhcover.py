@@ -112,7 +112,12 @@ class TestVerdicts(unittest.TestCase):
         # an unpadded base64url segment are caught even earlier — as
         # "non-canonical encoding" — because the final char carries
         # spare bits; see test_vhtamper.py.)
-        pos = len(cover["qr"]) - 3
+        # Pin the flip PROVABLY inside the signature segment — the
+        # one observed flake stays stated, and the position is no
+        # longer relative to total length (ADR-0079).
+        sig_start = cover["qr"].rindex(".") + 1
+        self.assertGreaterEqual(len(cover["qr"]) - sig_start, 4)
+        pos = sig_start + 2
         bad = (cover["qr"][:pos]
                + ("x" if cover["qr"][pos] != "x" else "y")
                + cover["qr"][pos + 1:])

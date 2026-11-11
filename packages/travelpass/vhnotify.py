@@ -59,7 +59,7 @@ class NotificationOutbox:
     (event, ref, day) — replays return the original, never resend."""
 
     def __init__(self, transport, *, content=None,
-                 rules_version="vhc-notify@1.0.0"):
+                 rules_version="vhc-notify@1.0.0", id_fn=None):
         if transport is None:
             _refuse("a notification rail without a transport is not a "
                     "rail — plug in email/SMS/WhatsApp or say the "
@@ -69,6 +69,11 @@ class NotificationOutbox:
         self.transport = transport
         self.content = content       # optional vhsupport.ContentLayer
         self.rules = dict(NOTIFY_RULES[rules_version])
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
         self.outbox = []             # append-only
         self._sent = {}              # (event, ref, day) -> outbox idx
 
@@ -99,7 +104,7 @@ class NotificationOutbox:
         if not result or result.get("status") != "accepted":
             _refuse("notification send refused by the rail — a "
                     "swallowed failure is a traveller who never heard")
-        rec = {"notification_id": "NTF-" + secrets.token_hex(4).upper(),
+        rec = {"notification_id": "NTF-" + self._id_fn().upper(),
                "event": event, "ref": ref, "channel": channel,
                "lang": lang, "day": day}
         self._sent[key] = len(self.outbox)

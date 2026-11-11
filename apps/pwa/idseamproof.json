@@ -1,0 +1,111 @@
+{
+  "control": {
+    "census": {
+      "out_of_scope_stated": "JS/Go services do not mint these engine IDs; the census does not pretend to cover them",
+      "pre_existing_seam": [
+        "travelpass/vhsupport.py — the pattern source (wave 5, vhsupport id_fn)"
+      ],
+      "refused": [
+        {
+          "reason": "a deterministic key seam mints forged credentials — refused, not seamed",
+          "site": "ips/shl.py — SHL key mint (secrets.token_bytes(32))"
+        }
+      ],
+      "scope": "python packages/, 2026-11-11, grep for secrets.token_*/secrets.choice/random.* mint patterns in non-test, non-demo code — runtimes and method stated (the wave-17 lesson)",
+      "seamed_this_wave": 23,
+      "sites_found": 25
+    },
+    "cover_flow": {
+      "flow_sha256": "0119f36d714aaf4ce96602acd15e858bd369e7027de4183a70b93810f49cfada",
+      "path": "quote → purchase → signed QR — the REAL flow, no sign_claims sidestep",
+      "quote_id": "Q-00000000",
+      "ref": "VHC-00000001",
+      "replayed_byte_identical": true
+    },
+    "production_defaults": {
+      "distinct_quotes": true,
+      "distinct_refs": true,
+      "note": "only booleans are exported — the secrets-shaped values are computed at export and asserted, never pinned (pinning them would pin randomness)"
+    },
+    "seam_sweep": {
+      "replayed_identical": true,
+      "sites": {
+        "travelpass.issue_pass": "tp_00000000",
+        "vhclaims.intake": "CLM-00000000",
+        "vhclaims.issue_gop": "GOP-00000001",
+        "vhnotify.emit": "NTF-00000000",
+        "vhregistry.register_incident": "INC-00000000",
+        "vhrescue.fund_post": "UEF-00000000",
+        "vhrescue.request_medevac": "MED-00000000",
+        "vhrescue.subrogation": "SUB-00000000",
+        "vhsales.purchase_group": "GRP-00000000",
+        "vhsettle.settlement_file": "STL-demo-psp-12-00000000"
+      }
+    },
+    "surveillance_noise": {
+      "alerts": [],
+      "dp_epsilon": 1.0,
+      "replayed_identical": true,
+      "seed": 42
+    }
+  },
+  "drills": [
+    {
+      "detail": "two default purchases mint distinct refs and distinct quotes — asserted at export time; only the boolean reaches the payload",
+      "name": "production-stays-unique",
+      "outcome": "stated"
+    },
+    {
+      "detail": "the control walks purchase() itself — before this wave, demo_tamper had to build tokens via sign_claims because purchase() could not replay",
+      "name": "real-flow-not-sidestep",
+      "outcome": "stated"
+    },
+    {
+      "detail": "ips/shl.py key mint gets NO seam — deterministic key material is a forgery kit; the refusal is the feature",
+      "name": "key-seam-refused",
+      "outcome": "refused"
+    },
+    {
+      "detail": "the one observed test_tampered_qr flake: 25/25 reproduction runs green; the test now pins its flip provably inside the signature segment — the flake stays on record, the nondeterminism is gone",
+      "name": "flake-pinned-not-hidden",
+      "outcome": "stated"
+    },
+    {
+      "detail": "an exporter regenerating with different bytes fails the meta gate — this payload is the 22nd exporter under that gate",
+      "name": "unseeded-demo-is-a-defect",
+      "outcome": "refused"
+    },
+    {
+      "detail": "python-only, grep-based, patterns enumerated; a census that does not state its method is a rumor",
+      "name": "census-scope-stated",
+      "outcome": "stated"
+    }
+  ],
+  "generated_at": "2026-11-11T18:30:00Z",
+  "honesty": {
+    "absence_is_not_a_value": "the census states what it did not cover instead of implying completeness",
+    "production_stays_secrets": "every default is unchanged — uniqueness in production, determinism in demos, and the difference is a constructor argument",
+    "refusal_is_a_feature": "shl.py's key mint refused a seam; deterministic keys are forged credentials",
+    "the_checksum_is_the_contract": "a demo that cannot replay the real flow byte-identically is evidence about a sidestep; seams let the contract watch the real path"
+  },
+  "sha256": "445f92f8b55611ae4b5b680007f36b09027ee5d8698cdc9a6613a0e9f288176a",
+  "story": "23 unseamed mint sites found by census; 23 seamed, production defaults untouched, one key mint REFUSED a seam with its reason stated. Demos no longer route around the gates they demonstrate.",
+  "surface": "idseamproof",
+  "title": "Identity seams — determinism can walk the real flow",
+  "versions": {
+    "exporter": "idseamproof-demo@1.0.0",
+    "surveillance": "seed seam",
+    "travelpass": "id_fn seam",
+    "vhclaims": "id_fn seam",
+    "vhcover": "id_fn seam",
+    "vhdisrupt": "id_fn seam",
+    "vhextract": "id_fn seam",
+    "vhnotify": "id_fn seam",
+    "vhproviders": "id_fn seam",
+    "vhregistry": "id_fn seam",
+    "vhrescue": "id_fn seam ×3 classes",
+    "vhsales": "id_fn param",
+    "vhsettle": "id_fn param ×2",
+    "vhwidget": "id_fn seam"
+  }
+}

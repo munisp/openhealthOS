@@ -219,9 +219,14 @@ class ProviderPortal:
     touches only its own guarantees; everyone else's cases are a
     count, never a list."""
 
-    def __init__(self, *, claims, providers):
+    def __init__(self, *, claims, providers, id_fn=None):
         self.claims = claims
         self.providers = providers
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(4))
 
     def submit_dossier(self, provider_id, case_id, *, icd10_codes, acts,
                        discharge_ref, day):
@@ -265,7 +270,7 @@ class ProviderPortal:
             "claims": claims_rep,
             "providers": providers_rep,
             "glosa_register_rows": len(self.claims.glosa_register()),
-            "pack_ref": "MOH-" + secrets.token_hex(4).upper(),
+            "pack_ref": "MOH-" + self._id_fn().upper(),
         }
         if tariff_book is not None:
             force = tariff_book.in_force(day=day)

@@ -35,11 +35,16 @@ def _refuse(msg):
 
 
 class DisruptionAPI:
-    def __init__(self, rider_engine, *, burst=10):
+    def __init__(self, rider_engine, *, burst=10, id_fn=None):
         if burst < 1:
             _refuse("the rate limit is a declared positive bucket")
         self.engine = rider_engine
         self.burst = burst
+        # IDs stay secrets-unique in production; demos and
+        # reproducibility harnesses inject a deterministic id_fn
+        # (ADR-0079 — the checksum is the contract, so a demo must
+        # be able to walk the REAL flow and still be byte-stable).
+        self._id_fn = id_fn or (lambda: secrets.token_hex(16))
         self.tokens = {}           # token -> {airline, origin}
         self.allowance = {}        # token -> remaining in window
         self.responses = 0
@@ -50,7 +55,7 @@ class DisruptionAPI:
         if not origin.startswith("https://"):
             _refuse("origins are https — a plaintext partner is a "
                     "leak")
-        token = "vhd_" + secrets.token_hex(16)
+        token = "vhd_" + self._id_fn()
         self.tokens[token] = {"airline": airline, "origin": origin,
                               "issued_by": by, "issued_day": day}
         self.allowance[token] = self.burst
