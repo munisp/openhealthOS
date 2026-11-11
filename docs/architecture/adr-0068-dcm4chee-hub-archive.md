@@ -1,4 +1,4 @@
-# ADR-0068 — dcm4chee-arc-light as the hub archive (edge/hub PACS topology)
+# ADR-0068: dcm4chee-arc-light as the hub archive (edge/hub PACS topology)
 
 Status: accepted · Date: 2026-11-01
 

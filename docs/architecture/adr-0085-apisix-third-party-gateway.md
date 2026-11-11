@@ -1,10 +1,10 @@
-# ADR-0062: Apache APISIX as the third-party integration gateway
+# ADR-0085: Apache APISIX as the third-party integration gateway
 
 Date: 2026-10-20 · Status: accepted
 
 ## Context
 
-ADR-0061 defined the integration surface; this decides the enforcement
+ADR-0084 defined the integration surface; this decides the enforcement
 point. The hand-rolled Go api-gateway is right for facility-edge routing
 (small, stdlib, ours), but third-party north-south traffic needs a
 battle-tested gateway feature set: per-consumer rate limiting, OIDC token
@@ -19,7 +19,7 @@ declarative, file-reloaded, no etcd; offline doctrine holds for the gateway
 itself).
 
 - **AuthN**: openid-connect plugin, bearer-only, against the Keycloak realm
-  (SMART Backend Services tokens from ADR-0061 onboarding).
+  (SMART Backend Services tokens from ADR-0084 onboarding).
 - **Rate limits**: limit-count per consumer — 600/min claims+terminology,
   300/min FHIR+CDS, 10/min bulk $export; 429s are honest and observable.
 - **Observability**: prometheus plugin + request-id echoed on responses.

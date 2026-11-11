@@ -1,4 +1,4 @@
-# APISIX — third-party integration gateway (ADR-0062)
+# APISIX — third-party integration gateway (ADR-0085)
 
 Apache APISIX (Apache-2.0, composed not forked) fronts all north-south
 third-party traffic: payers, insurers, labs, pharmacies, vendors, analytics.

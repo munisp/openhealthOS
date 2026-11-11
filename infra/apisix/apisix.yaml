@@ -1,5 +1,5 @@
 # APISIX declarative config (standalone mode — no etcd; offline-doctrine
-# friendly: reload from this file, no control-plane dependency) — ADR-0062.
+# friendly: reload from this file, no control-plane dependency) — ADR-0085.
 # APISIX is Apache-2.0; composed, never forked (ADR-0005).
 #
 # Boundary: APISIX fronts ONLY north-south third-party traffic at the state

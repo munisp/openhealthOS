@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Adrproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Adrproof — the decision chain, gated</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic fixture drills; the audit reads the REAL decision chain. Wave-22 recon censused <span class="mono">docs/architecture</span> and found the chain had <b>silently collided</b>: two waves, three weeks apart, allocated ADR-0060, ADR-0061 and ADR-0062 to <i>different</i> decisions — every docstring, README row and cross-reference citing those numbers was ambiguous about which decision it meant, and nothing watched. The same census found four files answering to an em-dash headline variant and fourteen declaring status through four decorations. This wave renumbers the collided October decisions to 0083–0085, updates all 19 inbound reference sites, normalises the headlines, and adds the <b>chain gate</b> (adrchain@1.0.0, ADR-0086): numbers never collide, filename and headline must agree, gaps are stated never silent.</div>
+
+  <div class="card">
+    <h2>What the recon census found — all resolved in this wave</h2>
+    <div id="pre"></div>
+  </div>
+
+  <div class="card">
+    <h2>Live audit — the real chain, right now</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-files"></div><div class="kpi-label">ADR files</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-distinct"></div><div class="kpi-label">distinct numbers</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-dups"></div><div class="kpi-label">collisions</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-gaps"></div><div class="kpi-label">gaps</div></div>
+    </div>
+    <div id="live" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The gate — five fates, every one named</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Gate</b><span class="mono" id="gate"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./adrproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  $("pre").innerHTML = p.pre_wave_findings.collisions.map((c) =>
+    '<div class="row"><span class="badge bad">collision</span><span>' +
+    "<b>ADR-" + esc(c.number) + "</b> claimed by " +
+    c.claimants.map(esc).join(" <i>and</i> ") + "</span></div>"
+  ).join("") +
+  '<div class="row"><span class="badge warn">variant</span><span>em-dash headlines: ' +
+    p.pre_wave_findings.em_dash_headlines.map(esc).join(", ") + "</span></div>" +
+  '<div class="row"><span class="badge warn">drift</span><span>' +
+    p.pre_wave_findings.status_decoration_variants +
+    " files declared status through four decorations</span></div>" +
+  '<div class="row"><span class="badge ok">resolved</span><span>' +
+    esc(p.pre_wave_findings.resolution) + "</span></div>";
+
+  const s = p.live_audit.summary;
+  $("k-files").textContent = s.files;
+  $("k-distinct").textContent = s.distinct_numbers;
+  $("k-dups").textContent = s.duplicates;
+  $("k-gaps").textContent = s.gaps;
+  $("live").innerHTML =
+    '<div class="row"><b>chain_ok</b><span class="badge ' +
+    (s.chain_ok ? "ok" : "bad") + '">' + s.chain_ok + "</span></div>" +
+    '<div class="row"><b>red verdicts</b><span>' + s.red_verdicts +
+    "</span></div>" +
+    '<div class="row"><b>amber verdicts</b><span>' + s.amber_verdicts +
+    "</span></div>" +
+    '<div class="row"><b>highest number</b><span class="mono">ADR-' +
+    String(s.max_number).padStart(4, "0") + "</span></div>";
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    '<div class="row"><span class="badge ' + badge(d.severity) + '">' +
+    esc(d.severity) + "</span><span>" + esc(d.drill) +
+    ' — <span class="mono">' + esc(d.verdict) + "</span></span></div>"
+  ).join("");
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    '<div class="row"><span>' + esc(d) + "</span></div>").join("");
+
+  $("sha").textContent = p.sha256;
+  $("gate").textContent = p.gate.library;
+}).catch((e) => { $("hdr").textContent = "payload unreadable: " + e; });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw-vhc.js").catch(() => {});
+}
+</script>
+</body>
+</html>

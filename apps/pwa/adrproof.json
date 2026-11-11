@@ -1,0 +1,89 @@
+{
+ "version": "adrproof-demo@1.0.0",
+ "generated_at": "2026-11-11T21:00:00Z",
+ "gate": {
+  "library": "packages/adrchain/adrchain.py adrchain@1.0.0",
+  "seam": "audit(root, listdir/read INJECTED) — fixtures and the real tree run the exact same code path",
+  "adr_dir": "docs/architecture"
+ },
+ "pre_wave_findings": {
+  "collisions": [
+   {
+    "number": "0060",
+    "claimants": [
+     "adr-0060-registry-lakehouse-feed.md (2026-10-20)",
+     "adr-0060-cds-hooks-and-governed-agent-tools.md (2026-11-09)"
+    ]
+   },
+   {
+    "number": "0061",
+    "claimants": [
+     "adr-0061-third-party-integration-surface.md (2026-10-20)",
+     "adr-0061-agent-write-protocol-and-honest-counting.md (2026-11-09)"
+    ]
+   },
+   {
+    "number": "0062",
+    "claimants": [
+     "adr-0062-apisix-third-party-gateway.md (2026-10-20)",
+     "adr-0062-agent-write-stack-integration.md (2026-11-10)"
+    ]
+   }
+  ],
+  "em_dash_headlines": [
+   "adr-0068",
+   "adr-0072",
+   "adr-0073",
+   "adr-0074"
+  ],
+  "status_decoration_variants": 14,
+  "resolution": "October decisions renumbered to ADR-0083/0084/0085 (the November agent-write reference graph is larger); 19 inbound reference sites updated in the same wave; 4 em-dash headlines normalised to the canonical '# ADR-NNNN:' form; status decorations accepted as data, status ABSENCE gated amber"
+ },
+ "live_audit": {
+  "summary": {
+   "files": 86,
+   "distinct_numbers": 86,
+   "max_number": 86,
+   "duplicates": 0,
+   "gaps": 0,
+   "red_verdicts": 0,
+   "amber_verdicts": 0,
+   "chain_ok": true
+  }
+ },
+ "drills": [
+  {
+   "drill": "a clean contiguous chain — the honest steady state",
+   "verdict": "chain_ok",
+   "severity": "green"
+  },
+  {
+   "drill": "this wave's collision replayed: two files claim 0060 — every claimant named",
+   "verdict": "duplicate-number: 0060 ×2 claimants",
+   "severity": "red"
+  },
+  {
+   "drill": "a number retired — the hole is stated, not silent",
+   "verdict": "gap: 0002 stated",
+   "severity": "amber"
+  },
+  {
+   "drill": "file renamed, headline never updated — filename says 0007, headline says 0009",
+   "verdict": "number-mismatch: 0007≠0009",
+   "severity": "red"
+  },
+  {
+   "drill": "the em-dash variant — normalised estate-wide this wave; the gate refuses it",
+   "verdict": "no-title: '# ADR-0008 —' is not the canonical form",
+   "severity": "red"
+  }
+ ],
+ "doctrine": [
+  "A decision number is a contract: two files claiming one number makes every inbound reference ambiguous — red, all claimants named.",
+  "The filename and the headline must agree — a file that answers to two numbers is a mismatch, red.",
+  "A gap is not a defect — numbers can be retired — but a gap is STATED, amber; silence is the defect.",
+  "One canonical headline; a second variant is a defect. Normalise the files, never teach the gate a variant.",
+  "The audit reads the real chain at export: if the estate drifts, this payload goes stale and the freshness gate names it."
+ ],
+ "sha256": "af83bce7420fe07c32f026d53dd6da594c08954fba23c40a70e5de6dab3063f1"
+}

@@ -1,5 +1,5 @@
 """OpenHealth third-party SDK (stdlib Python) — the integration surface for
-payers, insurers, labs, pharmacies and health-tech vendors (ADR-0061).
+payers, insurers, labs, pharmacies and health-tech vendors (ADR-0084).
 
 Auth: SMART Backend Services (OAuth2 client_credentials, Keycloak realm
 `openhealth`, client profile per ADR-0054). Scopes are least-privilege per

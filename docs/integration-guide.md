@@ -1,13 +1,13 @@
 # Third-party integration guide — API & SDK
 
-Date: 2026-10-20 · Companion: ADR-0061, openapi/claims-gateway.yaml,
+Date: 2026-10-20 · Companion: ADR-0084, openapi/claims-gateway.yaml,
 packages/ohsdk. Audience: payers, insurers/HMOs, laboratories, pharmacies,
 health-tech vendors, research/analytics consumers.
 
 ## 1. The integration model in one paragraph
 
 Third parties integrate over **FHIR R4 APIs at the state-plane gateway —
-Apache APISIX, standalone declarative mode (ADR-0062)**,
+Apache APISIX, standalone declarative mode (ADR-0085)**,
 authenticated with **SMART Backend Services (OAuth2 client_credentials)**,
 with **least-privilege scopes per stakeholder class**, **idempotency keys on
 every mutation**, and **sandbox-first onboarding**. The Python SDK

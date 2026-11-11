@@ -1,7 +1,7 @@
 # Security posture — threat model and hardening matrix
 
 Date: 2026-10-20 · Companions: ADR-0008 (baseline), ADR-0039 (step-up),
-ADR-0043 (Cilium), ADR-0055 (QR trust), ADR-0062 (APISIX), ADR-0063 (this
+ADR-0043 (Cilium), ADR-0055 (QR trust), ADR-0085 (APISIX), ADR-0063 (this
 posture). Every control below is in-repo and test- or config-gated.
 
 ## Threat matrix
@@ -18,7 +18,7 @@ posture). Every control below is in-repo and test- or config-gated.
 | **MITM — transport interception** | TLS floor 1.2, prefer 1.3 at edge and gateway; HSTS; no Server banner; internal CA for facility LANs with MDM-pushed roots (never skip-verify — benchmark harness uses CERT_NONE only against the internal CA) | Caddyfile `tls protocols`, header block; APISIX TLS | test_caddyfile.py |
 | **MITM — downgrade** | TLS 1.2 floor kills protocol downgrade; HTTP→HTTPS not required on facility LANs by design (isolated LAN, internal CA) — the honest boundary | Caddyfile | config gate |
 | **MITM — east-west (datacenter)** | WireGuard pod-to-pod encryption via Cilium; default-deny network | infra/k8s/cilium + hardening.yaml | k8s README |
-| **Webhook forgery** | HMAC-signed webhook deliveries; consumers verify | notification-service (ADR-0061) | guide §6 |
+| **Webhook forgery** | HMAC-signed webhook deliveries; consumers verify | notification-service (ADR-0084) | guide §6 |
 | **QR forgery / replay** | HMAC keyring + rotation + revocation; presence codes daily-scoped; browser verification byte-compatible | ADR-0055 fabric | 39 PWA tests |
 | **Supply chain** | CycloneDX SBOM + SHA-256 manifest per release; BSL/SSPL/Elastic licence gate fails the build; compose-don't-fork | tools/release/sbom.py | 4 tests |
 

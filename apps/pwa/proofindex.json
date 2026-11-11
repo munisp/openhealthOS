@@ -167,7 +167,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "1034ba8c73613741d764e609b8c7a456259958541dd59dca558e95c9eb37db94",
+        "presented": "0c03d696c593b39bd07f4cec714a9fdfb2b0253c3c273dcb4d32b63919a4da96",
         "payload_version": "refreshproof-demo@1.0.0"
       },
       {
@@ -178,8 +178,19 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "90cd9e516fbf49ac5abc48e1714d88c32a1f6c7d8208d726a029b769861e97c0",
+        "presented": "bde30f4eda8342d88738ed2500bb4527023f0a6c27a345350b40f1a547782630",
         "payload_version": "shellproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/adrproof.json",
+        "title": "ADR-chain proof",
+        "contract": "compact",
+        "exporter": "packages/adrchain/demo_adrchain.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "af83bce7420fe07c32f026d53dd6da594c08954fba23c40a70e5de6dab3063f1",
+        "payload_version": "adrproof-demo@1.0.0"
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -359,8 +370,8 @@
       }
     ],
     "summary": {
-      "total": 32,
-      "verified": 32,
+      "total": 33,
+      "verified": 33,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -368,8 +379,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 33,
-      "registered": 32,
+      "stamped_on_disk": 34,
+      "registered": 33,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -380,7 +391,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 24,
+      "compact": 25,
       "spaced-utf8": 8
     }
   },
@@ -434,5 +445,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "41c8b5c6c6c660a199a22c239c642798d68dd193907988cb7465a1b95b444588"
+  "sha256": "3d3ecfd5480b0f2086a778824d78e4d6d858bf42245414a84f0f8989a8d0a2aa"
 }

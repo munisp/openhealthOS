@@ -1,4 +1,4 @@
-# ADR-0060: Chronic-registry lakehouse feed for advanced analytics
+# ADR-0083: Chronic-registry lakehouse feed for advanced analytics
 
 Date: 2026-10-20 · Status: accepted
 

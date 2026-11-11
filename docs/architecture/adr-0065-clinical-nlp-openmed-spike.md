@@ -7,7 +7,7 @@ live verify, same gate discipline as ADR-0064).
 ## Context
 Three platform gaps are clinical-NLP problems:
 
-1. **Free-text notes can never leave bronze** — ADR-0060's k-anonymity
+1. **Free-text notes can never leave bronze** — ADR-0083's k-anonymity
    floor protects structured aggregates, but narrative notes (where PHC
    care actually lives) are unusable for analytics without de-id.
 2. **Coding quality at PHC level** — most facilities have no trained

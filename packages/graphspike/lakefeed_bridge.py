@@ -1,7 +1,7 @@
 """lakefeed_bridge.py — silver-layer events -> national graph (ADR-0064).
 
 The operational graph AGE would serve is not a new data source: it is a
-projection of the lakehouse silver layer (ADR-0060). This bridge converts
+projection of the lakehouse silver layer (ADR-0083). This bridge converts
 silver JSONL events into the graphspike node/edge model, so the SAME
 pipeline that feeds analytics also feeds relationship queries — one
 contract, two projections. No event ever flows backwards: the graph is

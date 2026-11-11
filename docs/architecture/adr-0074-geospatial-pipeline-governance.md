@@ -1,4 +1,4 @@
-# ADR-0074 — Geospatial pipeline governance: the estate's GIS packages adopt the CRS layer
+# ADR-0074: Geospatial pipeline governance: the estate's GIS packages adopt the CRS layer
 
 - Status: accepted
 - Date: 2026-11-11

@@ -1,4 +1,4 @@
-"""Config-gate tests for the APISIX declarative config (ADR-0062): the route
+"""Config-gate tests for the APISIX declarative config (ADR-0085): the route
 table must stay in lockstep with the SDK surface and the security doctrine
 (every route authenticated, payer routes rate-limited)."""
 import os, re, unittest

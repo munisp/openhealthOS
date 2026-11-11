@@ -1,4 +1,4 @@
-"""Chronic-registry -> lakehouse feed (ADR-0060).
+"""Chronic-registry -> lakehouse feed (ADR-0083).
 
 The registry (packages/chronicreg) is the operational store; the lakehouse
 is the analytical store. This module bridges them as EVENTS on the same

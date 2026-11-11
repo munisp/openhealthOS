@@ -1,4 +1,4 @@
-# ADR-0072 — Knowledge-graph seam: semantics as data, federation fail-closed
+# ADR-0072: Knowledge-graph seam: semantics as data, federation fail-closed
 
 - Status: accepted
 - Date: 2026-11-11

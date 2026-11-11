@@ -1,4 +1,4 @@
-# ADR-0061: Third-party integration surface — API, SDK, onboarding
+# ADR-0084: Third-party integration surface — API, SDK, onboarding
 
 Date: 2026-10-20 · Status: accepted
 

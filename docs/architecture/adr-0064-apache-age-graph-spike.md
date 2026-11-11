@@ -31,7 +31,7 @@ Spike only, with a strict placement rule:
 - **AGE lives at T0/T1 only** (national core, state plane), where Postgres
   already runs. The T2 facility edge and T3 devices are untouched:
   stdlib-only, offline-first, no graph engine they cannot carry.
-- The lakehouse medallion pipeline (ADR-0060) is **complemented, not
+- The lakehouse medallion pipeline (ADR-0083) is **complemented, not
   replaced**: AGE answers live relationship questions on the operational
   graph; graph-derived features (e.g. facility connectedness degree) may be
   exported to gold aggregates under the existing k-anonymity floor.
@@ -63,7 +63,7 @@ operational cost (one more extension to version and upgrade).
   honestly — no Docker available; the golden outputs remain the pinned
   reference. The ADR stays at Spike until a live-capable runner confirms.
 - Added `lakefeed_bridge.py`: the operational graph is a **projection of
-  the silver layer** — one contract (ADR-0060), two projections (parquet
+  the silver layer** — one contract (ADR-0083), two projections (parquet
   analytics + graph). Silver events in, graph nodes/edges/CSVs out;
   unknown event types skipped honestly; partial JSONL lines never fatal.
   The bridged synthetic graph reproduces the fraud-ring verdict exactly.

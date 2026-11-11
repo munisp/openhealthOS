@@ -21,7 +21,7 @@ data breaches. Posture must be controls-in-repo, not prose.
 2. **MITM**: TLS floor 1.2/prefer 1.3 at edge (Caddy `tls protocols`) and
    gateway; HSTS + no Server banner + CSP baseline; internal CA roots via
    MDM for facility LANs (no skip-verify anywhere); WireGuard pod-to-pod
-   east-west (ADR-0043); HMAC-signed webhooks (ADR-0061). This change also
+   east-west (ADR-0043); HMAC-signed webhooks (ADR-0084). This change also
    RESTORES the HTTP/3 `protocols h1 h2 h3` servers block and the 443/udp
    mapping lost in a stash incident — now test-locked so it cannot silently
    regress again.

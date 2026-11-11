@@ -1,4 +1,4 @@
-# ADR-0073 — Coordinate-reference governance: CRSs as data, projections pinned by known answers
+# ADR-0073: Coordinate-reference governance: CRSs as data, projections pinned by known answers
 
 - Status: accepted
 - Date: 2026-11-11
