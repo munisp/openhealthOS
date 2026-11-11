@@ -35,3 +35,6 @@ services/dispatch-service/dispatch-service
 services/api-gateway/api-gateway
 services/whatsapp-gateway/whatsapp-gateway
 services/claims-orchestrator/claims-orchestrator
+services/cds-service/cds-service
+services/reading-service/reading-service
+services/terminology-service/terminology-service

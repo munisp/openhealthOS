@@ -40,6 +40,15 @@ Doctrines enforced here:
   A payload that verifies under a DIFFERENT contract than its registry
   entry records is "contract-mismatch" (amber): the evidence is intact
   but the registry is stale — stated, never silent.
+- Freshness is a gate, not a hope (ADR-0080 — the wave-17 blind
+  spot: routing moved to @1.2.0 and geointproof.json kept claiming
+  @1.1.0 while every gate stayed green, because the determinism meta
+  gate compares run-vs-run, never run-vs-committed). freshness_report
+  takes an INJECTED runner — proofindex never spawns a subprocess,
+  the executor is injected like a clock — and names every payload
+  whose committed bytes differ from what its exporter produces today
+  as "stale" (red). Determinism proves run-to-run sameness; freshness
+  proves the committed evidence IS the current machinery's output.
 - The index cannot stamp its own stamp. proofindex.json carries a
   compact-contract stamp over everything except the sha256 key; its
   integrity is pinned by the determinism + stamp-contract tests in
@@ -56,7 +65,7 @@ import hmac
 import json
 import os
 
-PROOFINDEX_VERSION = "proofindex@1.1.0"
+PROOFINDEX_VERSION = "proofindex@1.2.0"
 
 _HEX = frozenset("0123456789abcdef")
 
@@ -123,6 +132,9 @@ PAYLOADS = [
     {"path": "apps/pwa/idseamproof.json", "contract": "compact",
      "exporter": "packages/idseam/demo_idseam.py",
      "title": "Identity-seam proof"},
+    {"path": "apps/pwa/freshproof.json", "contract": "compact",
+     "exporter": "packages/freshproof/demo_freshproof.py",
+     "title": "Freshness-gate proof"},
     {"path": "apps/pwa/agentwrite.json", "contract": "compact",
      "exporter": "packages/agentwrite/demo_agentwrite.py",
      "title": "Agent-write stack"},
@@ -348,4 +360,101 @@ def verify_all(*, root: str = ".", generated_at: str) -> dict:
         "contracts": {name: sum(1 for e in PAYLOADS
                                 if e["contract"] == name)
                       for name in CONTRACTS},
+    }
+
+
+# ---------------------------------------------------------------------------
+# The freshness gate (ADR-0080) — committed-vs-current accounting.
+# ---------------------------------------------------------------------------
+
+_FRESH_RED = {"stale", "runner-error", "absent"}
+_FRESH_AMBER = {"no-exporter"}
+
+
+def _fverdict(entry, status, **extra):
+    return {"path": entry["path"], "title": entry["title"],
+            "exporter": entry["exporter"],
+            "status": status,
+            "severity": ("red" if status in _FRESH_RED else
+                         "amber" if status in _FRESH_AMBER else "green"),
+            **extra}
+
+
+def freshness_report(fresh, *, root: str = ".", payloads=None) -> dict:
+    """Compare every registered payload's committed bytes to what its
+    exporter produces TODAY. `fresh` is an injected runner:
+    fresh(entry) -> bytes (or str) of a fresh export, None where the
+    payload has no deterministic exporter (stated, never hidden); a
+    raise is a runner-error verdict, never a crash. This module never
+    spawns a subprocess — the executor is injected like a clock.
+
+    Verdicts: fresh (green) — committed bytes equal a fresh export;
+    stale (red) — the machinery moved and the evidence was not
+    regenerated and committed (the wave-17 lesson, now loud);
+    runner-error (red) — the exporter could not run at all;
+    no-exporter (amber) — no deterministic recipe registered, so
+    freshness rests on manual discipline — stated as data;
+    absent (red) — the committed file is not on disk at all.
+    """
+    verdicts = []
+    for entry in (payloads if payloads is not None else PAYLOADS):
+        full = os.path.join(root, entry["path"])
+        if not os.path.exists(full):
+            verdicts.append(_fverdict(
+                entry, "absent",
+                detail="committed payload not on disk — absence is "
+                       "stated, never faked"))
+            continue
+        try:
+            with open(full, "rb") as fh:
+                committed = fh.read()
+        except OSError as exc:
+            verdicts.append(_fverdict(entry, "absent", detail=str(exc)))
+            continue
+        try:
+            produced = fresh(entry)
+        except Exception as exc:  # the runner's failure is a verdict
+            verdicts.append(_fverdict(
+                entry, "runner-error",
+                detail="exporter raised: %s: %s"
+                       % (type(exc).__name__, exc)))
+            continue
+        if produced is None:
+            verdicts.append(_fverdict(
+                entry, "no-exporter",
+                detail="no deterministic exporter registered — "
+                       "freshness is manual discipline, stated"))
+            continue
+        if isinstance(produced, str):
+            produced = produced.encode()
+        if produced == committed:
+            verdicts.append(_fverdict(
+                entry, "fresh",
+                detail="committed bytes equal a fresh export"))
+        else:
+            verdicts.append(_fverdict(
+                entry, "stale",
+                detail="exporter output differs from the committed "
+                       "payload — the machinery moved and the evidence "
+                       "was not regenerated",
+                committed_sha256=hashlib.sha256(committed).hexdigest(),
+                fresh_sha256=hashlib.sha256(produced).hexdigest()))
+    reds = [v for v in verdicts if v["severity"] == "red"]
+    ambers = [v for v in verdicts if v["severity"] == "amber"]
+    return {
+        "payloads": verdicts,
+        "summary": {
+            "total": len(verdicts),
+            "fresh": sum(1 for v in verdicts if v["status"] == "fresh"),
+            "stale": sum(1 for v in verdicts if v["status"] == "stale"),
+            "runner_error": sum(1 for v in verdicts
+                                if v["status"] == "runner-error"),
+            "no_exporter": sum(1 for v in verdicts
+                               if v["status"] == "no-exporter"),
+            "absent": sum(1 for v in verdicts
+                          if v["status"] == "absent"),
+            "red": len(reds),
+            "amber": len(ambers),
+            "all_fresh": not reds and not ambers,
+        },
     }

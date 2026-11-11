@@ -2,7 +2,7 @@
   "version": "proofindex-demo@1.1.0",
   "generated_at": "2026-11-10T09:00:00Z",
   "registry": {
-    "version": "proofindex@1.1.0",
+    "version": "proofindex@1.2.0",
     "generated_at": "2026-11-10T09:00:00Z",
     "payloads": [
       {
@@ -46,7 +46,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "c4849a7e4a306fd2f8c71756df4af0275fdab5a481118aeccc993a00505281be",
+        "presented": "cf0153678a73c3f263e9c92e05e9ccd1666afd40b852683ff356aa3a882fe058",
         "payload_version": "shipproof-demo@1.1.0"
       },
       {
@@ -147,6 +147,17 @@
         "detail": "sha256 matches the recorded compact contract",
         "presented": "445f92f8b55611ae4b5b680007f36b09027ee5d8698cdc9a6613a0e9f288176a",
         "payload_version": null
+      },
+      {
+        "path": "apps/pwa/freshproof.json",
+        "title": "Freshness-gate proof",
+        "contract": "compact",
+        "exporter": "packages/freshproof/demo_freshproof.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "1500d6e6d413c1b92117b1159a030bd538833abf6f0183de7c19f597c014d35d",
+        "payload_version": "freshproof-demo@1.0.0"
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -326,8 +337,8 @@
       }
     ],
     "summary": {
-      "total": 29,
-      "verified": 29,
+      "total": 30,
+      "verified": 30,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -335,8 +346,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 30,
-      "registered": 29,
+      "stamped_on_disk": 31,
+      "registered": 30,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -347,7 +358,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 21,
+      "compact": 22,
       "spaced-utf8": 8
     }
   },
@@ -398,8 +409,8 @@
     "note": "the index cannot stamp its own stamp \u2014 this payload's sha256 is pinned by TestDemoProofindex determinism + stamp-contract tests, and proofindex is declared in SELF_EXCLUDED as data; the coverage scan must account for every stamped file on disk as registered or self-excluded, never silently skipped"
   },
   "versions": {
-    "proofindex": "proofindex@1.1.0",
+    "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "7a11f3e35915d55fc3169bfce28c9fd41e545a038a181c782d770c08bb4e5ead"
+  "sha256": "45f5fcb64cee8830c82a6a18b85dd5a9a5d0a5deeb7fd55474360430f20e7b2d"
 }

@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Freshproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Freshproof — committed evidence equals today's export</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic fixtures only; production machinery. Wave 17 moved routing to @1.2.0 — and geointproof.json kept claiming @1.1.0 while every gate stayed green, because the determinism meta gate compares run-vs-run, never run-vs-committed. A stale payload is not drift: its own stamp still verifies. This wave adds the <b>freshness gate</b> (proofindex@1.2.0, ADR-0080): every registered payload's committed bytes are compared to what its exporter produces <b>today</b>, via an injected runner — the library never spawns a subprocess. The census below found exactly <b>one</b> stale payload; it is regenerated and committed in this wave, and the gate makes the next silent stale-dating red at suite time.</div>
+
+  <div class="card">
+    <h2>The census — scope and method stated</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-total"></div><div class="kpi-label">payloads censused</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-fresh"></div><div class="kpi-label">fresh</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-stale"></div><div class="kpi-label">stale — named</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-drills"></div><div class="kpi-label">fixture drills</div></div>
+    </div>
+    <div id="census" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The gate — five fates, every one named</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Stale drill — committed</b><span class="mono" id="csha"></span></div>
+    <div class="row"><b>Stale drill — fresh</b><span class="mono" id="fsha"></span></div>
+    <div class="row"><b>Gate</b><span class="mono" id="gate"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./freshproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.census;
+  $("k-total").textContent = c.payloads;
+  $("k-fresh").textContent = c.fresh;
+  $("k-stale").textContent = c.stale;
+  $("k-drills").textContent = p.drills.length;
+  $("census").innerHTML =
+    `<div class="row"><b>scope</b><span class="mono">${esc(c.scope)}</span></div>` +
+    `<div class="row"><b>method</b><span class="mono">${esc(c.method)}</span></div>` +
+    `<div class="row"><b>stale, named</b><span class="mono">${esc(c.stale_named.join(", "))}</span></div>` +
+    `<div class="row"><b>resolution</b><span class="mono">${esc(c.resolution)}</span></div>` +
+    `<div class="row"><b>regenerated this wave</b><span class="mono">${esc(c.this_wave_regenerations.join(", "))} — ${esc(c.this_wave_reason)}</span></div>`;
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    `<div class="row"><b>${esc(d.drill)}</b>` +
+    `<span class="badge ${badge(d.severity)}">${esc(d.verdict)}</span></div>` +
+    `<div class="row"><span class="mono" style="opacity:.75">${esc(d.path)}</span></div>`).join("");
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    `<div class="row"><span>${esc(d)}</span></div>`).join("");
+
+  const stale = p.report.payloads.find((v) => v.status === "stale");
+  $("sha").textContent = p.sha256;
+  $("csha").textContent = stale.committed_sha256;
+  $("fsha").textContent = stale.fresh_sha256;
+  $("gate").textContent = p.gate.library + " · injected runner, never a subprocess";
+});
+</script>
+</body>
+</html>

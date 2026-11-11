@@ -380,7 +380,7 @@
   "versions": {
     "shipgate": "shipgate@1.1.0",
     "demo": "shipproof-demo@1.1.0",
-    "proofindex": "proofindex@1.1.0"
+    "proofindex": "proofindex@1.2.0"
   },
-  "sha256": "c4849a7e4a306fd2f8c71756df4af0275fdab5a481118aeccc993a00505281be"
+  "sha256": "cf0153678a73c3f263e9c92e05e9ccd1666afd40b852683ff356aa3a882fe058"
 }

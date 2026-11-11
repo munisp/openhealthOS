@@ -105,8 +105,8 @@ class TestVerifyAllRealTree(unittest.TestCase):
 
     def test_every_payload_verified(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
-        self.assertEqual(report["summary"]["total"], 29)
-        self.assertEqual(report["summary"]["verified"], 29)
+        self.assertEqual(report["summary"]["total"], 30)
+        self.assertEqual(report["summary"]["verified"], 30)
         self.assertTrue(report["summary"]["all_verified"])
         for v in report["payloads"]:
             self.assertEqual(v["status"], "verified", v["path"])
@@ -114,7 +114,7 @@ class TestVerifyAllRealTree(unittest.TestCase):
     def test_contract_census(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
         self.assertEqual(report["contracts"],
-                         {"compact": 21, "spaced-utf8": 8})
+                         {"compact": 22, "spaced-utf8": 8})
 
     def test_absent_is_stated_not_raised(self):
         ghost = {"path": "apps/pwa/definitely-not-here.json",
@@ -156,7 +156,7 @@ class TestDemoProofindex(unittest.TestCase):
         self.assertTrue(p["flags"]["all_verified"])
         self.assertTrue(p["flags"]["coverage_complete"])
         self.assertTrue(p["flags"]["drills_named"])
-        self.assertEqual(len(p["registry"]["payloads"]), 29)
+        self.assertEqual(len(p["registry"]["payloads"]), 30)
         self.assertEqual({d["verdict"] for d in p["drills"]},
                          {"drift", "non-canonical-stamp",
                           "contract-mismatch", "absent",
@@ -282,6 +282,8 @@ EXPORTERS = [
      _MEM % "__import__('demo_georuntime').run_demo()"),
     ("idseamproof", "packages/idseam",
      _MEM % "__import__('demo_idseam').run_demo()"),
+    ("freshproof", "packages/freshproof",
+     _MEM % "__import__('demo_freshproof').run_demo()"),
     ("portal", "packages/ips",
      _MEM % "__import__('demo_portal').seed_record_payload()"),
     ("dashboards", "packages/travelpass",
@@ -351,5 +353,219 @@ class TestExporterDeterminism(unittest.TestCase):
                                  "%s is not byte-deterministic" % name)
 
 
+
+# ---------------------------------------------------------------------------
+# The freshness gate (ADR-0080) — run-vs-COMMITTED, the wave-17 blind
+# spot as a gate. Determinism compares run-vs-run; freshness compares
+# the committed payload to what its exporter produces TODAY. Reference
+# is HEAD bytes; a payload not yet committed (mid-wave) falls back to a
+# pre-run working-tree snapshot — stated in the failure message.
+# ---------------------------------------------------------------------------
+
+def _head_bytes(path):
+    r = subprocess.run(["git", "show", "HEAD:" + path],
+                       cwd=REPO_ROOT, capture_output=True)
+    return r.stdout if r.returncode == 0 else None
+
+
+# File family: the snippet calls the demo's main(), which REWRITES
+# the committed file; bytes are compared after the run. (run_demo()
+# does not write — main() does; the wave-19 dry-run nearly shipped a
+# gate that compared the untouched file to itself.) (name, pkg_dir, snippet, committed path)
+_FILE_RUN = "__import__('demo_%s').main()"
+FILE_EXPORTERS = [
+    ("tamperproof", "packages/travelpass", _FILE_RUN % "tamper",
+     "apps/pwa/tamperproof.json"),
+    ("deployproof", "packages/travelpass", _FILE_RUN % "deploy",
+     "apps/pwa/deployproof.json"),
+    ("anchorproof", "packages/ledgeranchor", _FILE_RUN % "ledgeranchor",
+     "apps/pwa/anchorproof.json"),
+    ("shipproof", "packages/shipgate", _FILE_RUN % "shipgate",
+     "apps/pwa/shipproof.json"),
+    ("inferproof", "packages/inferlock", _FILE_RUN % "inferlock",
+     "apps/pwa/inferproof.json"),
+    ("kgproof", "packages/kgraph", _FILE_RUN % "kgraph",
+     "apps/pwa/kgproof.json"),
+    ("geoproof", "packages/geolock", _FILE_RUN % "geolock",
+     "apps/pwa/geoproof.json"),
+    ("geointproof", "packages/geoint", _FILE_RUN % "geoint",
+     "apps/pwa/geointproof.json"),
+    ("geodesyproof", "packages/geodesy", _FILE_RUN % "geodesy",
+     "apps/pwa/geodesyproof.json"),
+    ("geoexportproof", "packages/geoexport", _FILE_RUN % "geoexport",
+     "apps/pwa/geoexportproof.json"),
+    ("geostructureproof", "packages/geostructure",
+     _FILE_RUN % "geostructure", "apps/pwa/geostructureproof.json"),
+    ("georuntimeproof", "packages/georuntime", _FILE_RUN % "georuntime",
+     "apps/pwa/georuntimeproof.json"),
+    ("idseamproof", "packages/idseam", _FILE_RUN % "idseam",
+     "apps/pwa/idseamproof.json"),
+    ("freshproof", "packages/freshproof", _FILE_RUN % "freshproof",
+     "apps/pwa/freshproof.json"),
+    ("agentwrite", "packages/agentwrite", _FILE_RUN % "agentwrite",
+     "apps/pwa/agentwrite.json"),
+    ("appmarket", "packages/appmarket",
+     "import os; import demo_appmarket as d; "
+     "d.export_appmarket(d.seed_appmarket(), os.path.join(os.getcwd(), "
+     "'..', '..', 'apps', 'pwa', 'appmarket.json'))",
+     "apps/pwa/appmarket.json"),
+    ("charting", "packages/charting",
+     "import os; import demo_charting as d; "
+     "d.export_charting(d.seed_charting(), os.path.join(os.getcwd(), "
+     "'..', '..', 'apps', 'pwa', 'charting.json'))",
+     "apps/pwa/charting.json"),
+    ("portal", "packages/ips",
+     "import os; import demo_portal as d; "
+     "d.export_record(os.path.join(os.getcwd(), '..', '..', 'apps', "
+     "'patient', 'record.json'))",
+     "apps/patient/record.json"),
+]
+
+# Hash family: the snippet exports into a tmpdir and prints one sha256
+# per file in sorted-filename order; compare to digests of the
+# committed files in the same order. Snippets are the EXPORTERS ones.
+_EXPORTER_SNIPPET = {name: (pkg, snip) for name, pkg, snip in EXPORTERS}
+HASH_EXPORTERS = [
+    ("dashboards", ["apps/pwa/vhc-br10.json", "apps/pwa/vhc-fund.json",
+                    "apps/pwa/vhc-helpdesk.json"]),
+    ("growth", ["apps/pwa/vhc-growth.json"]),
+    ("emr", ["apps/pwa/inpatient.cv.json", "apps/pwa/inpatient.ng.json",
+             "apps/pwa/specialty.cv.json", "apps/pwa/specialty.ng.json"]),
+    ("national", ["apps/pwa/national.cv.json",
+                  "apps/pwa/national.ng.json"]),
+    ("sync", ["apps/pwa/sync.cv.json", "apps/pwa/sync.ng.json"]),
+]
+
+
+class TestFreshnessUnit(unittest.TestCase):
+    """proofindex.freshness_report on synthetic fixture registries —
+    the injected-runner seam, exercised without a subprocess."""
+
+    def _fixture(self, td):
+        os.makedirs(os.path.join(td, "apps", "pwa"))
+        entries = []
+        for name in ("a", "b", "c"):
+            rel = os.path.join("apps", "pwa", "%s.json" % name)
+            with open(os.path.join(td, rel), "wb") as fh:
+                fh.write(("committed-%s" % name).encode())
+            entries.append({"path": rel, "contract": "compact",
+                            "exporter": "t", "title": name})
+        return entries
+
+    def test_fresh_stale_absent_named(self):
+        with tempfile.TemporaryDirectory() as td:
+            entries = self._fixture(td)
+            entries.append({"path": "apps/pwa/ghost.json",
+                            "contract": "compact", "exporter": "t",
+                            "title": "ghost"})
+
+            def fresh(entry):
+                return {"a.json": b"committed-a",
+                        "b.json": b"regenerated-b",
+                        "c.json": None}.get(
+                            os.path.basename(entry["path"]), b"x")
+
+            rep = proofindex.freshness_report(fresh, root=td,
+                                              payloads=entries)
+        got = {os.path.basename(v["path"]): v["status"]
+               for v in rep["payloads"]}
+        self.assertEqual(got, {"a.json": "fresh", "b.json": "stale",
+                               "c.json": "no-exporter",
+                               "ghost.json": "absent"})
+        self.assertFalse(rep["summary"]["all_fresh"])
+        stale = [v for v in rep["payloads"]
+                 if v["status"] == "stale"][0]
+        self.assertNotEqual(stale["committed_sha256"],
+                            stale["fresh_sha256"])
+
+    def test_runner_raise_is_a_verdict_not_a_crash(self):
+        with tempfile.TemporaryDirectory() as td:
+            entries = self._fixture(td)[:1]
+
+            def boom(entry):
+                raise RuntimeError("adapter down")
+
+            rep = proofindex.freshness_report(boom, root=td,
+                                              payloads=entries)
+        self.assertEqual(rep["payloads"][0]["status"], "runner-error")
+        self.assertEqual(rep["payloads"][0]["severity"], "red")
+
+    def test_all_fresh_when_bytes_match(self):
+        with tempfile.TemporaryDirectory() as td:
+            entries = self._fixture(td)
+            rep = proofindex.freshness_report(
+                lambda e: open(os.path.join(td, e["path"]), "rb").read(),
+                root=td, payloads=entries)
+        self.assertTrue(rep["summary"]["all_fresh"])
+        self.assertEqual(rep["summary"]["fresh"], 3)
+
+
+class TestExporterFreshness(unittest.TestCase):
+    """Every registered payload's committed bytes equal a fresh export.
+    A mismatch is STALE: the machinery moved and the evidence was not
+    regenerated and committed — the wave-17 lesson, now red at suite
+    time. File-family snippets rewrite the committed file as a side
+    effect (the pre-existing determinism-gate pattern); on a stale
+    failure the regenerated file is already in the tree to commit."""
+
+    def _run(self, pkg_dir, snippet):
+        env = dict(os.environ)
+        env["PYTHONPATH"] = os.path.join(REPO_ROOT, pkg_dir)
+        r = subprocess.run(
+            [sys.executable, "-c", snippet],
+            cwd=os.path.join(REPO_ROOT, pkg_dir),
+            env=env, capture_output=True, text=True, timeout=180)
+        self.assertEqual(r.returncode, 0,
+                         "%s exited %s: %s" % (pkg_dir, r.returncode,
+                                               r.stderr[-500:]))
+        return r.stdout
+
+    def _reference(self, path):
+        head = _head_bytes(path)
+        if head is not None:
+            return head, "HEAD"
+        with open(os.path.join(REPO_ROOT, path), "rb") as fh:
+            return fh.read(), "working tree (not yet committed)"
+
+    def test_file_exporters_fresh(self):
+        for name, pkg, snippet, path in FILE_EXPORTERS:
+            with self.subTest(exporter=name):
+                ref, basis = self._reference(path)
+                self._run(pkg, snippet)
+                with open(os.path.join(REPO_ROOT, path), "rb") as fh:
+                    current = fh.read()
+                self.assertEqual(
+                    current, ref,
+                    "%s is STALE vs %s — the exporter's output moved; "
+                    "commit the regenerated payload" % (path, basis))
+
+    def test_hash_exporters_fresh(self):
+        for name, paths in HASH_EXPORTERS:
+            with self.subTest(exporter=name):
+                pkg, snippet = _EXPORTER_SNIPPET[name]
+                printed = [l.strip() for l in
+                           self._run(pkg, snippet).splitlines()
+                           if l.strip()]
+                committed = []
+                for p in paths:
+                    with open(os.path.join(REPO_ROOT, p), "rb") as fh:
+                        committed.append(
+                            hashlib.sha256(fh.read()).hexdigest())
+                self.assertEqual(
+                    printed, committed,
+                    "%s payloads STALE — fresh digests %s vs committed "
+                    "%s; regenerate and commit" % (name, printed,
+                                                   committed))
+
+    def test_every_registered_payload_has_a_freshness_recipe(self):
+        covered = {path for _, _, _, path in FILE_EXPORTERS}
+        for _, paths in HASH_EXPORTERS:
+            covered.update(paths)
+        registered = {e["path"] for e in proofindex.PAYLOADS}
+        self.assertEqual(registered - covered, set())
+        self.assertEqual(covered - registered, set())
+
+
 if __name__ == "__main__":
     unittest.main()
+
