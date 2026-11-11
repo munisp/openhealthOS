@@ -15,6 +15,11 @@ import hashlib
 import json
 
 from charting import NOTE_TEMPLATES, ChartNote, OrderSetRegistry
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 DEMO_VERSION = "charting-demo@1.0.0"
 
@@ -121,7 +126,5 @@ def charting_payload(book: dict) -> dict:
 
 
 def export_charting(book: dict, out_path: str) -> str:
-    with open(out_path, "w") as fh:
-        json.dump(charting_payload(book), fh, indent=2,
-                  ensure_ascii=False)
+    payloadio.write_text(out_path, json.dumps(charting_payload(book), indent=2, ensure_ascii=False))
     return out_path

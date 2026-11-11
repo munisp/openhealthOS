@@ -26,6 +26,8 @@ for pkg in ("emar", "nursing", "anesthesia", "growthmon", "dental",
             "oncology", "cssd", "dietetics", "certificates",
             "problemlist", "localepack"):
     sys.path.insert(0, os.path.join(_here, "..", pkg))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 from emar import MAR  # noqa: E402
 from nursing import Flowsheet, FluidBalance, Handoff, WardReport  # noqa: E402
@@ -289,9 +291,7 @@ def export_all(out_dir, seed=42):
                          ("specialty", seed_specialty)):
             payload = fn(locale_code, seed=seed)
             path = os.path.join(out_dir, f"{kind}.{locale_code}.json")
-            with open(out_dir and path or path, "w",
-                      encoding="utf-8") as fh:
-                json.dump(payload, fh, indent=1, ensure_ascii=False)
+            payloadio.write_text(out_dir and path or path, json.dumps(payload, indent=1, ensure_ascii=False))
             paths.append(path)
     return paths
 

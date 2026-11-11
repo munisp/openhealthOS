@@ -15,6 +15,8 @@ says how many are still templates. The checksum is the contract.
 
 from __future__ import annotations
 
+import os
+import sys
 import hashlib
 import json
 import random
@@ -26,6 +28,8 @@ from vhfraudgraph import FraudGraph
 from vhroam import compose_roam_profile, price_roam, verdict_rule
 from vhsponsor import SponsorBook
 from vhtreasury import corridor_report, report as treasury_report
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 GROWTH_VERSION = "vhc-growth@1.0.0"
 
@@ -241,6 +245,5 @@ def export_growth(book: dict, out_dir: str) -> str:
     page fetches it same-origin). Returns the path written."""
     import os
     path = os.path.join(out_dir, "vhc-growth.json")
-    with open(path, "w") as fh:
-        json.dump(growth_payload(book), fh, indent=2, ensure_ascii=False)
+    payloadio.write_text(path, json.dumps(growth_payload(book), indent=2, ensure_ascii=False))
     return path

@@ -18,6 +18,8 @@ import sys
 _HERE = os.path.dirname(os.path.abspath(__file__))
 for _pkg in ("syncmesh", "emar", "localepack"):
     sys.path.insert(0, os.path.join(_HERE, "..", _pkg))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 from syncmesh import (CheckpointLog, RetentionPolicy, SyncRuleRegistry,  # noqa: E402
                       UploadGate, Principal, VERSION as SYNCMESH_VERSION)
@@ -182,8 +184,7 @@ def export_all(out_dir):
     for code in ("ng", "cv"):
         payload = seed_sync(code)
         path = os.path.join(out_dir, f"sync.{code}.json")
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        payloadio.write_text(path, json.dumps(payload, indent=2, ensure_ascii=False))
     return True
 
 

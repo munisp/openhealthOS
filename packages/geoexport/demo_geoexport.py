@@ -30,6 +30,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 for _sib in ("geolock", "gisexport", "households"):
     sys.path.insert(0, os.path.join(_HERE, "..", _sib))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 import geolock  # noqa: E402
 import gisexport  # noqa: E402
@@ -213,8 +215,7 @@ def main():
     body = run_demo()
     payload = json.dumps(body, indent=2, sort_keys=True,
                          ensure_ascii=False) + "\n"
-    with open(OUT, "w", encoding="utf-8") as fh:
-        fh.write(payload)
+    payloadio.write_text(OUT, payload)
     print("geoexportproof: %d drills, %d positions checked, sha %s -> %s"
           % (len(body["drills"]),
              body["control"]["governed_export"]["coordinates_checked"],

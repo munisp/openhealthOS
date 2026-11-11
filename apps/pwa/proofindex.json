@@ -167,7 +167,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "c6ce3fdcc02a531f4cf0fe625a7cfc885247cbcfebd326b582b2793d957aa350",
+        "presented": "34aecd0e18936802dd41b491ac91105aa7298aa719d5595443769b9ab214a7a5",
         "payload_version": "refreshproof-demo@1.0.0"
       },
       {
@@ -178,7 +178,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "4677e15f2e189f12811de9451d1aa61e1e79191b2bbade5e6a6f41064595b106",
+        "presented": "ff8769c2c1155263998aa1adaa96745dcd678d04ef19d4cfd5191e1d425b6c61",
         "payload_version": "shellproof-demo@1.0.0"
       },
       {
@@ -189,7 +189,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "cca290ef9a32dd53251ac4fd6e68648dcb35173a0560530ebd4fcf8a618a782b",
+        "presented": "1922bbc884dd60734fe2c69d8f35b8db7ad3143a327f62734eae36b7976ddc93",
         "payload_version": "adrproof-demo@1.0.0"
       },
       {
@@ -200,8 +200,19 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "da43e18c6d4e05fc424c535710103527594828a969d717e27b5394e8c1a43e87",
+        "presented": "c520badc71f233bd4a9d8f3940dda571ad8bb6f01eb5140e706844a0c5f92149",
         "payload_version": "ledgerproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/atomproof.json",
+        "title": "Atomic-write proof",
+        "contract": "compact",
+        "exporter": "packages/payloadio/demo_payloadio.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "13151c0d63a5cb78425e860dea580966f329d75df7e41d3065185dec76981eaf",
+        "payload_version": null
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -381,8 +392,8 @@
       }
     ],
     "summary": {
-      "total": 34,
-      "verified": 34,
+      "total": 35,
+      "verified": 35,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -390,8 +401,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 35,
-      "registered": 34,
+      "stamped_on_disk": 36,
+      "registered": 35,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -402,7 +413,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 26,
+      "compact": 27,
       "spaced-utf8": 8
     }
   },
@@ -456,5 +467,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "8e87aa659db44315f54c6e69e5d79bd9909e9231c95c0ce5ee0bd17f261a28e7"
+  "sha256": "b05cac78a7ed56280879f125e320076bde4a07a2bdf4ef3dff62131b4ef995bd"
 }

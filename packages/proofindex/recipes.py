@@ -34,7 +34,8 @@ RECIPES = [
     {'name': 'shellproof', 'package': 'packages/shellproof', 'kind': 'file', 'write': "__import__('demo_shellproof').main()", 'paths': ['apps/pwa/shellproof.json']},
     {'name': 'adrproof', 'package': 'packages/adrchain', 'kind': 'file', 'write': "__import__('demo_adrchain').main()", 'paths': ['apps/pwa/adrproof.json']},
     {'name': 'ledgerproof', 'package': 'packages/ledgergate', 'kind': 'file', 'write': "__import__('demo_ledgergate').main()", 'paths': ['apps/pwa/ledgerproof.json']},
-    {'name': 'agentwrite', 'package': 'packages/agentwrite', 'kind': 'file', 'write': "__import__('demo_agentwrite').main()", 'paths': ['apps/pwa/agentwrite.json']},
+
+    {'name': 'atomproof', 'package': 'packages/payloadio', 'kind': 'file', 'write': "__import__('demo_payloadio').main()", 'paths': ['apps/pwa/atomproof.json']},    {'name': 'agentwrite', 'package': 'packages/agentwrite', 'kind': 'file', 'write': "__import__('demo_agentwrite').main()", 'paths': ['apps/pwa/agentwrite.json']},
     {'name': 'appmarket', 'package': 'packages/appmarket', 'kind': 'file', 'write': "import os; import demo_appmarket as d; d.export_appmarket(d.seed_appmarket(), os.path.join(os.getcwd(), '..', '..', 'apps', 'pwa', 'appmarket.json'))", 'paths': ['apps/pwa/appmarket.json']},
     {'name': 'charting', 'package': 'packages/charting', 'kind': 'file', 'write': "import os; import demo_charting as d; d.export_charting(d.seed_charting(), os.path.join(os.getcwd(), '..', '..', 'apps', 'pwa', 'charting.json'))", 'paths': ['apps/pwa/charting.json']},
     {'name': 'portal', 'package': 'packages/ips', 'kind': 'file', 'write': "import os; import demo_portal as d; d.export_record(os.path.join(os.getcwd(), '..', '..', 'apps', 'patient', 'record.json'))", 'paths': ['apps/patient/record.json']},

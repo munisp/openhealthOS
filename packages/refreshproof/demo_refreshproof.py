@@ -26,6 +26,8 @@ import tempfile
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "proofindex"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 import recipes  # noqa: E402
 import refresh  # noqa: E402
@@ -37,14 +39,14 @@ OUT = os.path.join(_HERE, "..", "..", "apps", "pwa",
 
 # The wave-20 state of the real tree, as data.
 CENSUS = {
-    "scope": ("all 34 proofindex-registered payloads via 27 recipes "
-              "(22 file-kind, 5 hash-kind covering 12 payloads)"),
+    "scope": ("all 35 proofindex-registered payloads via 28 recipes "
+              "(23 file-kind, 5 hash-kind covering 12 payloads)"),
     "method": ("gate and rail read ONE recipe book (recipes.py); "
                "hash-family probe snippets are byte-identical to the "
                "determinism gate's — pinned by cross-check test"),
-    "payloads": 34,
-    "recipes": 27,
-    "file_kind": 22,
+    "payloads": 35,
+    "recipes": 28,
+    "file_kind": 23,
     "hash_kind": 5,
     "hash_kind_payloads": 12,
     "recipe_less_payloads": ("none — the coverage pin fails the suite "
@@ -159,8 +161,7 @@ def run_demo():
 
 def main():
     body = run_demo()
-    with open(OUT, "w", encoding="utf-8") as fh:
-        json.dump(body, fh, sort_keys=True, separators=(",", ":"))
+    payloadio.write_text(OUT, json.dumps(body, sort_keys=True, separators=(",", ":")))
     print("refreshproof: %d drills, %d recipes, sha %s -> %s"
           % (len(body["drills"]), body["census"]["recipes"],
              body["sha256"][:12], os.path.relpath(OUT)))

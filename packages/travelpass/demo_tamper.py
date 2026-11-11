@@ -25,6 +25,8 @@ import random
 import sys
 
 sys.path.insert(0, os.path.dirname(__file__))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 from vhcover import (KeyRing, VHCCoverRegistry, VHCOVER_VERSION,
                      _b64u_dec, sign_claims)
@@ -254,9 +256,7 @@ def run_demo():
 def main():
     payload = run_demo()
     out = os.path.normpath(OUT)
-    with open(out, "w") as fh:
-        json.dump(payload, fh, indent=1)
-        fh.write("\n")
+    payloadio.write_text(out, json.dumps(payload, indent=1) + "\n")
     print(f"wrote {out} sha256={payload['sha256'][:12]}…")
     return 0
 

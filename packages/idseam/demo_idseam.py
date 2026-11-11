@@ -38,6 +38,8 @@ _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
 sys.path.insert(0, os.path.join(_HERE, "..", "travelpass"))
 sys.path.insert(0, os.path.join(_HERE, "..", "surveillance"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 import surveillance  # noqa: E402
 import travelpass  # noqa: E402
@@ -317,8 +319,7 @@ def main():
     body = run_demo()
     payload = json.dumps(body, indent=2, sort_keys=True,
                          ensure_ascii=False) + "\n"
-    with open(OUT, "w", encoding="utf-8") as fh:
-        fh.write(payload)
+    payloadio.write_text(OUT, payload)
     print("idseamproof: %d sweep sites, %d drills, sha %s -> %s"
           % (len(body["control"]["seam_sweep"]["sites"]),
              len(body["drills"]), body["sha256"][:12],

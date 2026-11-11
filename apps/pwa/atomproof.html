@@ -1,0 +1,114 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Atomproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Atomproof — the wave-19 flake, explained and closed</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Deterministic fixture drills on private tmpdirs; the adoption census reads the REAL registry and writer modules. Wave 19 left one stated flake: <span class="mono">test_self_exclusion_is_declared_data</span> failed once — while the tree held a stale geointproof — and never reproduced. This wave names the mechanism (ADR-0088): <b>scan_stamped never raises</b>, so an exporter rewriting <span class="mono">proofindex.json</span> concurrently with the suite handed the coverage scan a <b>torn read</b> — the exemption vanished from one scan, the assertion failed, and the next run self-healed. The stale geointproof was the tree state, not the cause. The closure is <b>payloadio</b>: every registered payload now lands by tmp-sibling + <span class="mono">os.replace</span> — a reader sees the old payload or the new one, never a torn one. The flake class is impossible, not patched.</div>
+
+  <div class="card">
+    <h2>The measured campaign — the window was enormous</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-raw"></div><div class="kpi-label">raw writer — scans torn</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-pct"></div><div class="kpi-label">torn-read rate</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-atomic"></div><div class="kpi-label">atomic writer — scans torn</div></div>
+    </div>
+    <div id="campaign" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Five drills — the fate retired, the closure proven</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>Adoption census — the estate on its own seam</h2>
+    <div id="census"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Stamp contract</b><span class="mono" id="contract"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./atomproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.demo + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const c = p.campaign;
+  $("k-raw").textContent = c.raw_writer.torn.toLocaleString() +
+    " / " + c.raw_writer.scans.toLocaleString();
+  $("k-pct").textContent = c.raw_writer.torn_pct + "%";
+  $("k-atomic").textContent = c.atomic_writer.torn +
+    " / " + c.atomic_writer.scans.toLocaleString();
+  $("campaign").innerHTML =
+    '<div class="row"><span class="badge bad">raw</span><span>' +
+    esc(c.raw_writer.torn) + " torn of " + esc(c.raw_writer.scans) +
+    " scans — " + esc(c.harness.payload_bytes / 1024) + "KB payload, " +
+    esc(c.harness.chunk_bytes / 1024) + "KB chunks, yield per chunk, " +
+    esc(c.harness.window_seconds) + "s window</span></div>" +
+    '<div class="row"><span class="badge ok">atomic</span><span>' +
+    esc(c.atomic_writer.torn) + " torn of " + esc(c.atomic_writer.scans) +
+    " scans — same harness through payloadio.write_text</span></div>" +
+    '<div class="row"><span class="badge warn">measured</span><span>' +
+    "build-time measurement " + esc(c.measured) +
+    " on this estate; the suite re-proves the atomic direction " +
+    "deterministically, drills 2/3 prove the window without timing</span></div>";
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    '<div class="row"><span class="badge ' + badge(d.severity) + '">' +
+    esc(d.severity) + "</span><span><b>" + esc(d.name) + "</b> — " +
+    esc(d.fate) + ". " + esc(d.detail) + "</span></div>"
+  ).join("");
+
+  const a = p.drills.filter((d) => d.name === "adoption-census")[0];
+  $("census").innerHTML =
+    '<div class="row"><b>stamped payloads</b><span class="mono">' +
+    esc(a.payloads) + "</span></div>" +
+    '<div class="row"><b>writer modules</b><span class="mono">' +
+    esc(a.writer_modules) + "</span></div>" +
+    '<div class="row"><b>routing through payloadio</b><span class="mono">' +
+    esc(a.via_seam) + " / " + esc(a.writer_modules) + "</span></div>" +
+    '<div class="row"><b>raw write-opens remaining</b><span class="mono">' +
+    esc(a.raw_write_opens) + " — all declared exceptions: the " +
+    "ledgeranchor anchors fixture and this demo's own drills, where " +
+    "the raw write IS the attack</span></div>" +
+    '<div class="row"><b>offenders</b><span>' +
+    (a.offenders.length ? esc(a.offenders.join(", ")) : "none") +
+    "</span></div>";
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    '<div class="row"><span>' + esc(d) + "</span></div>").join("");
+
+  $("sha").textContent = p.sha256;
+  $("contract").textContent = p.self_integrity.contract;
+}).catch((e) => { $("hdr").textContent = "payload unreadable: " + e; });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw-vhc.js").catch(() => {});
+}
+</script>
+</body>
+</html>

@@ -22,6 +22,8 @@ import os
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 from proofindex import (CONTRACTS, PAYLOADS, PROOFINDEX_VERSION,
                         coverage, verify_all, verify_dict)
@@ -158,9 +160,7 @@ def run_demo():
 def main():
     payload = run_demo()
     out = os.path.normpath(OUT)
-    with open(out, "w") as fh:
-        json.dump(payload, fh, indent=2)
-        fh.write("\n")
+    payloadio.write_text(out, json.dumps(payload, indent=2) + "\n")
     print(f"wrote {out} sha256={payload['sha256'][:12]}…")
 
 

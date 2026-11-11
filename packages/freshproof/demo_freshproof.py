@@ -25,6 +25,8 @@ import tempfile
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, os.path.join(_HERE, "..", "proofindex"))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 import proofindex  # noqa: E402
 
@@ -175,8 +177,7 @@ def run_demo():
 
 def main():
     body = run_demo()
-    with open(OUT, "w", encoding="utf-8") as fh:
-        json.dump(body, fh, sort_keys=True, separators=(",", ":"))
+    payloadio.write_text(OUT, json.dumps(body, sort_keys=True, separators=(",", ":")))
     print("freshproof: %d drills, %d stale in census, sha %s -> %s"
           % (len(body["drills"]), body["census"]["stale"],
              body["sha256"][:12], os.path.relpath(OUT)))

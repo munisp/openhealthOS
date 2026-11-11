@@ -23,6 +23,11 @@ import hashlib
 import json
 
 from ips import SECTIONS, fingerprint as ips_fingerprint
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 PORTAL_VERSION = "chart-portal@1.0.0"
 
@@ -125,6 +130,5 @@ def portal_payload(ips_bundle, *, visits=(), share_link=None):
 
 
 def export_portal(payload, out_path):
-    with open(out_path, "w") as fh:
-        json.dump(payload, fh, indent=2, ensure_ascii=False)
+    payloadio.write_text(out_path, json.dumps(payload, indent=2, ensure_ascii=False))
     return out_path

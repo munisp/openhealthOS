@@ -20,6 +20,8 @@ for _pkg in ("eprescribe", "sharedsum", "triageline", "panelcare",
              "observatory", "healthcred", "teleconsulta", "localepack",
              "qrtrust"):
     sys.path.insert(0, os.path.join(_HERE, "..", _pkg))
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 from eprescribe import PrescriptionRail  # noqa: E402
 from sharedsum import SharedSummaryService, SummaryContribution  # noqa: E402
@@ -271,8 +273,7 @@ def export_all(out_dir):
     for code in ("ng", "cv"):
         payload = seed_national(code)
         path = os.path.join(out_dir, f"national.{code}.json")
-        with open(path, "w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        payloadio.write_text(path, json.dumps(payload, indent=2, ensure_ascii=False))
     return True
 
 

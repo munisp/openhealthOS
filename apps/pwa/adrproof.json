@@ -41,9 +41,9 @@
  },
  "live_audit": {
   "summary": {
-   "files": 87,
-   "distinct_numbers": 87,
-   "max_number": 87,
+   "files": 88,
+   "distinct_numbers": 88,
+   "max_number": 88,
    "duplicates": 0,
    "gaps": 0,
    "red_verdicts": 0,
@@ -85,5 +85,5 @@
   "One canonical headline; a second variant is a defect. Normalise the files, never teach the gate a variant.",
   "The audit reads the real chain at export: if the estate drifts, this payload goes stale and the freshness gate names it."
  ],
- "sha256": "cca290ef9a32dd53251ac4fd6e68648dcb35173a0560530ebd4fcf8a618a782b"
+ "sha256": "1922bbc884dd60734fe2c69d8f35b8db7ad3143a327f62734eae36b7976ddc93"
 }

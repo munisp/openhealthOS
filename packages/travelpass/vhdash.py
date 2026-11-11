@@ -17,8 +17,12 @@ checksum is the contract, on the dashboard too.
 
 from __future__ import annotations
 
+import os
+import sys
 import hashlib
 import json
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 DASH_VERSION = "vhc-dash@1.0.0"
 
@@ -126,7 +130,6 @@ def export_dashboards(registries: dict, out_dir: str, *,
     written = {}
     for name, payload in jobs:
         path = os.path.join(out_dir, name)
-        with open(path, "w") as fh:
-            json.dump(payload, fh, indent=2, ensure_ascii=False)
+        payloadio.write_text(path, json.dumps(payload, indent=2, ensure_ascii=False))
         written[name] = path
     return written

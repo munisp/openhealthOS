@@ -13,6 +13,8 @@ import sys
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
 sys.path.insert(0, _HERE)
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 import adrchain  # noqa: E402
 
@@ -146,9 +148,7 @@ def run_demo():
 def main():
     body = run_demo()
     os.makedirs(os.path.dirname(OUT), exist_ok=True)
-    with open(OUT, "w", encoding="utf-8") as fh:
-        json.dump(body, fh, indent=1, ensure_ascii=False)
-        fh.write("\n")
+    payloadio.write_text(OUT, json.dumps(body, indent=1, ensure_ascii=False) + "\n")
     print("adrproof: %d drills, %d ADR files, sha %s -> %s"
           % (len(body["drills"]),
              body["live_audit"]["summary"]["files"],

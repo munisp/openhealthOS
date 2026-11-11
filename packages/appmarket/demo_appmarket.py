@@ -11,6 +11,11 @@ import hashlib
 import json
 
 from appmarket import AppRegistry, SCOPES
+import os
+import sys
+
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "payloadio"))
+import payloadio
 
 DEMO_VERSION = "appmarket-demo@1.0.0"
 
@@ -85,7 +90,5 @@ def appmarket_payload(book: dict) -> dict:
 
 
 def export_appmarket(book: dict, out_path: str) -> str:
-    with open(out_path, "w") as fh:
-        json.dump(appmarket_payload(book), fh, indent=2,
-                  ensure_ascii=False)
+    payloadio.write_text(out_path, json.dumps(appmarket_payload(book), indent=2, ensure_ascii=False))
     return out_path
