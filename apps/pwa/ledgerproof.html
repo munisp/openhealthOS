@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ledgerproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Ledgerproof — the feature ledger, gated</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Synthetic fixture drills; the audit reads the REAL README ledger. Wave-23 recon censused all 227 rows and found the ledger had <b>silently decayed</b>: row 30 was claimed twice (ADR-0032 in sequence, ADR-0031 displaced), rows 155–160 were claimed twice (travelpass engine rows <i>and</i> the demo block), row 36 was never allocated, five rows sat displaced after row 145 instead of in numeric position — row 71 separated from its own sub-row 71a — the modules table had rows 10 and 11 transposed, rows 37/38 ran inverted against their ADR numbers, a <span class="mono">94b</span> existed with no <span class="mono">94a</span>, and the newest-first descending tail collided with the ascending body. Nothing watched. This wave repairs every anomaly and adds the <b>ledger gate</b> (ledgergate@1.0.0, ADR-0087): one ascending sequence, numbers never collide, gaps are stated never silent, sub-rows attach to their parents.</div>
+
+  <div class="card">
+    <h2>What the recon census found — all resolved in this wave</h2>
+    <div id="pre"></div>
+  </div>
+
+  <div class="card">
+    <h2>Live audit — the real ledger, right now</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-rows"></div><div class="kpi-label">ledger rows</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-subs"></div><div class="kpi-label">sub-rows</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-dups"></div><div class="kpi-label">duplicates</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-gaps"></div><div class="kpi-label">gaps</div></div>
+    </div>
+    <div id="live" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>The gate — five fates, every one named</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Gate</b><span class="mono" id="gate"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./ledgerproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.version + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const f = p.pre_wave_findings;
+  $("pre").innerHTML = f.duplicates.map((c) =>
+    '<div class="row"><span class="badge bad">collision</span><span>' +
+    "row <b>" + c.number + "</b> claimed by " +
+    c.claimants.map(esc).join(" <i>and</i> ") + "</span></div>"
+  ).join("") +
+  '<div class="row"><span class="badge warn">gap</span><span>row ' +
+    esc(f.gap) + " never allocated</span></div>" +
+  '<div class="row"><span class="badge warn">displaced</span><span>rows ' +
+    f.displaced_block.rows.join(", ") + " " + esc(f.displaced_block.location) +
+    "</span></div>" +
+  f.swaps.map((s) =>
+    '<div class="row"><span class="badge warn">order</span><span>' + esc(s) +
+    "</span></div>").join("") +
+  '<div class="row"><span class="badge warn">suffix</span><span>' +
+    esc(f.suffix_anomaly) + "</span></div>" +
+  '<div class="row"><span class="badge warn">tail</span><span>' +
+    esc(f.descending_tail) + "</span></div>" +
+  '<div class="row"><span class="badge ok">resolved</span><span>' +
+    esc(f.resolution) + "</span></div>";
+
+  const s = p.live_audit.summary;
+  $("k-rows").textContent = s.rows;
+  $("k-subs").textContent = s.sub_rows;
+  $("k-dups").textContent = s.duplicates.length;
+  $("k-gaps").textContent = s.gaps.length;
+  $("live").innerHTML =
+    '<div class="row"><b>ledger_ok</b><span class="badge ' +
+    (s.ledger_ok ? "ok" : "bad") + '">' + s.ledger_ok + "</span></div>" +
+    '<div class="row"><b>red verdicts</b><span>' + s.red_verdicts +
+    "</span></div>" +
+    '<div class="row"><b>amber verdicts</b><span>' + s.amber_verdicts +
+    "</span></div>" +
+    '<div class="row"><b>out-of-order</b><span>' +
+    (s.out_of_order.length ? s.out_of_order.join(", ") : "none") +
+    "</span></div>" +
+    '<div class="row"><b>highest row</b><span class="mono">' +
+    s.max_number + "</span></div>";
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    '<div class="row"><span class="badge ' + badge(d.severity) + '">' +
+    esc(d.severity) + "</span><span>" + esc(d.drill) +
+    ' — <span class="mono">' + esc(d.verdict) + "</span></span></div>"
+  ).join("");
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    '<div class="row"><span>' + esc(d) + "</span></div>").join("");
+
+  $("sha").textContent = p.sha256;
+  $("gate").textContent = p.gate.library;
+}).catch((e) => { $("hdr").textContent = "payload unreadable: " + e; });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw-vhc.js").catch(() => {});
+}
+</script>
+</body>
+</html>

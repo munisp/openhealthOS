@@ -167,7 +167,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "0c03d696c593b39bd07f4cec714a9fdfb2b0253c3c273dcb4d32b63919a4da96",
+        "presented": "c6ce3fdcc02a531f4cf0fe625a7cfc885247cbcfebd326b582b2793d957aa350",
         "payload_version": "refreshproof-demo@1.0.0"
       },
       {
@@ -178,7 +178,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "bde30f4eda8342d88738ed2500bb4527023f0a6c27a345350b40f1a547782630",
+        "presented": "4677e15f2e189f12811de9451d1aa61e1e79191b2bbade5e6a6f41064595b106",
         "payload_version": "shellproof-demo@1.0.0"
       },
       {
@@ -189,8 +189,19 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "af83bce7420fe07c32f026d53dd6da594c08954fba23c40a70e5de6dab3063f1",
+        "presented": "cca290ef9a32dd53251ac4fd6e68648dcb35173a0560530ebd4fcf8a618a782b",
         "payload_version": "adrproof-demo@1.0.0"
+      },
+      {
+        "path": "apps/pwa/ledgerproof.json",
+        "title": "Ledger-gate proof",
+        "contract": "compact",
+        "exporter": "packages/ledgergate/demo_ledgergate.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "da43e18c6d4e05fc424c535710103527594828a969d717e27b5394e8c1a43e87",
+        "payload_version": "ledgerproof-demo@1.0.0"
       },
       {
         "path": "apps/pwa/agentwrite.json",
@@ -370,8 +381,8 @@
       }
     ],
     "summary": {
-      "total": 33,
-      "verified": 33,
+      "total": 34,
+      "verified": 34,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -379,8 +390,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 34,
-      "registered": 33,
+      "stamped_on_disk": 35,
+      "registered": 34,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -391,7 +402,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 25,
+      "compact": 26,
       "spaced-utf8": 8
     }
   },
@@ -445,5 +456,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "3d3ecfd5480b0f2086a778824d78e4d6d858bf42245414a84f0f8989a8d0a2aa"
+  "sha256": "8e87aa659db44315f54c6e69e5d79bd9909e9231c95c0ce5ee0bd17f261a28e7"
 }

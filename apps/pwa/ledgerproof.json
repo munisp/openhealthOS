@@ -1,0 +1,131 @@
+{
+ "version": "ledgerproof-demo@1.0.0",
+ "generated_at": "2026-11-11T22:00:00Z",
+ "gate": {
+  "library": "packages/ledgergate/ledgergate.py ledgergate@1.0.0",
+  "seam": "audit(root, read INJECTED) — fixtures and the real tree run the exact same code path",
+  "readme": "README.md"
+ },
+ "pre_wave_findings": {
+  "rows_found": 227,
+  "duplicates": [
+   {
+    "number": 30,
+    "claimants": [
+     "line 44 — Provider economics rail (ADR-0032), in sequence",
+     "line 165 — Benefit visibility + tariff staleness (ADR-0031), displaced"
+    ]
+   },
+   {
+    "number": 155,
+    "claimants": [
+     "line 379 — Helpdesk + 5-language content (vhsupport), engine row",
+     "line 385 — Pilot seed (vhpilot), demo row"
+    ]
+   },
+   {
+    "number": 156,
+    "claimants": [
+     "line 380 — Actuarial data marts (vhmarts), engine row",
+     "line 386 — Staged go-live gates (vhgolive), demo row"
+    ]
+   },
+   {
+    "number": 157,
+    "claimants": [
+     "line 381 — EASE single-rail adapter (vhease), engine row",
+     "line 387 — Ministry walkthrough (vhdemo), demo row"
+    ]
+   },
+   {
+    "number": 158,
+    "claimants": [
+     "line 382 — Batch manifest pre-clearance (vhclearance), engine row",
+     "line 388 — One-command ministry demo (vhc-walkthrough.sh), demo row"
+    ]
+   },
+   {
+    "number": 159,
+    "claimants": [
+     "line 383 — HSM key custody (vhcover KeyRing), engine row",
+     "line 389 — Audience-aware walkthroughs (vhdemo), demo row"
+    ]
+   },
+   {
+    "number": 160,
+    "claimants": [
+     "line 384 — Proactive notifications (vhnotify), engine row",
+     "line 390 — Cabo Verde tailoring (vhdemo), demo row"
+    ]
+   }
+  ],
+  "gap": 36,
+  "displaced_block": {
+   "rows": [
+    85,
+    71,
+    30,
+    20,
+    19
+   ],
+   "location": "after row 145 (lines 163-167), orphaned between sections"
+  },
+  "swaps": [
+   "modules-table rows 10/11 transposed",
+   "rows 37/38 inverted against their ADR numbers (ADR-0039 before ADR-0038)"
+  ],
+  "suffix_anomaly": "94b existed with no 94a — the suffix sequence never started",
+  "descending_tail": "rows 221/220/219/218 ran newest-first against the ascending body — an insertion habit, retired this wave",
+  "resolution": "ADR-0031's displaced row renumbered 30→36 (filling the only gap); demo block renumbered 155-160→222-227 and appended; displaced rows 19/20/71/85 returned to numeric position (71 restored ahead of its own sub-row 71a); modules rows 10/11 and rows 37/38 put in order (ADR-0038 is now row 37); 94b renamed 94a; the tail runs ascending like the rest — 227 rows, 1..227, no duplicates, no gaps"
+ },
+ "live_audit": {
+  "summary": {
+   "rows": 228,
+   "sub_rows": 3,
+   "max_number": 228,
+   "duplicates": [],
+   "gaps": [],
+   "out_of_order": [],
+   "orphan_subrows": [],
+   "suffix_anomalies": [],
+   "red_verdicts": 0,
+   "amber_verdicts": 0,
+   "ledger_ok": true
+  }
+ },
+ "drills": [
+  {
+   "drill": "a clean ascending ledger — the honest steady state",
+   "verdict": "ledger_ok",
+   "severity": "green"
+  },
+  {
+   "drill": "this wave's collision replayed: two rows claim 30 — every claimant named with line and excerpt",
+   "verdict": "duplicate: row 30 ×2 claimants",
+   "severity": "red"
+  },
+  {
+   "drill": "a row retired — the hole at 36 is stated, not silent",
+   "verdict": "gap: 36 stated",
+   "severity": "amber"
+  },
+  {
+   "drill": "the displaced block replayed: row 85 parked after row 145 — the ledger is one ascending sequence",
+   "verdict": "out-of-order: row 85 follows row 145",
+   "severity": "red"
+  },
+  {
+   "drill": "a sub-row separated from its parent — 71a without 71 directly above it",
+   "verdict": "orphan-subrow: 71a",
+   "severity": "red"
+  }
+ ],
+ "doctrine": [
+  "A row number is a contract: two rows claiming one number makes every citation of that row ambiguous — red, all claimants named.",
+  "The ledger is one ascending sequence — a reader verifies it by eye; an out-of-order row is a defect, red.",
+  "A gap is not a defect — a row can be retired — but a gap is STATED, amber; silence is the defect.",
+  "Sub-rows attach to their parent and start at 'a' — an orphan is red, a broken suffix sequence is stated amber.",
+  "The audit reads the real README at export: if the ledger drifts, this payload goes stale and the freshness gate names it."
+ ],
+ "sha256": "da43e18c6d4e05fc424c535710103527594828a969d717e27b5394e8c1a43e87"
+}

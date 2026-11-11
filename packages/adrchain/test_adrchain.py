@@ -119,9 +119,9 @@ class TestRealTree(unittest.TestCase):
 
     def test_census_pins(self):
         s = self.report["summary"]
-        self.assertEqual(s["files"], 86)
-        self.assertEqual(s["distinct_numbers"], 86)
-        self.assertEqual(s["max_number"], 86)
+        self.assertEqual(s["files"], 87)
+        self.assertEqual(s["distinct_numbers"], 87)
+        self.assertEqual(s["max_number"], 87)
         self.assertEqual(self.report["gaps"], [])
         self.assertEqual(self.report["duplicates"], [])
 
