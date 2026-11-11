@@ -160,6 +160,17 @@
         "payload_version": "freshproof-demo@1.0.0"
       },
       {
+        "path": "apps/pwa/refreshproof.json",
+        "title": "Refresh-rail proof",
+        "contract": "compact",
+        "exporter": "packages/refreshproof/demo_refreshproof.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "b313f913b1d2283e79e97035a6c4765fd986d7d80f617eeeef64ad6944c3bee7",
+        "payload_version": "refreshproof-demo@1.0.0"
+      },
+      {
         "path": "apps/pwa/agentwrite.json",
         "title": "Agent-write stack",
         "contract": "compact",
@@ -337,8 +348,8 @@
       }
     ],
     "summary": {
-      "total": 30,
-      "verified": 30,
+      "total": 31,
+      "verified": 31,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -346,8 +357,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 31,
-      "registered": 30,
+      "stamped_on_disk": 32,
+      "registered": 31,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -358,7 +369,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 22,
+      "compact": 23,
       "spaced-utf8": 8
     }
   },
@@ -412,5 +423,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "45f5fcb64cee8830c82a6a18b85dd5a9a5d0a5deeb7fd55474360430f20e7b2d"
+  "sha256": "c99ecbb84f5c994e3c791ca36cf9dd87ed3e6b224d5bdb29695dbcf02789ada8"
 }

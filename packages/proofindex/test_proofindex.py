@@ -20,6 +20,7 @@ import tempfile
 import unittest
 
 import proofindex
+import recipes
 from proofindex import (CONTRACTS, PAYLOADS, SELF_EXCLUDED, coverage,
                         scan_stamped, verify_all, verify_dict,
                         verify_payload)
@@ -105,8 +106,8 @@ class TestVerifyAllRealTree(unittest.TestCase):
 
     def test_every_payload_verified(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
-        self.assertEqual(report["summary"]["total"], 30)
-        self.assertEqual(report["summary"]["verified"], 30)
+        self.assertEqual(report["summary"]["total"], 31)
+        self.assertEqual(report["summary"]["verified"], 31)
         self.assertTrue(report["summary"]["all_verified"])
         for v in report["payloads"]:
             self.assertEqual(v["status"], "verified", v["path"])
@@ -114,7 +115,7 @@ class TestVerifyAllRealTree(unittest.TestCase):
     def test_contract_census(self):
         report = verify_all(root=REPO_ROOT, generated_at="T")
         self.assertEqual(report["contracts"],
-                         {"compact": 22, "spaced-utf8": 8})
+                         {"compact": 23, "spaced-utf8": 8})
 
     def test_absent_is_stated_not_raised(self):
         ghost = {"path": "apps/pwa/definitely-not-here.json",
@@ -156,7 +157,7 @@ class TestDemoProofindex(unittest.TestCase):
         self.assertTrue(p["flags"]["all_verified"])
         self.assertTrue(p["flags"]["coverage_complete"])
         self.assertTrue(p["flags"]["drills_named"])
-        self.assertEqual(len(p["registry"]["payloads"]), 30)
+        self.assertEqual(len(p["registry"]["payloads"]), 31)
         self.assertEqual({d["verdict"] for d in p["drills"]},
                          {"drift", "non-canonical-stamp",
                           "contract-mismatch", "absent",
@@ -284,6 +285,8 @@ EXPORTERS = [
      _MEM % "__import__('demo_idseam').run_demo()"),
     ("freshproof", "packages/freshproof",
      _MEM % "__import__('demo_freshproof').run_demo()"),
+    ("refreshproof", "packages/refreshproof",
+     _MEM % "__import__('demo_refreshproof').run_demo()"),
     ("portal", "packages/ips",
      _MEM % "__import__('demo_portal').seed_record_payload()"),
     ("dashboards", "packages/travelpass",
@@ -372,69 +375,24 @@ def _head_bytes(path):
 # the committed file; bytes are compared after the run. (run_demo()
 # does not write — main() does; the wave-19 dry-run nearly shipped a
 # gate that compared the untouched file to itself.) (name, pkg_dir, snippet, committed path)
-_FILE_RUN = "__import__('demo_%s').main()"
-FILE_EXPORTERS = [
-    ("tamperproof", "packages/travelpass", _FILE_RUN % "tamper",
-     "apps/pwa/tamperproof.json"),
-    ("deployproof", "packages/travelpass", _FILE_RUN % "deploy",
-     "apps/pwa/deployproof.json"),
-    ("anchorproof", "packages/ledgeranchor", _FILE_RUN % "ledgeranchor",
-     "apps/pwa/anchorproof.json"),
-    ("shipproof", "packages/shipgate", _FILE_RUN % "shipgate",
-     "apps/pwa/shipproof.json"),
-    ("inferproof", "packages/inferlock", _FILE_RUN % "inferlock",
-     "apps/pwa/inferproof.json"),
-    ("kgproof", "packages/kgraph", _FILE_RUN % "kgraph",
-     "apps/pwa/kgproof.json"),
-    ("geoproof", "packages/geolock", _FILE_RUN % "geolock",
-     "apps/pwa/geoproof.json"),
-    ("geointproof", "packages/geoint", _FILE_RUN % "geoint",
-     "apps/pwa/geointproof.json"),
-    ("geodesyproof", "packages/geodesy", _FILE_RUN % "geodesy",
-     "apps/pwa/geodesyproof.json"),
-    ("geoexportproof", "packages/geoexport", _FILE_RUN % "geoexport",
-     "apps/pwa/geoexportproof.json"),
-    ("geostructureproof", "packages/geostructure",
-     _FILE_RUN % "geostructure", "apps/pwa/geostructureproof.json"),
-    ("georuntimeproof", "packages/georuntime", _FILE_RUN % "georuntime",
-     "apps/pwa/georuntimeproof.json"),
-    ("idseamproof", "packages/idseam", _FILE_RUN % "idseam",
-     "apps/pwa/idseamproof.json"),
-    ("freshproof", "packages/freshproof", _FILE_RUN % "freshproof",
-     "apps/pwa/freshproof.json"),
-    ("agentwrite", "packages/agentwrite", _FILE_RUN % "agentwrite",
-     "apps/pwa/agentwrite.json"),
-    ("appmarket", "packages/appmarket",
-     "import os; import demo_appmarket as d; "
-     "d.export_appmarket(d.seed_appmarket(), os.path.join(os.getcwd(), "
-     "'..', '..', 'apps', 'pwa', 'appmarket.json'))",
-     "apps/pwa/appmarket.json"),
-    ("charting", "packages/charting",
-     "import os; import demo_charting as d; "
-     "d.export_charting(d.seed_charting(), os.path.join(os.getcwd(), "
-     "'..', '..', 'apps', 'pwa', 'charting.json'))",
-     "apps/pwa/charting.json"),
-    ("portal", "packages/ips",
-     "import os; import demo_portal as d; "
-     "d.export_record(os.path.join(os.getcwd(), '..', '..', 'apps', "
-     "'patient', 'record.json'))",
-     "apps/patient/record.json"),
-]
+# File family: the snippet calls the demo's main(), which REWRITES
+# the committed file; bytes are compared after the run. (run_demo()
+# does not write — main() does; the wave-19 dry-run nearly shipped a
+# gate that compared the untouched file to itself.) The tables are
+# DERIVED from recipes.py — the gate and the refresh rail read one
+# recipe book (ADR-0081).
+FILE_EXPORTERS = [(r["name"], r["package"], r["write"], r["paths"][0])
+                  for r in recipes.RECIPES if r["kind"] == "file"]
 
 # Hash family: the snippet exports into a tmpdir and prints one sha256
 # per file in sorted-filename order; compare to digests of the
 # committed files in the same order. Snippets are the EXPORTERS ones.
-_EXPORTER_SNIPPET = {name: (pkg, snip) for name, pkg, snip in EXPORTERS}
-HASH_EXPORTERS = [
-    ("dashboards", ["apps/pwa/vhc-br10.json", "apps/pwa/vhc-fund.json",
-                    "apps/pwa/vhc-helpdesk.json"]),
-    ("growth", ["apps/pwa/vhc-growth.json"]),
-    ("emr", ["apps/pwa/inpatient.cv.json", "apps/pwa/inpatient.ng.json",
-             "apps/pwa/specialty.cv.json", "apps/pwa/specialty.ng.json"]),
-    ("national", ["apps/pwa/national.cv.json",
-                  "apps/pwa/national.ng.json"]),
-    ("sync", ["apps/pwa/sync.cv.json", "apps/pwa/sync.ng.json"]),
-]
+# Hash family: the probe snippet exports into a tmpdir and prints one
+# sha256 per file in sorted-filename order; compare to digests of the
+# committed files in the same order. Probe snippets ARE the meta
+# gate's determinism snippets — recipes.py embeds them verbatim.
+HASH_EXPORTERS = [(r["name"], r["package"], r["probe"], r["paths"])
+                  for r in recipes.RECIPES if r["kind"] == "hash"]
 
 
 class TestFreshnessUnit(unittest.TestCase):
@@ -540,9 +498,8 @@ class TestExporterFreshness(unittest.TestCase):
                     "commit the regenerated payload" % (path, basis))
 
     def test_hash_exporters_fresh(self):
-        for name, paths in HASH_EXPORTERS:
+        for name, pkg, snippet, paths in HASH_EXPORTERS:
             with self.subTest(exporter=name):
-                pkg, snippet = _EXPORTER_SNIPPET[name]
                 printed = [l.strip() for l in
                            self._run(pkg, snippet).splitlines()
                            if l.strip()]
@@ -557,9 +514,23 @@ class TestExporterFreshness(unittest.TestCase):
                     "%s; regenerate and commit" % (name, printed,
                                                    committed))
 
+    def test_hash_probes_match_determinism_snippets(self):
+        det = {name: snip for name, _, snip in EXPORTERS}
+        for name, _, probe, _ in HASH_EXPORTERS:
+            self.assertEqual(probe, det[name],
+                             "probe and determinism snippets drifted "
+                             "for " + name)
+
+    def test_every_recipe_has_a_determinism_entry(self):
+        det = {name for name, _, _ in EXPORTERS}
+        for r in recipes.RECIPES:
+            self.assertIn(r["name"], det,
+                          "recipe without a determinism entry: "
+                          + r["name"])
+
     def test_every_registered_payload_has_a_freshness_recipe(self):
         covered = {path for _, _, _, path in FILE_EXPORTERS}
-        for _, paths in HASH_EXPORTERS:
+        for _, _, _, paths in HASH_EXPORTERS:
             covered.update(paths)
         registered = {e["path"] for e in proofindex.PAYLOADS}
         self.assertEqual(registered - covered, set())
