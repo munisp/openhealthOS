@@ -167,7 +167,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "34aecd0e18936802dd41b491ac91105aa7298aa719d5595443769b9ab214a7a5",
+        "presented": "0004a3c3fdc851e056c5cbbcda3e39da6f51dc9d8e128316dc038b1b9fad6529",
         "payload_version": "refreshproof-demo@1.0.0"
       },
       {
@@ -178,7 +178,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "ff8769c2c1155263998aa1adaa96745dcd678d04ef19d4cfd5191e1d425b6c61",
+        "presented": "d907c38226129a4a0fe476012359938a9eae7f2f043b59764a231d645ca85d0a",
         "payload_version": "shellproof-demo@1.0.0"
       },
       {
@@ -189,7 +189,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "1922bbc884dd60734fe2c69d8f35b8db7ad3143a327f62734eae36b7976ddc93",
+        "presented": "fbcb7a4b56153860620b2cb90b2552d85e52862f889345651d3adb03c8cbcbff",
         "payload_version": "adrproof-demo@1.0.0"
       },
       {
@@ -200,7 +200,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "c520badc71f233bd4a9d8f3940dda571ad8bb6f01eb5140e706844a0c5f92149",
+        "presented": "0ab93709b681971e1da18da54b543311100c3fe1daaf1cae93564b8ec3c1baa2",
         "payload_version": "ledgerproof-demo@1.0.0"
       },
       {
@@ -211,7 +211,18 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "13151c0d63a5cb78425e860dea580966f329d75df7e41d3065185dec76981eaf",
+        "presented": "a80038871d834ea889c8857d20af0c41519e8fb070d843fc398af616af8142cb",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/storageproof.json",
+        "title": "Storage-port proof",
+        "contract": "compact",
+        "exporter": "packages/storageport/demo_storageport.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "66eb2b653c74d88ba6802e5cb14368b85ef157add9b68ec10a4c99d5b4e00c95",
         "payload_version": null
       },
       {
@@ -392,8 +403,8 @@
       }
     ],
     "summary": {
-      "total": 35,
-      "verified": 35,
+      "total": 36,
+      "verified": 36,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -401,8 +412,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 36,
-      "registered": 35,
+      "stamped_on_disk": 37,
+      "registered": 36,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -413,7 +424,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 27,
+      "compact": 28,
       "spaced-utf8": 8
     }
   },
@@ -467,5 +478,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "b05cac78a7ed56280879f125e320076bde4a07a2bdf4ef3dff62131b4ef995bd"
+  "sha256": "7b06b40fcac7606c9e5ef5b7179bcb9852b0c378dddc30f2531ddc03598fd6bc"
 }

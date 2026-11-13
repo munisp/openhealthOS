@@ -92,9 +92,9 @@ class TestRealTree(unittest.TestCase):
         # wave-23 normalised ledger: 228 parent rows (incl. this wave's
         # own row), 3 sub-rows, no
         # duplicates, no gaps, fully ascending
-        self.assertEqual(self.summary["rows"], 229)
+        self.assertEqual(self.summary["rows"], 230)
         self.assertEqual(self.summary["sub_rows"], 3)
-        self.assertEqual(self.summary["max_number"], 229)
+        self.assertEqual(self.summary["max_number"], 230)
         self.assertEqual(self.summary["duplicates"], [])
         self.assertEqual(self.summary["gaps"], [])
         self.assertEqual(self.summary["out_of_order"], [])

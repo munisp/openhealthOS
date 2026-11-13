@@ -50,9 +50,9 @@
  "live_audit": {
   "summary": {
    "shells": 2,
-   "shell_entries": 102,
-   "targets": 76,
-   "cached_targets": 75,
+   "shell_entries": 104,
+   "targets": 78,
+   "cached_targets": 77,
    "install_killers": 0,
    "uncached": 0,
    "excluded": 1,
@@ -96,5 +96,5 @@
   "Exclusions are stated data with reasons; silence is not an exclusion.",
   "The audit reads the real shells at export: if the estate drifts, this payload goes stale and the freshness gate names it."
  ],
- "sha256": "ff8769c2c1155263998aa1adaa96745dcd678d04ef19d4cfd5191e1d425b6c61"
+ "sha256": "d907c38226129a4a0fe476012359938a9eae7f2f043b59764a231d645ca85d0a"
 }

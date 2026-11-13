@@ -67,12 +67,12 @@ class TestDemoPayloadio(unittest.TestCase):
         p = demo_payloadio.run_demo()
         census = {d["name"]: d for d in p["drills"]}["adoption-census"]
         # post-registration live state (wave-20 gotcha applied):
-        # 35 registered payloads + 1 self-excluded = 36; 29 writer
+        # 36 registered payloads + 1 self-excluded = 37; 30 writer
         # modules, all via the seam; the one raw write-open is the
         # declared ledgeranchor tmpdir exception.
-        self.assertEqual(census["payloads"], 36)
-        self.assertEqual(census["writer_modules"], 29)
-        self.assertEqual(census["via_seam"], 29)
+        self.assertEqual(census["payloads"], 37)
+        self.assertEqual(census["writer_modules"], 30)
+        self.assertEqual(census["via_seam"], 30)
         self.assertEqual(census["raw_write_opens"], 4)
         self.assertEqual(census["declared_exceptions"], 2)
         self.assertEqual(census["offenders"], [])

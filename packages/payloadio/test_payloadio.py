@@ -124,8 +124,8 @@ class TestAdoption(unittest.TestCase):
 
     def test_census_pins(self):
         modules = _writer_modules()
-        self.assertEqual(len(modules), 29)
-        self.assertEqual(len(proofindex.PAYLOADS), 35)
+        self.assertEqual(len(modules), 30)
+        self.assertEqual(len(proofindex.PAYLOADS), 36)
         self.assertIn("packages/payloadio/demo_payloadio.py", modules)
 
     def test_every_writer_routes_through_the_seam(self):

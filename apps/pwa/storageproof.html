@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Storageproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Storageproof — one storage port, opendal as the main engine</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Deterministic fixture drills on private tmpdirs; the census reads the LIVE registry. ADR-0089: <b>Apache OpenDAL is the main storage engine</b> for object storage — documents, imaging, media, archives. A deployment target (ministry server room, clinic process, cloud archive) is a <b>registry entry, never a code branch</b>. Retry is a layer and its policy is data; range reads resume an interrupted transfer at the offset — the low-bandwidth contract. The stdlib path is <b>declared degraded mode</b> — fs/memory only, stamped on every receipt — and the suite pins <span class="mono">ADAPTER == "opendal"</span>: if the main engine is absent, the gate goes red and names it. Storageport stores documents and media; <b>payloadio still lands the proof payloads</b> (ADR-0088) — two layers, two contracts.</div>
+
+  <div class="card">
+    <h2>The live census — main means main</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-adapter"></div><div class="kpi-label">active adapter</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-entries"></div><div class="kpi-label">registry entries</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-version"></div><div class="kpi-label">opendal version</div></div>
+    </div>
+    <div id="census" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Six drills — faithful bytes, typed absence, stated refusals</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>The registry — deployment targets as data</h2>
+    <div id="registry"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Stamp contract</b><span class="mono" id="contract"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./storageproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.demo + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const a = p.adapter;
+  $("k-adapter").textContent = a.adapter_active;
+  $("k-entries").textContent = a.registry_entries;
+  $("k-version").textContent = a.opendal_version;
+  $("census").innerHTML =
+    '<div class="row"><span class="badge ' + (a.degraded ? "warn" : "ok") + '">' +
+    (a.degraded ? "degraded" : "main") + '</span><span>adapter_main ' +
+    esc(a.adapter_main) + " · adapter_active " + esc(a.adapter_active) +
+    " · retry layer max_times " + esc(a.retry_times) + "</span></div>" +
+    '<div class="row"><b>schemes served</b><span class="mono">' +
+    esc(a.schemes.join(", ")) + "</span></div>" +
+    '<div class="row"><b>entries requiring secrets</b><span class="mono">' +
+    esc(a.entries_requiring_secrets.join(", ")) +
+    " — a required key without a secret is a stated refusal, pre-network</span></div>";
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    '<div class="row"><span class="badge ' + badge(d.severity) + '">' +
+    esc(d.severity) + "</span><span><b>" + esc(d.name) + "</b> — " +
+    esc(d.fate) + ". " + esc(d.detail) + "</span></div>"
+  ).join("");
+
+  $("registry").innerHTML =
+    '<div class="row"><b>entries</b><span class="mono">' +
+    esc(p.registry_scope.entries.join(", ")) + "</span></div>" +
+    '<div class="row"><b>credentials</b><span>' +
+    esc(p.registry_scope.credentials) + "</span></div>" +
+    '<div class="row"><b>does not replace</b><span>' +
+    esc(p.mechanism.does_not_replace) + "</span></div>" +
+    '<div class="row"><b>license</b><span>' +
+    esc(p.mechanism.license) + "</span></div>";
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    '<div class="row"><span>' + esc(d) + "</span></div>").join("");
+
+  $("sha").textContent = p.sha256;
+  $("contract").textContent = p.self_integrity.contract;
+}).catch((e) => { $("hdr").textContent = "payload unreadable: " + e; });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw-vhc.js").catch(() => {});
+}
+</script>
+</body>
+</html>
