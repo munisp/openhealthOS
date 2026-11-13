@@ -222,7 +222,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "66eb2b653c74d88ba6802e5cb14368b85ef157add9b68ec10a4c99d5b4e00c95",
+        "presented": "fc05d16e3018a4260354a86f2be1ec57d163d30aba2b9972241fcca2d1e7ab1a",
         "payload_version": null
       },
       {
@@ -478,5 +478,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "7b06b40fcac7606c9e5ef5b7179bcb9852b0c378dddc30f2531ddc03598fd6bc"
+  "sha256": "a16daed63dde3b2171aeb8d34ce3ed328e0c76e26314d2f7ba4fb1714b676ff4"
 }

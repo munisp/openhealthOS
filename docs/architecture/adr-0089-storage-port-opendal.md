@@ -78,6 +78,13 @@ is the country/company-agnostic doctrine applied to storage.
 - Upgrades of the opendal wheel are gated work: the binding is
   pre-1.0 and introduces breaking changes between releases; the
   version is pinned in the toolchain and recorded in the census.
+- Subprocess runners that build payloads (the freshness gate, the
+  determinism gate, the refresh rail) must PRESERVE the ambient
+  `PYTHONPATH`, prepending the package dir — a runner that overwrites
+  it drops the toolchain path and silently degrades the very payload
+  it is checking (caught in-wave: the gate rewrote storageproof.json
+  in degraded mode; fixed and pinned by
+  `test_runner_preserves_ambient_pythonpath`).
 
 ## Alternatives considered
 

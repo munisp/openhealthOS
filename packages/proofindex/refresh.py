@@ -93,7 +93,14 @@ def run_recipes(recipes_list, *, root, executor):
 def _subprocess_executor(root):
     def execute(package, snippet):
         env = dict(os.environ)
-        env["PYTHONPATH"] = os.path.join(root, package)
+        # The package dir leads; the ambient PYTHONPATH is preserved —
+        # the estate's first runtime wheel (opendal, ADR-0089) lives on
+        # the toolchain path, and a runner that drops it silently
+        # degrades the very payload it is checking.
+        env["PYTHONPATH"] = os.pathsep.join(
+            [os.path.join(root, package)]
+            + ([os.environ["PYTHONPATH"]]
+               if os.environ.get("PYTHONPATH") else []))
         r = subprocess.run(
             [sys.executable, "-c", snippet],
             cwd=os.path.join(root, package),

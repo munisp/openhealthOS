@@ -348,7 +348,14 @@ class TestExporterDeterminism(unittest.TestCase):
 
     def _run(self, pkg_dir, snippet):
         env = dict(os.environ)
-        env["PYTHONPATH"] = os.path.join(REPO_ROOT, pkg_dir)
+        # The package dir leads; the ambient PYTHONPATH is preserved —
+        # the estate's first runtime wheel (opendal, ADR-0089) lives on
+        # the toolchain path, and a runner that drops it silently
+        # degrades the very payload it is checking.
+        env["PYTHONPATH"] = os.pathsep.join(
+            [os.path.join(REPO_ROOT, pkg_dir)]
+            + ([os.environ["PYTHONPATH"]]
+               if os.environ.get("PYTHONPATH") else []))
         r = subprocess.run(
             [sys.executable, "-c", snippet],
             cwd=os.path.join(REPO_ROOT, pkg_dir),
@@ -478,7 +485,14 @@ class TestExporterFreshness(unittest.TestCase):
 
     def _run(self, pkg_dir, snippet):
         env = dict(os.environ)
-        env["PYTHONPATH"] = os.path.join(REPO_ROOT, pkg_dir)
+        # The package dir leads; the ambient PYTHONPATH is preserved —
+        # the estate's first runtime wheel (opendal, ADR-0089) lives on
+        # the toolchain path, and a runner that drops it silently
+        # degrades the very payload it is checking.
+        env["PYTHONPATH"] = os.pathsep.join(
+            [os.path.join(REPO_ROOT, pkg_dir)]
+            + ([os.environ["PYTHONPATH"]]
+               if os.environ.get("PYTHONPATH") else []))
         r = subprocess.run(
             [sys.executable, "-c", snippet],
             cwd=os.path.join(REPO_ROOT, pkg_dir),
@@ -487,6 +501,23 @@ class TestExporterFreshness(unittest.TestCase):
                          "%s exited %s: %s" % (pkg_dir, r.returncode,
                                                r.stderr[-500:]))
         return r.stdout
+
+    def test_runner_preserves_ambient_pythonpath(self):
+        """ADR-0089: the estate's first runtime wheel lives on the
+        toolchain path — a runner that drops PYTHONPATH silently
+        degrades the very payload it is checking."""
+        sentinel = "/tmp/wave25-pythonpath-sentinel"
+        old = os.environ.get("PYTHONPATH")
+        os.environ["PYTHONPATH"] = (sentinel + os.pathsep + old) if old else sentinel
+        try:
+            out = self._run("packages/proofindex",
+                            "import os; print(os.environ['PYTHONPATH'])")
+        finally:
+            if old is None:
+                del os.environ["PYTHONPATH"]
+            else:
+                os.environ["PYTHONPATH"] = old
+        self.assertIn(sentinel, out)
 
     def _reference(self, path):
         head = _head_bytes(path)
