@@ -167,7 +167,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "0004a3c3fdc851e056c5cbbcda3e39da6f51dc9d8e128316dc038b1b9fad6529",
+        "presented": "30260cf7dd5b8113502dcb34a2c7b57915668e3bcf4cba7c96b05193fba17d24",
         "payload_version": "refreshproof-demo@1.0.0"
       },
       {
@@ -178,7 +178,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "d907c38226129a4a0fe476012359938a9eae7f2f043b59764a231d645ca85d0a",
+        "presented": "cec0d1be4cdb19cf2fca4c11cd206e2e4dfd293ac5b7967628057315ac0a9a66",
         "payload_version": "shellproof-demo@1.0.0"
       },
       {
@@ -189,7 +189,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "fbcb7a4b56153860620b2cb90b2552d85e52862f889345651d3adb03c8cbcbff",
+        "presented": "a8b7873acd6210f1ac21f10dc0630537691c0c743c494d284ee003b097c31e35",
         "payload_version": "adrproof-demo@1.0.0"
       },
       {
@@ -200,7 +200,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "0ab93709b681971e1da18da54b543311100c3fe1daaf1cae93564b8ec3c1baa2",
+        "presented": "e51dbc79ffc275289e0a7b48af2e4c6935ff8bb31d339554000a58f16ba06dc6",
         "payload_version": "ledgerproof-demo@1.0.0"
       },
       {
@@ -211,7 +211,7 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "a80038871d834ea889c8857d20af0c41519e8fb070d843fc398af616af8142cb",
+        "presented": "fd5fdd748729980d8b0854371c85b9e16a4dfb05ac95fd263956a2e62c6ad3b2",
         "payload_version": null
       },
       {
@@ -222,7 +222,18 @@
         "status": "verified",
         "severity": "green",
         "detail": "sha256 matches the recorded compact contract",
-        "presented": "fc05d16e3018a4260354a86f2be1ec57d163d30aba2b9972241fcca2d1e7ab1a",
+        "presented": "66eb2b653c74d88ba6802e5cb14368b85ef157add9b68ec10a4c99d5b4e00c95",
+        "payload_version": null
+      },
+      {
+        "path": "apps/pwa/sketchproof.json",
+        "title": "Sketch-rollup proof",
+        "contract": "compact",
+        "exporter": "packages/sketchport/demo_sketchport.py",
+        "status": "verified",
+        "severity": "green",
+        "detail": "sha256 matches the recorded compact contract",
+        "presented": "476d643b7faf0518ae67fffd98cb7934a110af395a888935503c894e09b3bb89",
         "payload_version": null
       },
       {
@@ -403,8 +414,8 @@
       }
     ],
     "summary": {
-      "total": 36,
-      "verified": 36,
+      "total": 37,
+      "verified": 37,
       "drift": 0,
       "absent": 0,
       "red": 0,
@@ -412,8 +423,8 @@
       "all_verified": true
     },
     "coverage": {
-      "stamped_on_disk": 37,
-      "registered": 36,
+      "stamped_on_disk": 38,
+      "registered": 37,
       "self_excluded": [
         {
           "path": "apps/pwa/proofindex.json",
@@ -424,7 +435,7 @@
       "complete": true
     },
     "contracts": {
-      "compact": 28,
+      "compact": 29,
       "spaced-utf8": 8
     }
   },
@@ -478,5 +489,5 @@
     "proofindex": "proofindex@1.2.0",
     "demo": "proofindex-demo@1.1.0"
   },
-  "sha256": "a16daed63dde3b2171aeb8d34ce3ed328e0c76e26314d2f7ba4fb1714b676ff4"
+  "sha256": "16e28d69762b1467a7e706a21f6a8c163eb91fc382e4845c78890246d6403900"
 }

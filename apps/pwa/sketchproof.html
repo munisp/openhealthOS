@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Sketchproof — OpenHealth OS</title>
+<link rel="stylesheet" href="css/depth-theme.css">
+<link id="brandcss" rel="stylesheet" href="css/brand.cv.css">
+</head>
+<body>
+<header>
+  <h1>Sketchproof — Apache DataSketches as the main sketch engine, adopted by the lakehouse</h1>
+  <div class="meta" id="hdr">loading…</div>
+</header>
+<main>
+  <div class="demo-banner">Deterministic fixture: six facilities, two LGAs, one state; cross-facility patients deduplicated by merge, never by raw rows. ADR-0090: <b>Apache DataSketches is the main sketch engine</b> for approximate analytics — mergeable distinct-count rollups up facility → LGA → state → national, cohort set operations, quantile verdicts. The datasketches-<b>postgresql</b> deployment form is <b>refused with a stated reason</b> (a compiled server extension inverts the stdlib medallion architecture, ADR-0047, and is absent from managed Postgres); the Python bindings wrap the same datasketches-cpp core — the capability is adopted, the form is not. Every estimate carries <b>declared bounds</b>; contractual counts are <b>refused by name</b>; kll is <b>non-replayable</b> — verdicts, never stamped estimates; small cells are <b>suppressed with the k-floor named</b>. The lakehouse gold layer runs through this port — <b>a seam unadopted by its own estate is decoration</b>.</div>
+
+  <div class="card">
+    <h2>The live census — main means main</h2>
+    <div class="kpis">
+      <div class="kpi"><div class="kpi-num" id="k-adapter"></div><div class="kpi-label">active adapter</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-entries"></div><div class="kpi-label">rollup entries</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-version"></div><div class="kpi-label">datasketches version</div></div>
+      <div class="kpi"><div class="kpi-num" id="k-seed"></div><div class="kpi-label">registry seed</div></div>
+    </div>
+    <div id="census" style="margin-top:8px"></div>
+  </div>
+
+  <div class="card">
+    <h2>Eight drills — bounds declared, merges deduplicate, refusals stated</h2>
+    <div id="drills"></div>
+  </div>
+
+  <div class="card">
+    <h2>The registry — rollup contracts as data</h2>
+    <div id="registry"></div>
+  </div>
+
+  <div class="card">
+    <h2>The doctrine</h2>
+    <div id="doctrine"></div>
+  </div>
+
+  <div class="card">
+    <h2>Integrity</h2>
+    <div class="row"><b>Payload sha256</b><span class="mono" id="sha"></span></div>
+    <div class="row"><b>Stamp contract</b><span class="mono" id="contract"></span></div>
+  </div>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const badge = (sev) => sev === "green" ? "ok" :
+  sev === "amber" ? "warn" : "bad";
+
+fetch("./sketchproof.json", { cache: "no-store" }).then((r) => r.json()).then((p) => {
+  $("hdr").textContent = p.demo + " · generated " + p.generated_at +
+    " · sha256 " + p.sha256.slice(0, 12) + "…";
+
+  const a = p.adapter;
+  $("k-adapter").textContent = a.adapter_active;
+  $("k-entries").textContent = a.registry_entries;
+  $("k-version").textContent = a.datasketches_version;
+  $("k-seed").textContent = a.seed;
+  $("census").innerHTML =
+    '<div class="row"><span class="badge ' + (a.degraded ? "warn" : "ok") + '">' +
+    (a.degraded ? "degraded" : "main") + '</span><span>adapter_main ' +
+    esc(a.adapter_main) + " · adapter_active " + esc(a.adapter_active) +
+    " · bounds at " + esc(a.bounds_std_devs) + " std devs · k-floor " +
+    esc(a.k_floor) + "</span></div>" +
+    '<div class="row"><b>replayable</b><span class="mono">' +
+    esc(a.replayable_entries.join(", ")) + "</span></div>" +
+    '<div class="row"><b>non-replayable (stated)</b><span class="mono">' +
+    esc(a.non_replayable_entries.join(", ")) +
+    " — kll compaction is randomized; verdicts at query time, never stamped payload values</span></div>";
+
+  $("drills").innerHTML = p.drills.map((d) =>
+    '<div class="row"><span class="badge ' + badge(d.severity) + '">' +
+    esc(d.severity) + "</span><span><b>" + esc(d.name) + "</b> — " +
+    esc(d.fate) + (d.evidence ? ". " + d.evidence.map(esc).join(" · ") : "") +
+    "</span></div>"
+  ).join("");
+
+  $("registry").innerHTML =
+    '<div class="row"><b>entries</b><span class="mono">' +
+    esc(p.registry_scope.entries.join(", ")) + "</span></div>" +
+    '<div class="row"><b>contractual</b><span>' +
+    esc(p.registry_scope.contractual) + "</span></div>" +
+    '<div class="row"><b>postgres form</b><span>' +
+    esc(p.mechanism.postgres_form_refused) + "</span></div>" +
+    '<div class="row"><b>lakehouse</b><span>' +
+    esc(p.mechanism.lakehouse_adoption) + "</span></div>" +
+    '<div class="row"><b>license</b><span>' +
+    esc(p.mechanism.license) + "</span></div>";
+
+  $("doctrine").innerHTML = p.doctrine.map((d) =>
+    '<div class="row"><span>' + esc(d) + "</span></div>").join("");
+
+  $("sha").textContent = p.sha256;
+  $("contract").textContent = p.self_integrity.contract;
+}).catch((e) => { $("hdr").textContent = "payload unreadable: " + e; });
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("sw-vhc.js").catch(() => {});
+}
+</script>
+</body>
+</html>

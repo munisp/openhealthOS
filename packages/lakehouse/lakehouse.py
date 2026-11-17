@@ -107,8 +107,14 @@ def silver(events: list[dict], out: str, scrub=None) -> int:
     return n
 
 
-def gold(events: list[dict], out: str) -> dict:
-    """Decision-ready aggregates — the dashboards' and DHIS2 bridge's input."""
+def gold(events: list[dict], out: str, sketch_rollups: bool = False,
+         sketch_parents: dict | None = None) -> dict:
+    """Decision-ready aggregates — the dashboards' and DHIS2 bridge's input.
+
+    sketch_rollups=True adopts packages/sketchport (ADR-0090): mergeable
+    approximate-distinct and cohort rollups become a gold product
+    (gold/sketch_rollups.json) alongside the exact aggregates. A seam
+    unadopted by its own estate is decoration — this is the adoption."""
     by_facility: dict[str, int] = defaultdict(int)
     by_type: dict[str, int] = defaultdict(int)
     claim_value: dict[str, float] = defaultdict(float)
@@ -128,13 +134,24 @@ def gold(events: list[dict], out: str) -> dict:
     os.makedirs(os.path.join(out, "gold"), exist_ok=True)
     with open(os.path.join(out, "gold", "aggregates.json"), "w") as fh:
         json.dump(agg, fh, indent=2, sort_keys=True)
+    if sketch_rollups:
+        sys.path.insert(0, os.path.join(os.path.dirname(__file__),
+                                        "..", "sketchport"))
+        import sketchport
+        sr = sketchport.gold_rollups(sorted(events, key=lambda e: (e.get("ts", ""), e.get("id", ""))),
+                                     parents=sketch_parents)
+        with open(os.path.join(out, "gold", "sketch_rollups.json"), "w") as fh:
+            json.dump(sr, fh, indent=2, sort_keys=True)
+        agg["sketch_rollups"] = sr
     return agg
 
 
-def build(events: list[dict], out: str, scrub=None) -> dict:
+def build(events: list[dict], out: str, scrub=None,
+          sketch_rollups: bool = False, sketch_parents: dict | None = None) -> dict:
     nb = bronze(events, out)
     ns = silver(events, out, scrub=scrub)
-    agg = gold(events, out)
+    agg = gold(events, out, sketch_rollups=sketch_rollups,
+               sketch_parents=sketch_parents)
     return {"bronze_rows": nb, "silver_rows": ns, "gold": agg,
             "format": "parquet" if HAVE_PARQUET else "jsonl"}
 

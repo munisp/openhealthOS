@@ -80,9 +80,9 @@
  },
  "live_audit": {
   "summary": {
-   "rows": 230,
+   "rows": 231,
    "sub_rows": 3,
-   "max_number": 230,
+   "max_number": 231,
    "duplicates": [],
    "gaps": [],
    "out_of_order": [],
@@ -127,5 +127,5 @@
   "Sub-rows attach to their parent and start at 'a' — an orphan is red, a broken suffix sequence is stated amber.",
   "The audit reads the real README at export: if the ledger drifts, this payload goes stale and the freshness gate names it."
  ],
- "sha256": "0ab93709b681971e1da18da54b543311100c3fe1daaf1cae93564b8ec3c1baa2"
+ "sha256": "e51dbc79ffc275289e0a7b48af2e4c6935ff8bb31d339554000a58f16ba06dc6"
 }
